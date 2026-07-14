@@ -14,14 +14,14 @@ interface AIConfig {
   model?: string;
 }
 
-const readAiConfig = async (env: Env) => {
+const readAiConfig = async (env: Env, requestConfig: AIConfig = {}) => {
   const value = await env.CLOUDNAV_KV.get('ai_config');
   const config = value ? JSON.parse(value) as AIConfig : {};
   return {
-    provider: config.provider || 'gemini',
-    apiKey: config.apiKey || env.GEMINI_API_KEY || '',
-    baseUrl: config.baseUrl || '',
-    model: config.model || 'gemini-2.5-flash',
+    provider: requestConfig.provider || config.provider || 'gemini',
+    apiKey: requestConfig.apiKey || config.apiKey || env.GEMINI_API_KEY || '',
+    baseUrl: requestConfig.baseUrl !== undefined ? requestConfig.baseUrl : config.baseUrl || '',
+    model: requestConfig.model || config.model || 'gemini-2.5-flash',
   };
 };
 
@@ -90,13 +90,14 @@ export const onRequestPost = async (context: { request: Request; env: Env }) => 
       title?: string;
       url?: string;
       categories?: Array<{ id: string; name: string }>;
+      config?: AIConfig;
     };
 
     if (!body.title || !body.url || (body.task !== 'description' && body.task !== 'category')) {
       return jsonResponse({ error: 'Invalid request' }, { status: 400 });
     }
 
-    const config = await readAiConfig(env);
+    const config = await readAiConfig(env, body.config || {});
     if (!config.apiKey) {
       return jsonResponse({ error: 'AI API key is not configured' }, { status: 400 });
     }

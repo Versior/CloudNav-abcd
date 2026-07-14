@@ -1,5 +1,5 @@
-import React from 'react';
-import { Inbox, Clock, Eye, Activity, BarChart3, ExternalLink, AlertTriangle, Zap, Folder } from 'lucide-react';
+import React, { useState } from 'react';
+import { Inbox, Clock, Eye, Activity, BarChart3, ExternalLink, AlertTriangle, Zap, Folder, ChevronDown } from 'lucide-react';
 import { LinkItem, Category, INBOX_ID } from '../types';
 
 interface HomeDashboardProps {
@@ -20,6 +20,7 @@ const timeAgo = (ts: number) => {
 };
 
 const HomeDashboard: React.FC<HomeDashboardProps> = ({ links, categories, onOpenInbox, onClickLink, onSelectCategory }) => {
+  const [foldersCollapsed, setFoldersCollapsed] = useState(false);
   const normalLinks = links.filter(l => l.categoryId !== INBOX_ID && !l.deletedAt);
   const inboxLinks = links.filter(l => l.categoryId === INBOX_ID && !l.deletedAt);
   const brokenLinks = normalLinks.filter(l => l.health?.status === 'broken' || l.health?.status === 'redirected');
@@ -86,25 +87,33 @@ const HomeDashboard: React.FC<HomeDashboardProps> = ({ links, categories, onOpen
 
       {folderCards.length > 0 && (
         <div className="bg-white/90 dark:bg-slate-800/90 rounded-2xl border border-slate-200 dark:border-slate-700 p-3">
-          <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200 mb-3 flex items-center gap-2"><Folder size={15} className="text-amber-500" /> 文件夹</h3>
-          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2">
-            {folderCards.map(folder => (
-              <button
-                key={folder.id}
-                onClick={() => onSelectCategory(folder.id)}
-                className="group text-left p-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/40 hover:border-blue-300 dark:hover:border-blue-600 hover:bg-blue-50/70 dark:hover:bg-blue-900/20 transition-all"
-              >
-                <div className="flex items-center justify-between gap-2 mb-2">
-                  <div className="w-9 h-9 rounded-xl bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-300 flex items-center justify-center group-hover:scale-105 transition-transform">
-                    <Folder size={18} />
+          <button
+            onClick={() => setFoldersCollapsed(v => !v)}
+            className="w-full text-left text-sm font-bold text-slate-700 dark:text-slate-200 mb-3 flex items-center justify-between gap-2"
+          >
+            <span className="flex items-center gap-2"><Folder size={15} className="text-amber-500" /> 文件夹</span>
+            <ChevronDown size={16} className={`text-slate-400 transition-transform ${foldersCollapsed ? '-rotate-90' : ''}`} />
+          </button>
+          {!foldersCollapsed && (
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2">
+              {folderCards.map(folder => (
+                <button
+                  key={folder.id}
+                  onClick={() => onSelectCategory(folder.id)}
+                  className="group text-left p-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/40 hover:border-blue-300 dark:hover:border-blue-600 hover:bg-blue-50/70 dark:hover:bg-blue-900/20 transition-all"
+                >
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <div className="w-9 h-9 rounded-xl bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-300 flex items-center justify-center group-hover:scale-105 transition-transform">
+                      <Folder size={18} />
+                    </div>
+                    <span className="text-xs font-semibold text-slate-400">{folder.count}</span>
                   </div>
-                  <span className="text-xs font-semibold text-slate-400">{folder.count}</span>
-                </div>
-                <div className="text-sm font-semibold text-slate-800 dark:text-white truncate">{folder.name}</div>
-                <div className="text-xs text-slate-400 mt-1">{folder.childCount ? `${folder.childCount} 个子文件夹` : '主文件夹'}</div>
-              </button>
-            ))}
-          </div>
+                  <div className="text-sm font-semibold text-slate-800 dark:text-white truncate">{folder.name}</div>
+                  <div className="text-xs text-slate-400 mt-1">{folder.childCount ? `${folder.childCount} 个子文件夹` : '主文件夹'}</div>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

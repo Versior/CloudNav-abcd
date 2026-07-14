@@ -1,17 +1,19 @@
 import React, { useState, useRef } from 'react';
-import { Key, Sparkles, PauseCircle } from 'lucide-react';
-import { AIConfig, LinkItem } from '../types';
-import { generateLinkDescription } from '../services/geminiService';
+import { Key, Sparkles, PauseCircle, FolderTree } from 'lucide-react';
+import { AIConfig, LinkItem, Category, INBOX_ID } from '../types';
+import { generateLinkDescription, suggestCategory } from '../services/geminiService';
 
 interface AISettingsTabProps {
   config: AIConfig;
   onChange: (key: keyof AIConfig, value: string) => void;
   links: LinkItem[];
+  categories: Category[];
   onUpdateLinks: (links: LinkItem[]) => void;
 }
 
-const AISettingsTab: React.FC<AISettingsTabProps> = ({ config, onChange, links, onUpdateLinks }) => {
+const AISettingsTab: React.FC<AISettingsTabProps> = ({ config, onChange, links, categories, onUpdateLinks }) => {
   const [isProcessing, setIsProcessing] = useState(false);
+  const [processingLabel, setProcessingLabel] = useState('');
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const shouldStopRef = useRef(false);
 
@@ -30,6 +32,7 @@ const AISettingsTab: React.FC<AISettingsTabProps> = ({ config, onChange, links, 
     if (!confirm(`发现 ${missingLinks.length} 个链接缺少描述，确定要使用 AI 自动生成吗？这可能需要一些时间。`)) return;
 
     setIsProcessing(true);
+    setProcessingLabel('正在生成描述');
     shouldStopRef.current = false;
     setProgress({ current: 0, total: missingLinks.length });
 
@@ -52,6 +55,59 @@ const AISettingsTab: React.FC<AISettingsTabProps> = ({ config, onChange, links, 
     }
 
     setIsProcessing(false);
+    setProcessingLabel('');
+  };
+
+  const handleBulkCategorize = async () => {
+    if (!config.hasApiKey && !config.apiKey) {
+        alert("请先配置并保存 API Key");
+        return;
+    }
+
+    const availableCategories = categories
+        .filter(c => c.id !== INBOX_ID && !c.password)
+        .map(c => ({ id: c.id, name: c.name }));
+    if (availableCategories.length === 0) {
+        alert("没有可用分类");
+        return;
+    }
+
+    const targetLinks = links.filter(l => l.categoryId !== INBOX_ID);
+    if (targetLinks.length === 0) {
+        alert("没有可整理的书签");
+        return;
+    }
+
+    if (!confirm(`将使用 AI 重新整理 ${targetLinks.length} 个书签的分类。确定继续吗？`)) return;
+
+    setIsProcessing(true);
+    setProcessingLabel('正在整理分类');
+    shouldStopRef.current = false;
+    setProgress({ current: 0, total: targetLinks.length });
+
+    let currentLinks = [...links];
+    let changedCount = 0;
+
+    for (let i = 0; i < targetLinks.length; i++) {
+        if (shouldStopRef.current) break;
+
+        const link = targetLinks[i];
+        try {
+            const categoryId = await suggestCategory(link.title, link.url, availableCategories, config);
+            if (categoryId && availableCategories.some(c => c.id === categoryId) && categoryId !== link.categoryId) {
+                currentLinks = currentLinks.map(l => l.id === link.id ? { ...l, categoryId, updatedAt: Date.now() } : l);
+                changedCount += 1;
+                onUpdateLinks(currentLinks);
+            }
+        } catch (e) {
+            console.error(`Failed to categorize for ${link.title}`, e);
+        }
+        setProgress({ current: i + 1, total: targetLinks.length });
+    }
+
+    setIsProcessing(false);
+    setProcessingLabel('');
+    alert(`AI 分类完成，已调整 ${changedCount} 个书签。`);
   };
 
   return (
@@ -112,7 +168,7 @@ const AISettingsTab: React.FC<AISettingsTabProps> = ({ config, onChange, links, 
             {isProcessing ? (
                 <div className="space-y-2">
                     <div className="flex justify-between text-xs text-slate-600 dark:text-slate-400">
-                        <span>正在生成描述... ({progress.current}/{progress.total})</span>
+                        <span>{processingLabel || '正在处理'}... ({progress.current}/{progress.total})</span>
                         <button onClick={() => { shouldStopRef.current = true; setIsProcessing(false); }} className="text-red-500 flex items-center gap-1 hover:underline">
                             <PauseCircle size={12}/> 停止
                         </button>
@@ -122,12 +178,20 @@ const AISettingsTab: React.FC<AISettingsTabProps> = ({ config, onChange, links, 
                     </div>
                 </div>
             ) : (
-                <button
-                    onClick={handleBulkGenerate}
-                    className="flex items-center gap-2 text-sm text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 px-3 py-2 rounded-lg transition-colors border border-purple-200 dark:border-purple-800"
-                >
-                    <Sparkles size={16} /> 一键补全所有缺失的描述
-                </button>
+                <div className="flex flex-wrap gap-2">
+                    <button
+                        onClick={handleBulkGenerate}
+                        className="flex items-center gap-2 text-sm text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 px-3 py-2 rounded-lg transition-colors border border-purple-200 dark:border-purple-800"
+                    >
+                        <Sparkles size={16} /> 一键补全所有缺失的描述
+                    </button>
+                    <button
+                        onClick={handleBulkCategorize}
+                        className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 px-3 py-2 rounded-lg transition-colors border border-blue-200 dark:border-blue-800"
+                    >
+                        <FolderTree size={16} /> AI 整理全部书签分类
+                    </button>
+                </div>
             )}
         </div>
     </div>

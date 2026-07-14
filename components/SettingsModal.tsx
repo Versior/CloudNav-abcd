@@ -135,7 +135,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     <SiteSettingsTab value={localSiteSettings} onChange={handleSiteChange} />
                 )}
                 {activeTab === 'ai' && (
-                    <AISettingsTab config={localConfig} onChange={handleChange} links={links} onUpdateLinks={onUpdateLinks} />
+                    <AISettingsTab config={localConfig} onChange={handleChange} links={links} categories={categories} onUpdateLinks={onUpdateLinks} />
                 )}
                 {activeTab === 'tools' && (
                     <ExtensionToolsTab authToken={authToken} extensionToken={extensionToken} favicon={localSiteSettings.favicon} navTitle={localSiteSettings.navTitle} />

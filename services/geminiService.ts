@@ -39,6 +39,17 @@ const parseJsonError = (rawText: string) => {
   }
 };
 
+const parseJsonResponse = (rawText: string, provider: string) => {
+  if (isHtml(rawText)) {
+    throw new Error(`${provider} 返回了 HTML 页面。API 地址大概率仍然不是接口地址，或服务商网关返回了网页错误页。`);
+  }
+  try {
+    return rawText ? JSON.parse(rawText) : {};
+  } catch {
+    throw new Error(`${provider} 返回的不是合法 JSON：${rawText.slice(0, 120)}`);
+  }
+};
+
 const buildPrompts = (task: AITask, body: Record<string, unknown>) => {
   if (task === 'test') return { system: 'You are a connection tester. Reply with exactly OK.', user: 'Reply with exactly: OK' };
   if (task === 'description') {
@@ -73,7 +84,7 @@ const callGeminiDirect = async (task: AITask, body: Record<string, unknown>, con
   });
   const rawText = await response.text().catch(() => '');
   if (!response.ok) throw new Error(`Gemini 请求失败：HTTP ${response.status}，${parseJsonError(rawText).slice(0, 240)}`);
-  const data = rawText ? JSON.parse(rawText) : {};
+  const data = parseJsonResponse(rawText, 'Gemini');
   return data.candidates?.[0]?.content?.parts?.map((part: any) => part.text || '').join('').trim() || '';
 };
 
@@ -95,7 +106,7 @@ const callOpenAIDirect = async (task: AITask, body: Record<string, unknown>, con
   });
   const rawText = await response.text().catch(() => '');
   if (!response.ok) throw new Error(`OpenAI Compatible 请求失败：HTTP ${response.status}，${parseJsonError(rawText).slice(0, 240)}`);
-  const data = rawText ? JSON.parse(rawText) : {};
+  const data = parseJsonResponse(rawText, 'OpenAI Compatible');
   return data.choices?.[0]?.message?.content?.trim() || '';
 };
 
@@ -116,8 +127,11 @@ const callAI = async (task: AITask, body: Record<string, unknown>, config: AICon
     });
 
     const rawText = await response.text().catch(() => '');
+    if (isHtml(rawText) && config.apiKey) return callDirectAI(task, body, config);
     let data: any = {};
-    try { data = rawText ? JSON.parse(rawText) : {}; } catch {}
+    try { data = rawText ? JSON.parse(rawText) : {}; } catch {
+      throw new Error(`AI 代理返回的不是合法 JSON：${rawText.slice(0, 120)}`);
+    }
 
     if (!response.ok) {
       if (isHtml(rawText) && config.apiKey) return callDirectAI(task, body, config);

@@ -36,6 +36,17 @@ const parseProviderErrorDetail = (raw: string) => {
   }
 };
 
+const parseProviderJson = (provider: string, raw: string) => {
+  if (isHtmlText(raw)) {
+    throw new Error(`${provider} 返回了 HTML 页面。API 地址大概率不是接口地址，或服务商网关返回了网页错误页。`);
+  }
+  try {
+    return raw ? JSON.parse(raw) as any : {};
+  } catch {
+    throw new Error(`${provider} 返回的不是合法 JSON：${raw.slice(0, 120)}`);
+  }
+};
+
 const normalizeOpenAIEndpoint = (baseUrl?: string) => {
   const raw = (baseUrl || '').trim();
   if (!raw) throw new Error('OpenAI 兼容 API 地址不能为空，例如 https://api.openai.com/v1');
@@ -119,11 +130,11 @@ const callOpenAICompatible = async (config: AIConfig, systemPrompt: string, user
     }),
   });
 
+  const rawText = await response.text();
   if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(formatProviderError('OpenAI Compatible', response, detail));
+    throw new Error(formatProviderError('OpenAI Compatible', response, rawText));
   }
-  const data = await response.json() as any;
+  const data = parseProviderJson('OpenAI Compatible', rawText);
   return data.choices?.[0]?.message?.content?.trim() || '';
 };
 
@@ -138,11 +149,11 @@ const callGemini = async (config: AIConfig, prompt: string) => {
     }),
   });
 
+  const rawText = await response.text();
   if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(formatProviderError('Gemini', response, detail));
+    throw new Error(formatProviderError('Gemini', response, rawText));
   }
-  const data = await response.json() as any;
+  const data = parseProviderJson('Gemini', rawText);
   return data.candidates?.[0]?.content?.parts?.map((part: any) => part.text || '').join('').trim() || '';
 };
 

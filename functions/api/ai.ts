@@ -28,6 +28,11 @@ const readAiConfig = async (env: Env, requestConfig: AIConfig = {}) => {
 
 const isHtmlText = (text: string) => /^<!doctype\s+html/i.test(text.trim()) || /^<html[\s>]/i.test(text.trim());
 
+const extractHtmlTitle = (text: string) => {
+  const match = text.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  return match?.[1]?.replace(/\s+/g, ' ').trim() || '';
+};
+
 const parseProviderErrorDetail = (raw: string) => {
   try {
     const data = JSON.parse(raw) as any;
@@ -37,9 +42,10 @@ const parseProviderErrorDetail = (raw: string) => {
   }
 };
 
-const parseProviderJson = (provider: string, raw: string) => {
+const parseProviderJson = (provider: string, raw: string, endpoint?: string) => {
   if (isHtmlText(raw)) {
-    throw new Error(`${provider} 返回了 HTML 页面。API 地址大概率不是接口地址，或服务商网关返回了网页错误页。`);
+    const title = extractHtmlTitle(raw);
+    throw new Error(`${provider} 返回了 HTML 页面。最终请求地址：${endpoint || '未知'}${title ? `；网页标题：${title}` : ''}`);
   }
   try {
     return raw ? JSON.parse(raw) as any : {};
@@ -99,14 +105,15 @@ const callOpenAICompatible = async (config: AIConfig, systemPrompt: string, user
   if (!response.ok) {
     throw new Error(formatProviderError('OpenAI Compatible', response, rawText));
   }
-  const data = parseProviderJson('OpenAI Compatible', rawText);
+  const data = parseProviderJson('OpenAI Compatible', rawText, baseUrl);
   return data.choices?.[0]?.message?.content?.trim() || '';
 };
 
 const callGemini = async (config: AIConfig, prompt: string) => {
   if (!config.apiKey) throw new Error('Gemini API key is not configured');
   const model = config.model || 'gemini-2.5-flash';
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(config.apiKey)}`, {
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+  const response = await fetch(`${endpoint}?key=${encodeURIComponent(config.apiKey)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -118,7 +125,7 @@ const callGemini = async (config: AIConfig, prompt: string) => {
   if (!response.ok) {
     throw new Error(formatProviderError('Gemini', response, rawText));
   }
-  const data = parseProviderJson('Gemini', rawText);
+  const data = parseProviderJson('Gemini', rawText, endpoint);
   return data.candidates?.[0]?.content?.parts?.map((part: any) => part.text || '').join('').trim() || '';
 };
 

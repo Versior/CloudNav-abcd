@@ -5,6 +5,11 @@ type AITask = 'description' | 'category' | 'test';
 
 const isHtml = (text: string) => /<!doctype\s+html/i.test(text.trim()) || /<html[\s>]/i.test(text.trim());
 
+const extractHtmlTitle = (text: string) => {
+  const match = text.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  return match?.[1]?.replace(/\s+/g, ' ').trim() || '';
+};
+
 const parseJsonError = (rawText: string) => {
   try {
     const data = JSON.parse(rawText) as any;
@@ -14,9 +19,10 @@ const parseJsonError = (rawText: string) => {
   }
 };
 
-const parseJsonResponse = (rawText: string, provider: string) => {
+const parseJsonResponse = (rawText: string, provider: string, endpoint?: string) => {
   if (isHtml(rawText)) {
-    throw new Error(`${provider} 返回了 HTML 页面。当前请求地址不是 JSON API 接口，或服务商网关返回了网页错误页。`);
+    const title = extractHtmlTitle(rawText);
+    throw new Error(`${provider} 返回了 HTML 页面。最终请求地址：${endpoint || '未知'}${title ? `；网页标题：${title}` : ''}`);
   }
   try {
     return rawText ? JSON.parse(rawText) : {};
@@ -52,14 +58,15 @@ const callGeminiDirect = async (task: AITask, body: Record<string, unknown>, con
   if (!config.apiKey) throw new Error('Gemini API key is not configured');
   const model = config.model || 'gemini-2.5-flash';
   const prompts = buildPrompts(task, body);
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(config.apiKey)}`, {
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+  const response = await fetch(`${endpoint}?key=${encodeURIComponent(config.apiKey)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ contents: [{ parts: [{ text: `${prompts.system}\n${prompts.user}` }] }] }),
   });
   const rawText = await response.text().catch(() => '');
   if (!response.ok) throw new Error(`Gemini 请求失败：HTTP ${response.status}，${parseJsonError(rawText).slice(0, 240)}`);
-  const data = parseJsonResponse(rawText, 'Gemini');
+  const data = parseJsonResponse(rawText, 'Gemini', endpoint);
   return data.candidates?.[0]?.content?.parts?.map((part: any) => part.text || '').join('').trim() || '';
 };
 
@@ -81,7 +88,7 @@ const callOpenAIDirect = async (task: AITask, body: Record<string, unknown>, con
   });
   const rawText = await response.text().catch(() => '');
   if (!response.ok) throw new Error(`OpenAI Compatible 请求失败：HTTP ${response.status}，${parseJsonError(rawText).slice(0, 240)}`);
-  const data = parseJsonResponse(rawText, 'OpenAI Compatible');
+  const data = parseJsonResponse(rawText, 'OpenAI Compatible', endpoint);
   return data.choices?.[0]?.message?.content?.trim() || '';
 };
 

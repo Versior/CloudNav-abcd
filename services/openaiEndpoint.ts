@@ -62,6 +62,6 @@ export const normalizeOpenAIEndpoint = (baseUrl?: string) => {
     return url.toString();
   }
 
-  url.pathname = `${cleanPath || ''}/chat/completions`.replace(/\/+/g, '/');
+  url.pathname = cleanPath ? `${cleanPath}/chat/completions`.replace(/\/+/g, '/') : '/v1/chat/completions';
   return url.toString();
 };

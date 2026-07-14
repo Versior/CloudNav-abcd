@@ -25,6 +25,15 @@ const readAiConfig = async (env: Env, requestConfig: AIConfig = {}) => {
   };
 };
 
+const formatProviderError = (provider: string, response: Response, detail: string) => {
+  const text = detail.trim();
+  const contentType = response.headers.get('content-type') || '';
+  if (contentType.includes('text/html') || /^<!doctype\s+html/i.test(text) || /^<html[\s>]/i.test(text)) {
+    return `${provider} 返回了 HTML 错误页（HTTP ${response.status}）。请检查 API 地址、模型名称和代理服务是否填成了网页地址。`;
+  }
+  return `${provider} 请求失败：HTTP ${response.status}${text ? `，${text.slice(0, 300)}` : ''}`;
+};
+
 const callOpenAICompatible = async (config: AIConfig, systemPrompt: string, userPrompt: string) => {
   if (!config.apiKey || !config.baseUrl) throw new Error('OpenAI compatible API key or base URL is not configured');
 
@@ -51,7 +60,7 @@ const callOpenAICompatible = async (config: AIConfig, systemPrompt: string, user
 
   if (!response.ok) {
     const detail = await response.text();
-    throw new Error(`OpenAI compatible request failed: ${response.status} ${detail.slice(0, 200)}`);
+    throw new Error(formatProviderError('OpenAI Compatible', response, detail));
   }
   const data = await response.json() as any;
   return data.choices?.[0]?.message?.content?.trim() || '';
@@ -70,7 +79,7 @@ const callGemini = async (config: AIConfig, prompt: string) => {
 
   if (!response.ok) {
     const detail = await response.text();
-    throw new Error(`Gemini request failed: ${response.status} ${detail.slice(0, 200)}`);
+    throw new Error(formatProviderError('Gemini', response, detail));
   }
   const data = await response.json() as any;
   return data.candidates?.[0]?.content?.parts?.map((part: any) => part.text || '').join('').trim() || '';

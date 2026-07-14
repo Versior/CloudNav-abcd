@@ -37,6 +37,7 @@ const AISettingsTab: React.FC<AISettingsTabProps> = ({ config, onChange, links, 
     setProgress({ current: 0, total: missingLinks.length });
 
     let currentLinks = [...links];
+    let firstError = '';
 
     for (let i = 0; i < missingLinks.length; i++) {
         if (shouldStopRef.current) break;
@@ -50,12 +51,15 @@ const AISettingsTab: React.FC<AISettingsTabProps> = ({ config, onChange, links, 
             }
             setProgress({ current: i + 1, total: missingLinks.length });
         } catch (e) {
+            const message = e instanceof Error ? e.message : '未知错误';
+            firstError ||= message;
             console.error(`Failed to generate for ${link.title}`, e);
         }
     }
 
     setIsProcessing(false);
     setProcessingLabel('');
+    if (firstError) alert(`部分描述生成失败：${firstError}`);
   };
 
   const handleBulkCategorize = async () => {
@@ -87,6 +91,8 @@ const AISettingsTab: React.FC<AISettingsTabProps> = ({ config, onChange, links, 
 
     let currentLinks = [...links];
     let changedCount = 0;
+    let failedCount = 0;
+    let firstError = '';
 
     for (let i = 0; i < targetLinks.length; i++) {
         if (shouldStopRef.current) break;
@@ -100,6 +106,9 @@ const AISettingsTab: React.FC<AISettingsTabProps> = ({ config, onChange, links, 
                 onUpdateLinks(currentLinks);
             }
         } catch (e) {
+            const message = e instanceof Error ? e.message : '未知错误';
+            firstError ||= message;
+            failedCount += 1;
             console.error(`Failed to categorize for ${link.title}`, e);
         }
         setProgress({ current: i + 1, total: targetLinks.length });
@@ -107,7 +116,11 @@ const AISettingsTab: React.FC<AISettingsTabProps> = ({ config, onChange, links, 
 
     setIsProcessing(false);
     setProcessingLabel('');
-    alert(`AI 分类完成，已调整 ${changedCount} 个书签。`);
+    if (failedCount > 0) {
+        alert(`AI 分类完成，已调整 ${changedCount} 个书签，失败 ${failedCount} 个。首个错误：${firstError}`);
+    } else {
+        alert(`AI 分类完成，已调整 ${changedCount} 个书签。`);
+    }
   };
 
   return (
@@ -149,6 +162,7 @@ const AISettingsTab: React.FC<AISettingsTabProps> = ({ config, onChange, links, 
                     placeholder="https://api.openai.com/v1"
                     className="w-full p-2 rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-blue-500"
                 />
+                <p className="text-xs text-slate-500 mt-1">必须是 API 地址，例如 https://api.openai.com/v1；不要填网页登录地址或控制台地址。</p>
             </div>
         )}
 

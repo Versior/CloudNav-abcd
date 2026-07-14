@@ -14,9 +14,12 @@ const callAI = async (task: 'description' | 'category', body: Record<string, unk
             data = rawText ? JSON.parse(rawText) : {};
         } catch {}
         if (!response.ok) {
+            const isHtml = /<!doctype\s+html/i.test(rawText.trim()) || /<html[\s>]/i.test(rawText.trim());
             const detail = typeof data.error === 'string' && data.error.trim()
                 ? data.error.trim()
-                : rawText.trim() || `请求失败（HTTP ${response.status}）`;
+                : isHtml
+                    ? `AI 代理返回了 HTML 错误页（HTTP ${response.status}），请检查 API 地址/模型名称是否填成网页地址。`
+                    : rawText.trim() || `请求失败（HTTP ${response.status}）`;
             throw new Error(detail.slice(0, 300));
         }
 

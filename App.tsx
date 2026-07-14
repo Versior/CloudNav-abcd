@@ -2607,7 +2607,6 @@ function App() {
             )}
 
             {/* 2. Main Grid */}
-            {(selectedCategory !== 'all' || searchQuery) && (
             <section>
 
                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
@@ -2836,7 +2835,6 @@ function App() {
                     )
                  )}
             </section>
-            )}
 
             {/* 其他目录搜索结果区域 */}
             {searchQuery.trim() && selectedCategory !== 'all' && (

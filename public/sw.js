@@ -1,7 +1,7 @@
-// NaviX Service Worker — network-first,离线回退缓存;不缓存 /api/(数据需实时)
-const CACHE = 'navix-v2';
+// NaviX Service Worker — 只缓存静态资源的网络成功副本；HTML/API/构建资源始终走网络，避免旧 UI 卡死。
+const CACHE = 'navix-v4';
 
-self.addEventListener('install', () => {
+self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
 
@@ -18,10 +18,15 @@ self.addEventListener('fetch', (event) => {
   if (req.method !== 'GET') return;
 
   const url = new URL(req.url);
-  // API 请求不走缓存,始终实时
-  if (url.pathname.startsWith('/api/')) return;
-  // 仅处理同源请求
   if (url.origin !== self.location.origin) return;
+  if (url.pathname.startsWith('/api/')) return;
+
+  const isNavigation = req.mode === 'navigate' || req.headers.get('accept')?.includes('text/html');
+  const isBuildAsset = url.pathname.startsWith('/assets/') || url.pathname.endsWith('.js') || url.pathname.endsWith('.css');
+  if (isNavigation || isBuildAsset) {
+    event.respondWith(fetch(req));
+    return;
+  }
 
   event.respondWith(
     fetch(req)
@@ -30,6 +35,6 @@ self.addEventListener('fetch', (event) => {
         caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
         return res;
       })
-      .catch(() => caches.match(req).then((hit) => hit || caches.match('/')))
+      .catch(() => caches.match(req))
   );
 });

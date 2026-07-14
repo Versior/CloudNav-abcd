@@ -20,12 +20,12 @@ interface WebDavConfig {
   enabled?: boolean;
 }
 
-const sanitizeAiConfig = (config: AIConfig = {}) => ({
+const sanitizeAiConfig = (config: AIConfig = {}, env?: Env) => ({
   provider: config.provider || 'gemini',
   apiKey: '',
   baseUrl: config.baseUrl || '',
   model: config.model || 'gemini-2.5-flash',
-  hasApiKey: !!config.apiKey,
+  hasApiKey: !!config.apiKey || !!(env as any)?.GEMINI_API_KEY,
 });
 
 const sanitizeWebDavConfig = (config: WebDavConfig = {}) => ({
@@ -102,7 +102,7 @@ export const onRequestGet = async (context: { env: Env; request: Request }) => {
 
     if (getConfig === 'ai') {
       const aiConfig = await readJson<AIConfig>(env.CLOUDNAV_KV, 'ai_config', {});
-      return jsonResponse(sanitizeAiConfig(aiConfig));
+      return jsonResponse(sanitizeAiConfig(aiConfig, env));
     }
 
     if (getConfig === 'webdav') {
@@ -145,7 +145,7 @@ export const onRequestPost = async (context: { request: Request; env: Env }) => 
       const existing = await readJson<AIConfig>(env.CLOUDNAV_KV, 'ai_config', {});
       const next = mergeAiConfig(existing, body.config || {});
       await env.CLOUDNAV_KV.put('ai_config', JSON.stringify(next));
-      return jsonResponse({ success: true, config: sanitizeAiConfig(next) });
+      return jsonResponse({ success: true, config: sanitizeAiConfig(next, env) });
     }
 
     if (body.saveConfig === 'webdav') {

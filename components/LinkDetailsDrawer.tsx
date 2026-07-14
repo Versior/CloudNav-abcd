@@ -110,14 +110,21 @@ const LinkDetailsDrawer: React.FC<LinkDetailsDrawerProps> = ({ link, isOpen, onC
 
   const copyText = async (value?: string) => {
     if (!value) return;
-    await navigator.clipboard.writeText(value);
-    setCredentialMessage('已复制');
+    try {
+      await navigator.clipboard.writeText(value);
+      setCredentialMessage('已复制');
+    } catch {
+      setCredentialMessage('复制失败，请检查浏览器剪贴板权限');
+    }
   };
 
-  const persistCredentialDrafts = (drafts: CredentialDraft[], targetId?: string, encryptedPassword?: string) => {
+  const persistCredentialDrafts = (drafts: CredentialDraft[], targetId?: string, encryptedPassword?: string | null) => {
     const credentials = drafts
       .map(draft => {
-        const passwordCipher = draft.id === targetId && encryptedPassword !== undefined ? encryptedPassword : draft.passwordCipher;
+        const passwordCipher = draft.id === targetId
+          ? encryptedPassword === null ? undefined : encryptedPassword ?? draft.passwordCipher
+          : draft.passwordCipher;
+        const changed = draft.id === targetId;
         return {
           id: draft.id,
           label: cleanText(draft.label),
@@ -126,7 +133,7 @@ const LinkDetailsDrawer: React.FC<LinkDetailsDrawerProps> = ({ link, isOpen, onC
           passwordCipher,
           passwordHint: cleanText(draft.passwordHint || ''),
           remark: cleanText(draft.remark),
-          updatedAt: Date.now(),
+          updatedAt: changed ? Date.now() : draft.updatedAt,
         } satisfies SiteCredential;
       })
       .filter(item => item.label || item.username || item.account || item.passwordCipher || item.remark);
@@ -162,6 +169,7 @@ const LinkDetailsDrawer: React.FC<LinkDetailsDrawerProps> = ({ link, isOpen, onC
   };
 
   const deleteCredential = (id: string) => {
+    if (!confirm('确定删除这条账号记录吗？')) return;
     const nextDrafts = credentialDrafts.filter(item => item.id !== id);
     setCredentialDrafts(nextDrafts);
     persistCredentialDrafts(nextDrafts);
@@ -170,6 +178,19 @@ const LinkDetailsDrawer: React.FC<LinkDetailsDrawerProps> = ({ link, isOpen, onC
       delete next[id];
       return next;
     });
+  };
+
+  const clearCredentialPassword = (id: string) => {
+    if (!confirm('确定清空这个账号已保存的密码吗？')) return;
+    const nextDrafts = credentialDrafts.map(item => item.id === id ? { ...item, password: '', passwordCipher: undefined } : item);
+    setCredentialDrafts(nextDrafts);
+    persistCredentialDrafts(nextDrafts, id, null);
+    setVisiblePasswords(prev => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    setCredentialMessage('已清空密码');
   };
 
   const revealPassword = async (draft: CredentialDraft) => {
@@ -337,6 +358,9 @@ const LinkDetailsDrawer: React.FC<LinkDetailsDrawerProps> = ({ link, isOpen, onC
                   <div className="flex items-center justify-between text-[11px] text-slate-400">
                     <span>{draft.updatedAt ? `更新于 ${timeAgo(draft.updatedAt)}` : '未保存'}</span>
                     <div className="flex items-center gap-2">
+                      {draft.passwordCipher && (
+                        <button onClick={() => clearCredentialPassword(draft.id)} className="px-2 py-1 rounded-md bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600">清空密码</button>
+                      )}
                       <button onClick={() => saveCredential(draft.id)} className="px-2 py-1 rounded-md bg-blue-600 text-white hover:bg-blue-700">保存账号</button>
                       <button onClick={() => deleteCredential(draft.id)} className="p-1 rounded-md text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20" title="删除"><Trash2 size={14} /></button>
                     </div>

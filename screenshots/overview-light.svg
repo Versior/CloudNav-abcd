@@ -67,7 +67,7 @@
     <g transform="translate(0, 680)">
        <rect width="259" height="72" fill="#f8fafc"/>
        <rect width="259" height="1" fill="#e2e8f0"/>
-       <text x="32" y="42" font-size="12" fill="#94a3b8">已同步 · Fork 项目 v1.4</text>
+       <text x="32" y="42" font-size="12" fill="#94a3b8">已同步 · 项目仓库 v1.4</text>
        <circle cx="16" cy="38" r="3" fill="#22c55e" transform="translate(10,0)"/>
     </g>
 

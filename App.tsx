@@ -60,7 +60,7 @@ const getSearchSourceIconUrl = (url: string) => {
 
 // --- 配置项 ---
 // 项目核心仓库地址
-const GITHUB_REPO_URL = 'https://github.com/aabacada/CloudNav-abcd';
+const GITHUB_REPO_URL = 'https://github.com/Versior/CloudNav-abcd';
 
 const LOCAL_STORAGE_KEY = 'cloudnav_data_cache';
 const SEARCH_CONFIG_KEY = 'cloudnav_search_config';
@@ -78,9 +78,10 @@ function App() {
 
   // Visit tracking (localStorage only, not synced)
   const recordVisit = (id: string) => {
-    setLinks(prev => prev.map(l =>
+    const nextLinks = links.map(l =>
       l.id === id ? { ...l, lastVisitedAt: Date.now(), visitCount: (l.visitCount || 0) + 1 } : l
-    ));
+    );
+    updateData(nextLinks, categories);
   };
 
   // --- State ---
@@ -1674,11 +1675,20 @@ function App() {
     // Search Filter
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
-      result = result.filter(l => 
-        l.title.toLowerCase().includes(q) || 
-        l.url.toLowerCase().includes(q) ||
-        (l.description && l.description.toLowerCase().includes(q))
-      );
+      result = result.filter(l => {
+        const credentialText = (l.credentials || [])
+          .flatMap(c => [c.label, c.username, c.account, c.remark])
+          .filter(Boolean)
+          .join(' ');
+        return (
+          l.title.toLowerCase().includes(q) ||
+          l.url.toLowerCase().includes(q) ||
+          (l.description && l.description.toLowerCase().includes(q)) ||
+          (l.note && l.note.toLowerCase().includes(q)) ||
+          (l.tags || []).some(t => t.toLowerCase().includes(q)) ||
+          credentialText.toLowerCase().includes(q)
+        );
+      });
     }
 
     // Category Filter
@@ -1720,10 +1730,17 @@ function App() {
       }
       
       // 搜索匹配
+      const credentialText = (link.credentials || [])
+        .flatMap(c => [c.label, c.username, c.account, c.remark])
+        .filter(Boolean)
+        .join(' ');
       return (
-        link.title.toLowerCase().includes(q) || 
+        link.title.toLowerCase().includes(q) ||
         link.url.toLowerCase().includes(q) ||
-        (link.description && link.description.toLowerCase().includes(q))
+        (link.description && link.description.toLowerCase().includes(q)) ||
+        (link.note && link.note.toLowerCase().includes(q)) ||
+        (link.tags || []).some(t => t.toLowerCase().includes(q)) ||
+        credentialText.toLowerCase().includes(q)
       );
     });
 
@@ -1888,6 +1905,7 @@ function App() {
             className={`flex flex-1 min-w-0 overflow-hidden h-full ${
               isDetailedView ? 'flex-col' : 'items-center'
             }`}
+            onClick={() => recordVisit(link.id)}
             title={isDetailedView ? link.url : (link.description || link.url)} // 详情版视图只显示URL作为tooltip
           >
             {/* 第一行：图标和标题水平排列 */}
@@ -2044,7 +2062,17 @@ function App() {
         onClose={() => setIsPaletteOpen(false)}
         links={links}
         categories={categories}
-        actions={[]}
+        actions={[
+          { id: 'add-link', title: '添加链接', description: '新建一个网站卡片', keywords: ['add', 'new', '添加', '链接'], icon: <Plus size={14} />, group: 'action', run: () => { if (!authToken) setIsAuthOpen(true); else { setEditingLink(undefined); setIsModalOpen(true); } } },
+          { id: 'settings', title: '打开设置', description: '网站、AI 与扩展工具设置', keywords: ['settings', '设置', 'ai'], icon: <Settings size={14} />, group: 'action', run: () => setIsSettingsModalOpen(true) },
+          { id: 'backup', title: '备份与恢复', description: 'WebDAV 与本地导出', keywords: ['backup', '备份', '恢复'], icon: <Cloud size={14} />, group: 'action', run: () => setIsBackupModalOpen(true) },
+          { id: 'import', title: '导入书签', description: '导入 HTML 或 JSON 备份', keywords: ['import', '导入', '书签'], icon: <Upload size={14} />, group: 'action', run: () => setIsImportModalOpen(true) },
+          { id: 'organize', title: '整理待处理链接', description: `${inboxLinks.length} 个待整理`, keywords: ['organize', 'inbox', '整理', '待整理'], icon: <CheckSquare size={14} />, group: 'action', run: () => { if (inboxLinks.length > 0) { setSelectedCategory(INBOX_ID); setOrganizeIndex(0); setIsOrganizeMode(true); } } },
+          { id: 'theme', title: darkMode ? '切换到浅色模式' : '切换到深色模式', keywords: ['theme', 'dark', 'light', '主题'], icon: darkMode ? <Sun size={14} /> : <Moon size={14} />, group: 'action', run: toggleTheme },
+        ]}
+        onOpenLink={(link) => { recordVisit(link.id); window.open(link.url, '_blank'); }}
+        onSelectCategory={(categoryId) => { setSelectedCategory(categoryId); setSidebarOpen(false); }}
+        onOpenInbox={() => { setSelectedCategory(INBOX_ID); setOrganizeIndex(0); setIsOrganizeMode(true); }}
       />
 
       {/* Sidebar Mobile Overlay */}
@@ -2215,7 +2243,7 @@ function App() {
                  title="Fork this project on GitHub"
                >
                  <GitFork size={14} />
-                 <span>Fork 项目 v1.8.2</span>
+                 <span>项目仓库 v1.8.2</span>
                </a>
             </div>
         </div>
@@ -2570,16 +2598,17 @@ function App() {
                 </section>
             )}
 
+            {!searchQuery && selectedCategory === 'all' && (
+              <HomeDashboard
+                links={links}
+                onOpenInbox={() => { setSelectedCategory(INBOX_ID); setOrganizeIndex(0); }}
+                onClickLink={(link) => { recordVisit(link.id); window.open(link.url, '_blank'); }}
+              />
+            )}
+
             {/* 2. Main Grid */}
             {(selectedCategory !== 'all' || searchQuery) && (
             <section>
-                 {(!pinnedLinks.length && !searchQuery && selectedCategory === 'all') && (
-                    <HomeDashboard
-                      links={links}
-                      onOpenInbox={() => setSelectedCategory('all')}
-                      onClickLink={(link) => { recordVisit(link.id); window.open(link.url, '_blank'); }}
-                    />
-                 )}
 
                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                      <div className="flex items-center flex-wrap gap-y-2">

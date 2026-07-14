@@ -5,7 +5,7 @@
 #### 最新版本v1.7.1 (2026.1.16 )
 - 1、搜索框右侧新增一键清空图标
 - 2、在分类目录页面搜索时新增显示其他分类的内容
-- 3、增加 jenboy 提交的github自动同步仓库代码
+- 3、移除上游同步依赖，项目改为独立维护
 
 ---
 
@@ -120,14 +120,14 @@
 <br/>
 
 <!-- 请将下方的链接替换为您实际部署后的 Cloudflare Pages 域名 -->
-[![Live Demo](https://img.shields.io/badge/Live%20Demo-View%20Online-7c3aed?style=for-the-badge&logo=sparkles)](https://cloudnav.yy77.eu.org)
+[![Repository](https://img.shields.io/badge/GitHub-CloudNav--abcd-7c3aed?style=for-the-badge&logo=github)](https://github.com/Versior/CloudNav-abcd)
 
 <br/>
 
 **一个现代化、基于 AI 辅助的全栈个人导航站。**
 **无需购买服务器，依托 Cloudflare 免费托管，实现多端数据实时同步。**
 
-[在线演示](https://cloudnav.yy77.eu.org) • [功能特性](#-核心功能) • [项目展示](#-项目展示) • [部署教程](#-部署教程-免费) • [使用指南](#-使用指南)
+[项目仓库](https://github.com/Versior/CloudNav-abcd) • [功能特性](#-核心功能) • [项目展示](#-项目展示) • [部署教程](#-部署教程-免费) • [使用指南](#-使用指南)
 
 </div>
 
@@ -186,7 +186,7 @@
 
 ### 📋 简明部署步骤 (适合有经验用户)
 
-1.  **Fork 项目**: 点击右上角 Fork 按钮，将本项目克隆到您的 GitHub 账号。
+1.  **使用项目仓库**: 克隆或连接 `https://github.com/Versior/CloudNav-abcd` 到您的 GitHub / Cloudflare Pages。
 2.  **创建 Pages 应用**: 登录 Cloudflare Dashboard -> Workers & Pages -> 创建应用程序 -> Pages -> 连接到 Git -> 选择您的 NaviX 仓库
 3.  **配置构建**:
     *   框架预设: **无 (None)**

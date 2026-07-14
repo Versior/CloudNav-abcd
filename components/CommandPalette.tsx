@@ -18,9 +18,12 @@ interface CommandPaletteProps {
   links: LinkItem[];
   categories: Category[];
   actions: CommandItem[];
+  onOpenLink?: (link: LinkItem) => void;
+  onSelectCategory?: (categoryId: string) => void;
+  onOpenInbox?: () => void;
 }
 
-const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose, links, categories, actions }) => {
+const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose, links, categories, actions, onOpenLink, onSelectCategory, onOpenInbox }) => {
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -63,7 +66,7 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose, links,
           </div>
         ),
         group: 'link',
-        run: () => window.open(link.url, '_blank'),
+        run: () => onOpenLink ? onOpenLink(link) : window.open(link.url, '_blank'),
       };
     });
 
@@ -73,7 +76,7 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose, links,
       description: `分类 · ${links.filter(l => l.categoryId === cat.id).length} 个链接`,
       keywords: [cat.name],
       group: 'category',
-      run: () => {},
+      run: () => onSelectCategory?.(cat.id),
     }));
 
     return [...linkCmds, ...catCmds, ...actions];
@@ -102,7 +105,7 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose, links,
         keywords: ['inbox', '待整理'],
         icon: <Inbox size={14} className="text-amber-500" />,
         group: 'action' as const,
-        run: () => {},
+        run: () => onOpenInbox?.(),
       }] : [];
 
       return [...inboxCmds, ...allCommands].slice(0, 25);

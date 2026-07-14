@@ -1,6 +1,6 @@
 # NaviX — 项目总结
 
-> 原 CloudNav-abcd | 生成日期：2026-07-13 | 项目路径：`D:\CloudNav-abcd`
+> CloudNav-abcd / NaviX | 生成日期：2026-07-13 | 项目路径：`D:\CloudNav-abcd`
 
 ---
 
@@ -214,7 +214,7 @@ npm run build → 成功（1782 modules, 0 errors）
 
 ---
 
-## 8. 变更摘要（对比原 CloudNav-abcd）
+## 8. 变更摘要
 
 | 维度 | 变更 |
 |---|---|

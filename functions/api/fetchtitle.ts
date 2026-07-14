@@ -1,35 +1,27 @@
+import { corsHeaders, jsonResponse, optionsResponse, requireAuth } from '../_shared/auth';
+
 interface Env {
   PASSWORD: string;
+  SESSION_SECRET?: string;
 }
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, x-auth-password',
-};
-
-const jsonResponse = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
-
-export const onRequestOptions = async () =>
-  new Response(null, { status: 204, headers: corsHeaders });
+export const onRequestOptions = async () => optionsResponse();
 
 // 服务端抓取网页 <title>,免 CORS。鉴权 + SSRF 防护(拦内网/本地)。
 export const onRequestGet = async (context: { env: Env; request: Request }) => {
   const { env, request } = context;
 
-  if (!env.PASSWORD || request.headers.get('x-auth-password') !== env.PASSWORD) {
-    return jsonResponse({ error: 'Unauthorized' }, 401);
-  }
+  const authError = await requireAuth(request, env);
+  if (authError) return authError;
 
   const target = new URL(request.url).searchParams.get('url');
-  if (!target) return jsonResponse({ error: 'url required' }, 400);
+  if (!target) return jsonResponse({ error: 'url required' }, { status: 400 });
 
   let parsed: URL;
-  try { parsed = new URL(target); } catch { return jsonResponse({ error: 'invalid url' }, 400); }
+  try { parsed = new URL(target); } catch { return jsonResponse({ error: 'invalid url' }, { status: 400 }); }
 
   if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
-    return jsonResponse({ error: 'unsupported protocol' }, 400);
+    return jsonResponse({ error: 'unsupported protocol' }, { status: 400 });
   }
 
   const host = parsed.hostname.toLowerCase();
@@ -38,7 +30,7 @@ export const onRequestGet = async (context: { env: Env; request: Request }) => {
     /^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) ||
     /^172\.(1[6-9]|2\d|3[01])\./.test(host) || /^169\.254\./.test(host)
   ) {
-    return jsonResponse({ error: '不支持内网 / 本地地址' }, 400);
+    return jsonResponse({ error: '不支持内网 / 本地地址' }, { status: 400 });
   }
 
   try {
@@ -54,8 +46,8 @@ export const onRequestGet = async (context: { env: Env; request: Request }) => {
     title = title
       .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
       .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&#x27;/g, "'");
-    return jsonResponse({ title });
+    return jsonResponse({ title }, { headers: corsHeaders });
   } catch {
-    return jsonResponse({ error: 'fetch failed' }, 502);
+    return jsonResponse({ error: 'fetch failed' }, { status: 502 });
   }
 };

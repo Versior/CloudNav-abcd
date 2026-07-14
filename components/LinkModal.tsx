@@ -3,7 +3,6 @@ import { useModalA11y } from './useModalA11y';
 import { X, Sparkles, Loader2, Pin, Wand2, Trash2 } from 'lucide-react';
 import { LinkItem, Category, AIConfig } from '../types';
 import { generateLinkDescription, suggestCategory } from '../services/geminiService';
-import { AUTH_KEY } from '../constants/storageKeys';
 
 interface LinkModalProps {
   isOpen: boolean;
@@ -79,12 +78,10 @@ const LinkModal: React.FC<LinkModalProps> = ({ isOpen, onClose, onSave, onDelete
       const timer = setTimeout(async () => {
         if (autoFetchIcon) handleFetchIcon();
         if (!title.trim()) {
-          const authToken = localStorage.getItem(AUTH_KEY);
-          if (!authToken) return;
           let u = url;
           if (!u.startsWith('http://') && !u.startsWith('https://')) u = 'https://' + u;
           try {
-            const res = await fetch(`/api/fetchtitle?url=${encodeURIComponent(u)}`, { headers: { 'x-auth-password': authToken } });
+            const res = await fetch(`/api/fetchtitle?url=${encodeURIComponent(u)}`);
             if (res.ok) {
               const data = await res.json();
               if (data.title) setTitle(data.title);
@@ -114,22 +111,16 @@ const LinkModal: React.FC<LinkModalProps> = ({ isOpen, onClose, onSave, onDelete
       }
       
       // 将自定义图标保存到KV缓存
-      const authToken = localStorage.getItem('cloudnav_auth_token');
-      if (authToken) {
-        await fetch('/api/storage', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-auth-password': authToken
-          },
-          body: JSON.stringify({
-            saveConfig: 'favicon',
-            domain: domain,
-            icon: iconUrl
-          })
-        });
-        console.log(`Custom icon cached for domain: ${domain}`);
-      }
+      await fetch('/api/storage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          saveConfig: 'favicon',
+          domain: domain,
+          icon: iconUrl
+        })
+      });
+      console.log(`Custom icon cached for domain: ${domain}`);
     } catch (error) {
       console.log("Failed to cache custom icon", error);
     }
@@ -249,21 +240,15 @@ const LinkModal: React.FC<LinkModalProps> = ({ isOpen, onClose, onSave, onDelete
       
       // 将图标保存到KV缓存
       try {
-        const authToken = localStorage.getItem('cloudnav_auth_token');
-        if (authToken) {
-          await fetch('/api/storage', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-auth-password': authToken
-            },
-            body: JSON.stringify({
-              saveConfig: 'favicon',
-              domain: domain,
-              icon: iconUrl
-            })
-          });
-        }
+        await fetch('/api/storage', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            saveConfig: 'favicon',
+            domain: domain,
+            icon: iconUrl
+          })
+        });
       } catch (error) {
         console.log("Failed to cache icon", error);
       }

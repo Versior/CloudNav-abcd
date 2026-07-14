@@ -10,7 +10,10 @@ const callAI = async (task: 'description' | 'category', body: Record<string, unk
 
         const data = await response.json().catch(() => ({}));
         if (!response.ok) {
-            throw new Error(typeof data.error === 'string' ? data.error : 'AI 调用失败');
+            const detail = typeof data.error === 'string' && data.error.trim()
+                ? data.error.trim()
+                : `请求失败（HTTP ${response.status}）`;
+            throw new Error(detail);
         }
 
         return typeof data.text === 'string' ? data.text.trim() : null;

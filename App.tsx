@@ -29,7 +29,8 @@ import { parseBookmarks } from './services/bookmarkParser';
 import Icon from './components/Icon';
 import CommandPalette from './components/CommandPalette';
 import { useToast } from './components/Toast';
-import { VISITS_KEY } from './constants/storageKeys';
+import { AI_CONFIG_KEY, SITE_SETTINGS_KEY } from './constants/storageKeys';
+import { suggestCategory } from './services/geminiService';
 import LinkModal from './components/LinkModal';
 import AuthModal from './components/AuthModal';
 import CategoryManagerModal from './components/CategoryManagerModal';
@@ -65,23 +66,83 @@ const GITHUB_REPO_URL = 'https://github.com/Versior/CloudNav-abcd';
 const LOCAL_STORAGE_KEY = 'cloudnav_data_cache';
 const SEARCH_CONFIG_KEY = 'cloudnav_search_config';
 
+const DEFAULT_AI_CONFIG: AIConfig = {
+  provider: 'gemini',
+  apiKey: '',
+  baseUrl: '',
+  model: 'gemini-2.5-flash',
+};
+
+const readLocalAIConfig = (): AIConfig => {
+  try {
+    const saved = localStorage.getItem(AI_CONFIG_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved) as Partial<AIConfig>;
+      return {
+        ...DEFAULT_AI_CONFIG,
+        ...parsed,
+        hasApiKey: !!parsed.hasApiKey || !!parsed.apiKey,
+      };
+    }
+  } catch {}
+  return DEFAULT_AI_CONFIG;
+};
+
+const mergeClientAIConfig = (remote: Partial<AIConfig> = {}, local = readLocalAIConfig()): AIConfig => ({
+  provider: remote.provider || local.provider || 'gemini',
+  apiKey: remote.apiKey || local.apiKey || '',
+  baseUrl: remote.baseUrl !== undefined ? remote.baseUrl : local.baseUrl || '',
+  model: remote.model || local.model || 'gemini-2.5-flash',
+  hasApiKey: !!remote.hasApiKey || !!remote.apiKey || !!local.apiKey || !!local.hasApiKey,
+});
+
+const saveLocalAIConfig = (config: AIConfig): AIConfig => {
+  const next = {
+    ...DEFAULT_AI_CONFIG,
+    ...config,
+    hasApiKey: !!config.hasApiKey || !!config.apiKey,
+  };
+  localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(next));
+  return next;
+};
+
+const mergeLocalVisitState = (incomingLinks: LinkItem[]): LinkItem[] => {
+  try {
+    const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
+    if (!stored) return incomingLinks;
+    const localLinks = (JSON.parse(stored).links || []) as LinkItem[];
+    const localById = new Map(localLinks.map(link => [link.id, link]));
+    return incomingLinks.map(link => {
+      const local = localById.get(link.id);
+      if (!local) return link;
+      const visitCount = Math.max(link.visitCount || 0, local.visitCount || 0);
+      const lastVisitedAt = Math.max(link.lastVisitedAt || 0, local.lastVisitedAt || 0) || undefined;
+      return { ...link, visitCount, lastVisitedAt };
+    });
+  } catch {
+    return incomingLinks;
+  }
+};
+
 function App() {
   const { showToast } = useToast();
   const [isPaletteOpen, setIsPaletteOpen] = useState(false);
   const [selectedLinkId, setSelectedLinkId] = useState<string | null>(null);
   const [isOrganizeMode, setIsOrganizeMode] = useState(false);
+  const [isAiOrganizing, setIsAiOrganizing] = useState(false);
   const [organizeIndex, setOrganizeIndex] = useState(0);
   const [isSyncConflict, setIsSyncConflict] = useState(false);
   const [isAdvancedFilterOpen, setIsAdvancedFilterOpen] = useState(false);
   const [advancedFilters, setAdvancedFilters] = useState<Record<string, string | boolean | undefined>>({});
   const [syncConflictResolve, setSyncConflictResolve] = useState<{ useLocal: () => void; useCloud: () => void; merge: () => void } | null>(null);
 
-  // Visit tracking (localStorage only, not synced)
+  // Visit tracking stays local so opening links never waits on cloud sync.
   const recordVisit = (id: string) => {
     const nextLinks = links.map(l =>
       l.id === id ? { ...l, lastVisitedAt: Date.now(), visitCount: (l.visitCount || 0) + 1 } : l
     );
-    updateData(nextLinks, categories);
+    setLinks(nextLinks);
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ links: nextLinks, categories }));
   };
 
   // --- State ---
@@ -109,16 +170,11 @@ function App() {
   });
 
   // AI Config State
-  const [aiConfig, setAiConfig] = useState<AIConfig>({
-      provider: 'gemini',
-      apiKey: '',
-      baseUrl: '',
-      model: 'gemini-2.5-flash'
-  });
+  const [aiConfig, setAiConfig] = useState<AIConfig>(() => readLocalAIConfig());
 
   // Site Settings State
   const [siteSettings, setSiteSettings] = useState(() => {
-      const saved = localStorage.getItem('cloudnav_site_settings');
+      const saved = localStorage.getItem(SITE_SETTINGS_KEY);
       if (saved) {
           try {
               return JSON.parse(saved);
@@ -558,6 +614,18 @@ function App() {
             console.warn("Failed to fetch WebDAV config.", e);
         }
 
+        try {
+            const aiConfigRes = await fetch('/api/storage?getConfig=ai');
+            if (aiConfigRes.ok) {
+                const remoteConfig = await aiConfigRes.json();
+                const mergedConfig = mergeClientAIConfig(remoteConfig);
+                setAiConfig(mergedConfig);
+                localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(mergedConfig));
+            }
+        } catch (e) {
+            console.warn("Failed to fetch AI config.", e);
+        }
+
         // 获取数据
         let hasCloudData = false;
         try {
@@ -565,12 +633,13 @@ function App() {
             if (res.ok) {
                 const data = await res.json();
                 if (data.links && data.links.length > 0) {
-                    setLinks(data.links);
+                    const mergedLinks = mergeLocalVisitState(data.links);
+                    setLinks(mergedLinks);
                     setCategories(data.categories || DEFAULT_CATEGORIES);
-                    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(data));
-                    
+                    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ ...data, links: mergedLinks }));
+
                     // 加载链接图标缓存
-                    loadLinkIcons(data.links);
+                    loadLinkIcons(mergedLinks);
                     hasCloudData = true;
                 }
             } else if (res.status === 401) {
@@ -584,6 +653,7 @@ function App() {
         }
         
         // 无论是否有云端数据，都尝试从KV空间加载搜索配置和网站配置
+        let hasLoadedSearchConfig = false;
         try {
             const searchConfigRes = await fetch('/api/storage?getConfig=search');
             if (searchConfigRes.ok) {
@@ -596,6 +666,8 @@ function App() {
                     if (searchConfigData.selectedSource) {
                         setSelectedSearchSource(searchConfigData.selectedSource);
                     }
+                    localStorage.setItem(SEARCH_CONFIG_KEY, JSON.stringify(searchConfigData));
+                    hasLoadedSearchConfig = true;
                 }
             }
             
@@ -604,114 +676,58 @@ function App() {
             if (websiteConfigRes.ok) {
                 const websiteConfigData = await websiteConfigRes.json();
                 if (websiteConfigData) {
-                    setSiteSettings(prev => ({
-                        ...prev,
-                        title: websiteConfigData.title || prev.title,
-                        navTitle: websiteConfigData.navTitle || prev.navTitle,
-                        favicon: websiteConfigData.favicon || prev.favicon,
-                        cardStyle: websiteConfigData.cardStyle || prev.cardStyle,
-                        passwordExpiryDays: websiteConfigData.passwordExpiryDays !== undefined ? websiteConfigData.passwordExpiryDays : prev.passwordExpiryDays
-                    }));
+                    setSiteSettings(prev => {
+                        const next = {
+                            ...prev,
+                            title: websiteConfigData.title || prev.title,
+                            navTitle: websiteConfigData.navTitle || prev.navTitle,
+                            favicon: websiteConfigData.favicon || prev.favicon,
+                            cardStyle: websiteConfigData.cardStyle || prev.cardStyle,
+                            passwordExpiryDays: websiteConfigData.passwordExpiryDays !== undefined ? websiteConfigData.passwordExpiryDays : prev.passwordExpiryDays
+                        };
+                        localStorage.setItem(SITE_SETTINGS_KEY, JSON.stringify(next));
+                        return next;
+                    });
                 }
             }
         } catch (e) {
             console.warn("Failed to fetch configs from KV.", e);
         }
         
+        if (!hasLoadedSearchConfig) {
+            try {
+                const savedSearchConfig = localStorage.getItem(SEARCH_CONFIG_KEY);
+                if (savedSearchConfig) {
+                    const searchConfigData = JSON.parse(savedSearchConfig) as SearchConfig;
+                    if (searchConfigData && (searchConfigData.mode || searchConfigData.externalSources || searchConfigData.selectedSource)) {
+                        setSearchMode(searchConfigData.mode || 'external');
+                        setExternalSearchSources(searchConfigData.externalSources || []);
+                        if (searchConfigData.selectedSource) {
+                            setSelectedSearchSource(searchConfigData.selectedSource);
+                        }
+                        hasLoadedSearchConfig = true;
+                    }
+                }
+            } catch (e) {
+                console.warn("Failed to load local search config.", e);
+            }
+        }
+
+        if (!hasLoadedSearchConfig) {
+            setSearchMode('external');
+            setExternalSearchSources(getDefaultSearchSources());
+        }
+
         // 如果有云端数据，则不需要加载本地数据
         if (hasCloudData) {
+            setIsLoadingSearchConfig(false);
             setIsCheckingAuth(false);
             return;
         }
-        
+
         // 如果没有云端数据，则加载本地数据
         loadFromLocal();
-        
-        // 如果从KV空间加载搜索配置失败，直接使用默认配置（不使用localStorage回退）
-        setSearchMode('external');
-        setExternalSearchSources([
-            {
-                id: 'bing',
-                name: '必应',
-                url: 'https://www.bing.com/search?q={query}',
-                icon: 'Search',
-                enabled: true,
-                createdAt: Date.now()
-            },
-            {
-                id: 'google',
-                name: 'Google',
-                url: 'https://www.google.com/search?q={query}',
-                icon: 'Search',
-                enabled: true,
-                createdAt: Date.now()
-            },
-            {
-                id: 'baidu',
-                name: '百度',
-                url: 'https://www.baidu.com/s?wd={query}',
-                icon: 'Globe',
-                enabled: true,
-                createdAt: Date.now()
-            },
-            {
-                id: 'sogou',
-                name: '搜狗',
-                url: 'https://www.sogou.com/web?query={query}',
-                icon: 'Globe',
-                enabled: true,
-                createdAt: Date.now()
-            },
-            {
-                id: 'yandex',
-                name: 'Yandex',
-                url: 'https://yandex.com/search/?text={query}',
-                icon: 'Globe',
-                enabled: true,
-                createdAt: Date.now()
-            },
-            {
-                id: 'github',
-                name: 'GitHub',
-                url: 'https://github.com/search?q={query}',
-                icon: 'Github',
-                enabled: true,
-                createdAt: Date.now()
-            },
-            {
-                id: 'linuxdo',
-                name: 'Linux.do',
-                url: 'https://linux.do/search?q={query}',
-                icon: 'Terminal',
-                enabled: true,
-                createdAt: Date.now()
-            },
-            {
-                id: 'bilibili',
-                name: 'B站',
-                url: 'https://search.bilibili.com/all?keyword={query}',
-                icon: 'Play',
-                enabled: true,
-                createdAt: Date.now()
-            },
-            {
-                id: 'youtube',
-                name: 'YouTube',
-                url: 'https://www.youtube.com/results?search_query={query}',
-                icon: 'Video',
-                enabled: true,
-                createdAt: Date.now()
-            },
-            {
-                id: 'wikipedia',
-                name: '维基',
-                url: 'https://zh.wikipedia.org/wiki/Special:Search?search={query}',
-                icon: 'BookOpen',
-                enabled: true,
-                createdAt: Date.now()
-            }
-        ]);
-        
+
         setIsLoadingSearchConfig(false);
         setIsCheckingAuth(false);
     };
@@ -766,7 +782,7 @@ function App() {
   const handleViewModeChange = (cardStyle: 'detailed' | 'simple') => {
     const newSiteSettings = { ...siteSettings, cardStyle };
     setSiteSettings(newSiteSettings);
-    localStorage.setItem('cloudnav_site_settings', JSON.stringify(newSiteSettings));
+    localStorage.setItem(SITE_SETTINGS_KEY, JSON.stringify(newSiteSettings));
   };
 
   // --- Batch Edit Functions ---
@@ -884,10 +900,11 @@ function App() {
                 if (res.ok) {
                     const data = await res.json();
                     if (data.links && data.links.length > 0) {
-                        setLinks(data.links);
+                        const mergedLinks = mergeLocalVisitState(data.links);
+                        setLinks(mergedLinks);
                         setCategories(data.categories || DEFAULT_CATEGORIES);
-                        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(data));
-                        loadLinkIcons(data.links);
+                        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ ...data, links: mergedLinks }));
+                        loadLinkIcons(mergedLinks);
                     } else {
                         localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ links, categories }));
                         syncToCloud(links, categories);
@@ -905,7 +922,9 @@ function App() {
                 if (aiConfigRes.ok) {
                     const aiConfigData = await aiConfigRes.json();
                     if (aiConfigData && Object.keys(aiConfigData).length > 0) {
-                        setAiConfig(aiConfigData);
+                        const mergedConfig = mergeClientAIConfig(aiConfigData);
+                        setAiConfig(mergedConfig);
+                        localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(mergedConfig));
                     }
                 }
             } catch (e) {
@@ -1242,11 +1261,12 @@ function App() {
   };
 
   const handleSaveAIConfig = async (config: AIConfig, newSiteSettings?: any) => {
-      setAiConfig(config);
+      const localConfig = saveLocalAIConfig(config);
+      setAiConfig(localConfig);
 
       if (newSiteSettings) {
           setSiteSettings(newSiteSettings);
-          localStorage.setItem('cloudnav_site_settings', JSON.stringify(newSiteSettings));
+          localStorage.setItem(SITE_SETTINGS_KEY, JSON.stringify(newSiteSettings));
       }
 
       if (authToken) {
@@ -1258,13 +1278,17 @@ function App() {
                   },
                   body: JSON.stringify({
                       saveConfig: 'ai',
-                      config
+                      config: localConfig
                   })
               });
 
               if (response.ok) {
                   const data = await response.json();
-                  if (data.config) setAiConfig(data.config);
+                  if (data.config) {
+                      const mergedConfig = mergeClientAIConfig(data.config, localConfig);
+                      setAiConfig(mergedConfig);
+                      localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(mergedConfig));
+                  }
               } else {
                   console.error('Failed to save AI config to KV:', response.statusText);
               }
@@ -1296,7 +1320,8 @@ function App() {
   };
 
   const handleRestoreAIConfig = async (config: AIConfig) => {
-      setAiConfig(config);
+      const localConfig = saveLocalAIConfig(config);
+      setAiConfig(localConfig);
 
       if (authToken) {
           try {
@@ -1307,13 +1332,17 @@ function App() {
                   },
                   body: JSON.stringify({
                       saveConfig: 'ai',
-                      config
+                      config: localConfig
                   })
               });
 
               if (response.ok) {
                   const data = await response.json();
-                  if (data.config) setAiConfig(data.config);
+                  if (data.config) {
+                      const mergedConfig = mergeClientAIConfig(data.config, localConfig);
+                      setAiConfig(mergedConfig);
+                      localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(mergedConfig));
+                  }
               } else {
                   console.error('Failed to restore AI config to KV:', response.statusText);
               }
@@ -1765,6 +1794,35 @@ function App() {
     return groupedByCategory;
   }, [links, selectedCategory, searchQuery, categories, unlockedCategoryIds]);
 
+
+  const handleAiOrganizeCurrent = async () => {
+    const current = inboxLinks[organizeIndex];
+    if (!current || isAiOrganizing) return;
+    if (!aiConfig.hasApiKey && !aiConfig.apiKey) {
+      alert('请先在设置里配置并保存 AI API Key');
+      setIsSettingsModalOpen(true);
+      return;
+    }
+
+    setIsAiOrganizing(true);
+    try {
+      const availableCategories = categories
+        .filter(c => c.id !== INBOX_ID && !c.password && c.id !== 'all')
+        .map(c => ({ id: c.id, name: c.name }));
+      const categoryId = await suggestCategory(current.title, current.url, availableCategories, aiConfig);
+      const targetCategoryId = categoryId && categories.some(c => c.id === categoryId && c.id !== INBOX_ID) ? categoryId : 'common';
+      const nextLinks = links.map(l => l.id === current.id ? { ...l, categoryId: targetCategoryId, status: 'read' as const, updatedAt: Date.now() } : l);
+      updateData(nextLinks, categories);
+      showToast(`已整理到 ${categories.find(c => c.id === targetCategoryId)?.name || '常用推荐'}`, { type: 'success' });
+      if (organizeIndex < inboxLinks.length - 1) setOrganizeIndex(i => i + 1);
+      else { setIsOrganizeMode(false); setOrganizeIndex(0); }
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'AI 整理失败';
+      alert(`AI 整理失败：${message}`);
+    } finally {
+      setIsAiOrganizing(false);
+    }
+  };
 
   // --- Render Components ---
 
@@ -2520,8 +2578,23 @@ function App() {
                 if (organizeIndex < inboxLinks.length - 1) setOrganizeIndex(i => i + 1);
                 else { setIsOrganizeMode(false); setOrganizeIndex(0); }
               }}
+              onAiOrganize={handleAiOrganizeCurrent}
+              isAiOrganizing={isAiOrganizing}
               onExit={() => { setIsOrganizeMode(false); setOrganizeIndex(0); }}
             />
+
+            {!searchQuery && selectedCategory === 'all' && (
+              <HomeDashboard
+                links={links}
+                categories={categories}
+                onOpenInbox={() => { setSelectedCategory(INBOX_ID); setOrganizeIndex(0); setIsOrganizeMode(true); }}
+                onClickLink={(link) => { recordVisit(link.id); window.open(link.url, '_blank'); }}
+                onSelectCategory={(categoryId) => {
+                  const category = categories.find(c => c.id === categoryId);
+                  if (category) handleCategoryClick(category);
+                }}
+              />
+            )}
 
             {/* 1. Pinned Area (Custom Top Area) */}
             {pinnedLinks.length > 0 && !searchQuery && (selectedCategory === 'all') && (
@@ -2596,14 +2669,6 @@ function App() {
                         </div>
                     )}
                 </section>
-            )}
-
-            {!searchQuery && selectedCategory === 'all' && (
-              <HomeDashboard
-                links={links}
-                onOpenInbox={() => { setSelectedCategory(INBOX_ID); setOrganizeIndex(0); }}
-                onClickLink={(link) => { recordVisit(link.id); window.open(link.url, '_blank'); }}
-              />
             )}
 
             {/* 2. Main Grid */}

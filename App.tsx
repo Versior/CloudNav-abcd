@@ -124,6 +124,18 @@ const mergeLocalVisitState = (incomingLinks: LinkItem[]): LinkItem[] => {
   }
 };
 
+const normalizeCategories = (value: unknown): Category[] => {
+  const source = Array.isArray(value) ? value : DEFAULT_CATEGORIES;
+  const cleaned = source.filter((item): item is Category => !!item && typeof item === 'object' && typeof (item as Category).id === 'string' && typeof (item as Category).name === 'string');
+  return cleaned.length > 0 ? cleaned : DEFAULT_CATEGORIES;
+};
+
+const normalizeLinks = (value: unknown): LinkItem[] => {
+  const source = Array.isArray(value) ? value : INITIAL_LINKS;
+  const cleaned = source.filter((item): item is LinkItem => !!item && typeof item === 'object' && typeof (item as LinkItem).id === 'string' && typeof (item as LinkItem).title === 'string' && typeof (item as LinkItem).url === 'string');
+  return cleaned.length > 0 ? cleaned : INITIAL_LINKS;
+};
+
 function App() {
   const { showToast } = useToast();
   const [isPaletteOpen, setIsPaletteOpen] = useState(false);
@@ -267,7 +279,7 @@ function App() {
     if (stored) {
       try {
         const parsed = JSON.parse(stored);
-        let loadedCategories = parsed.categories || DEFAULT_CATEGORIES;
+        let loadedCategories = normalizeCategories(parsed.categories);
         
         // 确保"常用推荐"分类始终存在，并确保它是第一个分类
         if (!loadedCategories.some(c => c.id === 'common')) {
@@ -290,7 +302,7 @@ function App() {
         
         // 检查是否有链接的categoryId不存在于当前分类中，将这些链接移动到"常用推荐"
         const validCategoryIds = new Set(loadedCategories.map(c => c.id));
-        let loadedLinks = parsed.links || INITIAL_LINKS;
+        let loadedLinks = normalizeLinks(parsed.links);
         loadedLinks = loadedLinks.map(link => {
           if (!validCategoryIds.has(link.categoryId)) {
             return { ...link, categoryId: 'common' };
@@ -633,10 +645,11 @@ function App() {
             if (res.ok) {
                 const data = await res.json();
                 if (data.links && data.links.length > 0) {
-                    const mergedLinks = mergeLocalVisitState(data.links);
+                    const mergedLinks = mergeLocalVisitState(normalizeLinks(data.links));
+                    const nextCategories = normalizeCategories(data.categories);
                     setLinks(mergedLinks);
-                    setCategories(data.categories || DEFAULT_CATEGORIES);
-                    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ ...data, links: mergedLinks }));
+                    setCategories(nextCategories);
+                    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ ...data, links: mergedLinks, categories: nextCategories }));
 
                     // 加载链接图标缓存
                     loadLinkIcons(mergedLinks);
@@ -900,10 +913,11 @@ function App() {
                 if (res.ok) {
                     const data = await res.json();
                     if (data.links && data.links.length > 0) {
-                        const mergedLinks = mergeLocalVisitState(data.links);
+                        const mergedLinks = mergeLocalVisitState(normalizeLinks(data.links));
+                        const nextCategories = normalizeCategories(data.categories);
                         setLinks(mergedLinks);
-                        setCategories(data.categories || DEFAULT_CATEGORIES);
-                        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ ...data, links: mergedLinks }));
+                        setCategories(nextCategories);
+                        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ ...data, links: mergedLinks, categories: nextCategories }));
                         loadLinkIcons(mergedLinks);
                     } else {
                         localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ links, categories }));

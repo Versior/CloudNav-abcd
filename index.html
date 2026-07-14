@@ -15,7 +15,15 @@
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js').catch(() => {});
+          navigator.serviceWorker.getRegistrations()
+            .then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())))
+            .then((removed) => {
+              if (removed.some(Boolean) && !sessionStorage.getItem('navix_sw_cleared')) {
+                sessionStorage.setItem('navix_sw_cleared', '1');
+                window.location.reload();
+              }
+            })
+            .catch(() => {});
         });
       }
     </script>

@@ -120,6 +120,20 @@ const BackupModal: React.FC<BackupModalProps> = ({
     downloadHtmlFile(html, `bookmarks_${dateStr}.html`);
   };
 
+  const sanitizeLinksForBackup = (sourceLinks: LinkItem[]) => sourceLinks.map(link => ({
+    ...link,
+    credentials: link.credentials?.map(credential => ({
+      id: credential.id,
+      label: credential.label,
+      username: credential.username,
+      account: credential.account,
+      passwordCipher: credential.passwordCipher,
+      passwordHint: credential.passwordHint,
+      remark: credential.remark,
+      updatedAt: credential.updatedAt,
+    })),
+  }));
+
   const handleExportJson = () => {
     const safeAIConfig = aiConfig
       ? {
@@ -129,7 +143,7 @@ const BackupModal: React.FC<BackupModalProps> = ({
         }
       : undefined;
 
-    const data = { links, categories, searchConfig, aiConfig: safeAIConfig };
+    const data = { links: sanitizeLinksForBackup(links), categories, searchConfig, aiConfig: safeAIConfig };
     const json = JSON.stringify(data, null, 2);
     const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -358,7 +372,7 @@ const BackupModal: React.FC<BackupModalProps> = ({
                 <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-700/30 flex items-center justify-between">
                     <div>
                         <h5 className="text-sm font-medium dark:text-slate-200">导出 navix_backup.json 文件</h5>
-                        <p className="text-xs text-slate-500 mt-1">与 WebDAV 备份格式一致，兼容旧 cloudnav_backup.json 备份</p>
+                        <p className="text-xs text-slate-500 mt-1">与 WebDAV 备份格式一致，账号密码只导出加密密文，恢复后需凭据主密码解锁</p>
                     </div>
                     <button 
                         onClick={handleExportJson}

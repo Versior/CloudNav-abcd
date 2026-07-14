@@ -1,3 +1,14 @@
+export interface SiteCredential {
+  id: string;
+  label?: string;
+  username?: string;
+  account?: string;
+  passwordCipher?: string;
+  passwordHint?: string;
+  remark?: string;
+  updatedAt: number;
+}
+
 export interface LinkItem {
   id: string;
   title: string;
@@ -15,6 +26,7 @@ export interface LinkItem {
   visitCount?: number;
   lastVisitedAt?: number;
   note?: string;
+  credentials?: SiteCredential[];
   status?: 'unread' | 'read' | 'favorite' | 'archived';
   health?: {
     status: 'unknown' | 'ok' | 'broken' | 'redirected';

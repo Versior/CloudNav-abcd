@@ -1,6 +1,10 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@source "./index.html";
+@source "./*.tsx";
+@source "./components/**/*.tsx";
+@source "./services/**/*.tsx";
+@source "./hooks/**/*.tsx";
+@custom-variant dark (&:where(.dark, .dark *));
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;

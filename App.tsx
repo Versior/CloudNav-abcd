@@ -2968,7 +2968,8 @@ function App() {
             onClose={() => setSelectedLinkId(null)}
             categories={categories}
             onUpdate={(linkId, updates) => {
-              setLinks(prev => prev.map(l => l.id === linkId ? { ...l, ...updates } : l));
+              const nextLinks = links.map(l => l.id === linkId ? { ...l, ...updates, updatedAt: Date.now() } : l);
+              updateData(nextLinks, categories);
             }}
           />
 

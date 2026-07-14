@@ -2,8 +2,23 @@ import { Category, LinkItem, WebDavConfig, SearchConfig, AIConfig } from "../typ
 
 type BackupData = { links: LinkItem[], categories: Category[], searchConfig?: SearchConfig, aiConfig?: AIConfig };
 
+const sanitizeLinks = (links: LinkItem[]): LinkItem[] => links.map(link => ({
+    ...link,
+    credentials: link.credentials?.map(credential => ({
+        id: credential.id,
+        label: credential.label,
+        username: credential.username,
+        account: credential.account,
+        passwordCipher: credential.passwordCipher,
+        passwordHint: credential.passwordHint,
+        remark: credential.remark,
+        updatedAt: credential.updatedAt,
+    })),
+}));
+
 const sanitizeBackupData = (data: BackupData): BackupData => ({
     ...data,
+    links: sanitizeLinks(data.links),
     aiConfig: data.aiConfig ? { ...data.aiConfig, apiKey: '' } : undefined,
 });
 

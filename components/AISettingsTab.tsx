@@ -12,7 +12,7 @@ interface AISettingsTabProps {
   onUpdateLinks: (links: LinkItem[]) => void;
 }
 
-type CategorizeScope = 'all' | 'inbox' | 'uncategorized';
+type CategorizeScope = 'all' | 'inbox' | 'uncategorized' | 'category';
 
 interface CategoryPreviewItem {
   linkId: string;
@@ -28,6 +28,8 @@ const AISettingsTab: React.FC<AISettingsTabProps> = ({ config, onChange, links, 
   const [processingLabel, setProcessingLabel] = useState('');
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [categorizeScope, setCategorizeScope] = useState<CategorizeScope>('all');
+  const [categorizeCategoryId, setCategorizeCategoryId] = useState('');
+  const [includeSubCategories, setIncludeSubCategories] = useState(true);
   const [categoryPreview, setCategoryPreview] = useState<CategoryPreviewItem[]>([]);
   const [selectedPreviewIds, setSelectedPreviewIds] = useState<Set<string>>(new Set());
   const [testMessage, setTestMessage] = useState('');
@@ -70,7 +72,52 @@ const AISettingsTab: React.FC<AISettingsTabProps> = ({ config, onChange, links, 
     const source = links.filter(link => !link.deletedAt);
     if (categorizeScope === 'inbox') return source.filter(link => link.categoryId === INBOX_ID);
     if (categorizeScope === 'uncategorized') return source.filter(link => !validCategoryIds.has(link.categoryId) || link.categoryId === INBOX_ID);
+    if (categorizeScope === 'category') {
+      if (!categorizeCategoryId) return [];
+      const childIds = includeSubCategories ? categories.filter(c => c.parentId === categorizeCategoryId).map(c => c.id) : [];
+      const ids = new Set([categorizeCategoryId, ...childIds]);
+      return source.filter(link => ids.has(link.categoryId));
+    }
     return source;
+  };
+
+  const runCategorizePreview = async (targetLinks: LinkItem[], availableCategories: Array<Pick<Category, 'id' | 'name'>>) => {
+    const preview: CategoryPreviewItem[] = [];
+    let nextIndex = 0;
+    let completed = 0;
+    const workerCount = Math.min(4, targetLinks.length);
+
+    const worker = async () => {
+      while (!shouldStopRef.current && nextIndex < targetLinks.length) {
+        const link = targetLinks[nextIndex++];
+        try {
+          const categoryId = await suggestCategory(link.title, link.url, availableCategories, config);
+          const isValid = categoryId && availableCategories.some(c => c.id === categoryId);
+          preview.push({
+            linkId: link.id,
+            title: link.title,
+            url: link.url,
+            fromCategoryId: link.categoryId,
+            toCategoryId: isValid ? categoryId : undefined,
+            error: isValid ? undefined : 'AI 未返回可用分类',
+          });
+        } catch (e) {
+          preview.push({
+            linkId: link.id,
+            title: link.title,
+            url: link.url,
+            fromCategoryId: link.categoryId,
+            error: e instanceof Error ? e.message : '未知错误',
+          });
+        } finally {
+          completed += 1;
+          setProgress({ current: completed, total: targetLinks.length });
+        }
+      }
+    };
+
+    await Promise.all(Array.from({ length: workerCount }, () => worker()));
+    return preview;
   };
 
   const handleBulkGenerate = async () => {
@@ -148,7 +195,15 @@ const AISettingsTab: React.FC<AISettingsTabProps> = ({ config, onChange, links, 
         return;
     }
 
-    if (!confirm(`将使用 AI 为 ${targetLinks.length} 个书签生成分类预览，不会立即修改数据。确定继续吗？`)) return;
+    const scopeLabel = categorizeScope === 'category'
+        ? `文件夹「${getCategoryName(categorizeCategoryId)}」${includeSubCategories ? '及子文件夹' : ''}`
+        : categorizeScope === 'inbox'
+            ? '待整理'
+            : categorizeScope === 'uncategorized'
+                ? '未分类 / 待整理'
+                : '全部书签';
+
+    if (!confirm(`将使用 AI 为 ${scopeLabel} 中的 ${targetLinks.length} 个书签生成分类预览，会并发处理以加快速度，不会立即修改数据。确定继续吗？`)) return;
 
     setIsProcessing(true);
     setProcessingLabel('正在测试 AI 接口');
@@ -167,34 +222,7 @@ const AISettingsTab: React.FC<AISettingsTabProps> = ({ config, onChange, links, 
     setCategoryPreview([]);
     setSelectedPreviewIds(new Set());
 
-    const preview: CategoryPreviewItem[] = [];
-
-    for (let i = 0; i < targetLinks.length; i++) {
-        if (shouldStopRef.current) break;
-
-        const link = targetLinks[i];
-        try {
-            const categoryId = await suggestCategory(link.title, link.url, availableCategories, config);
-            const isValid = categoryId && availableCategories.some(c => c.id === categoryId);
-            preview.push({
-                linkId: link.id,
-                title: link.title,
-                url: link.url,
-                fromCategoryId: link.categoryId,
-                toCategoryId: isValid ? categoryId : undefined,
-                error: isValid ? undefined : 'AI 未返回可用分类',
-            });
-        } catch (e) {
-            preview.push({
-                linkId: link.id,
-                title: link.title,
-                url: link.url,
-                fromCategoryId: link.categoryId,
-                error: e instanceof Error ? e.message : '未知错误',
-            });
-        }
-        setProgress({ current: i + 1, total: targetLinks.length });
-    }
+    const preview = await runCategorizePreview(targetLinks, availableCategories);
 
     const changedIds = new Set(preview.filter(item => item.toCategoryId && item.toCategoryId !== item.fromCategoryId).map(item => item.linkId));
     setCategoryPreview(preview);
@@ -339,13 +367,28 @@ const AISettingsTab: React.FC<AISettingsTabProps> = ({ config, onChange, links, 
                             <FolderTree size={16} /> 生成 AI 分类预览
                         </button>
                     </div>
-                    <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
                         <span>整理范围</span>
                         <select value={categorizeScope} onChange={(e) => setCategorizeScope(e.target.value as CategorizeScope)} className="px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 outline-none">
                             <option value="all">全部书签</option>
                             <option value="inbox">待整理</option>
                             <option value="uncategorized">未分类 / 待整理</option>
+                            <option value="category">指定文件夹</option>
                         </select>
+                        {categorizeScope === 'category' && (
+                            <>
+                                <select value={categorizeCategoryId} onChange={(e) => setCategorizeCategoryId(e.target.value)} className="min-w-40 px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 outline-none">
+                                    <option value="">选择文件夹</option>
+                                    {categories.filter(c => c.id !== INBOX_ID).map(category => (
+                                        <option key={category.id} value={category.id}>{category.parentId ? '— ' : ''}{category.name}</option>
+                                    ))}
+                                </select>
+                                <label className="inline-flex items-center gap-1">
+                                    <input type="checkbox" checked={includeSubCategories} onChange={e => setIncludeSubCategories(e.target.checked)} />
+                                    含子文件夹
+                                </label>
+                            </>
+                        )}
                     </div>
                 </div>
             )}

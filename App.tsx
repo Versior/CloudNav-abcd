@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Search, Plus, Upload, Moon, Sun, Menu, 
   Trash2, Edit2, Loader2, Cloud, CheckCircle2, AlertCircle,
-  Pin, Settings, Lock, CloudCog, Github, GitFork, GripVertical, Save, CheckSquare, LogOut, ExternalLink, X
+  Pin, Settings, Lock, CloudCog, Github, GitFork, GripVertical, Save, CheckSquare, LogOut, ExternalLink, X, Filter
 } from 'lucide-react';
 import {
   DndContext,
@@ -48,6 +48,7 @@ import OrganizeModeBar from './components/OrganizeModeBar';
 import AdvancedSearchBar from './components/AdvancedSearchBar';
 import ModalErrorBoundary from './components/ModalErrorBoundary';
 import { getDefaultSearchSources } from './services/defaultSearchSources';
+import { matchesFilters, matchesQuery, parseSearchQuery, sortByRelevance } from './services/searchService';
 
 const getSearchSourceIconUrl = (url: string) => {
   try {
@@ -1709,104 +1710,74 @@ function App() {
 
   const inboxLinks = useMemo(() => links.filter(l => l.categoryId === INBOX_ID && !isCategoryLocked(l.categoryId)), [links, categories, unlockedCategoryIds]);
 
-  const displayedLinks = useMemo(() => {
-    let result = links;
-    
-    // Security Filter: Always hide links from locked categories
-    result = result.filter(l => !isCategoryLocked(l.categoryId));
+  const advancedFilterActive = useMemo(() => Object.values(advancedFilters).some(value => value !== undefined && value !== '' && value !== false), [advancedFilters]);
 
-    // Search Filter
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      result = result.filter(l => {
-        const credentialText = (l.credentials || [])
-          .flatMap(c => [c.label, c.username, c.account, c.remark])
-          .filter(Boolean)
-          .join(' ');
-        return (
-          l.title.toLowerCase().includes(q) ||
-          l.url.toLowerCase().includes(q) ||
-          (l.description && l.description.toLowerCase().includes(q)) ||
-          (l.note && l.note.toLowerCase().includes(q)) ||
-          (l.tags || []).some(t => t.toLowerCase().includes(q)) ||
-          credentialText.toLowerCase().includes(q)
-        );
-      });
+  const allTags = useMemo(() => {
+    return Array.from(new Set(links.flatMap(link => link.tags || []))).sort((a, b) => a.localeCompare(b));
+  }, [links]);
+
+  const matchesAdvancedFilters = (link: LinkItem) => {
+    if (advancedFilters.status && link.status !== advancedFilters.status) return false;
+    if (advancedFilters.tag && !link.tags?.includes(String(advancedFilters.tag))) return false;
+    if (advancedFilters.hasNote && !link.note?.trim()) return false;
+    if (advancedFilters.untagged && (link.tags || []).length > 0) return false;
+    if (advancedFilters.broken && link.health?.status !== 'broken') return false;
+    return true;
+  };
+
+  const sortByManualOrder = (items: LinkItem[]) => [...items].sort((a, b) => {
+    const aOrder = a.order !== undefined ? a.order : a.createdAt;
+    const bOrder = b.order !== undefined ? b.order : b.createdAt;
+    return aOrder - bOrder;
+  });
+
+  const displayedLinks = useMemo(() => {
+    const parsedQuery = parseSearchQuery(searchQuery);
+    const hasSearch = searchQuery.trim().length > 0;
+    let result = links.filter(l => !isCategoryLocked(l.categoryId) && !l.deletedAt);
+
+    if (hasSearch) {
+      result = result.filter(l => matchesFilters(l, parsedQuery, categories) && matchesQuery(l, parsedQuery.text));
     }
 
-    // Category Filter
+    if (advancedFilterActive) {
+      result = result.filter(matchesAdvancedFilters);
+    }
+
     if (selectedCategory !== 'all') {
-      // 获取当前分类及其所有子分类的ID
       const subCategoryIds = categories.filter(c => c.parentId === selectedCategory).map(c => c.id);
       result = result.filter(l => l.categoryId === selectedCategory || subCategoryIds.includes(l.categoryId));
     }
-    
-    // 按照order字段排序，如果没有order字段则按创建时间排序
-    // 修改排序逻辑：order值越大排在越前面，新增的卡片order值最大，会排在最前面
-    // 我们需要反转这个排序，让新增的卡片(order值最大)排在最后面
-    return result.sort((a, b) => {
-      const aOrder = a.order !== undefined ? a.order : a.createdAt;
-      const bOrder = b.order !== undefined ? b.order : b.createdAt;
-      // 改为升序排序，这样order值小(旧卡片)的排在前面，order值大(新卡片)的排在后面
-      return aOrder - bOrder;
-    });
-  }, [links, selectedCategory, searchQuery, categories, unlockedCategoryIds]);
+
+    return hasSearch ? sortByRelevance(result, parsedQuery.text || searchQuery) : sortByManualOrder(result);
+  }, [links, selectedCategory, searchQuery, advancedFilters, advancedFilterActive, categories, unlockedCategoryIds]);
 
   // 计算其他目录的搜索结果
   const otherCategoryResults = useMemo<Record<string, LinkItem[]>>(() => {
-    if (!searchQuery.trim() || selectedCategory === 'all') {
+    if ((!searchQuery.trim() && !advancedFilterActive) || selectedCategory === 'all') {
       return {};
     }
 
-    const q = searchQuery.toLowerCase();
-    
-    // 获取其他目录中匹配的链接
+    const parsedQuery = parseSearchQuery(searchQuery);
+    const currentCategoryIds = new Set([
+      selectedCategory,
+      ...categories.filter(c => c.parentId === selectedCategory).map(c => c.id),
+    ]);
+
     const otherLinks = links.filter(link => {
-      // 排除当前目录的链接
-      if (link.categoryId === selectedCategory) {
-        return false;
-      }
-      
-      // 排除锁定的目录
-      if (isCategoryLocked(link.categoryId)) {
-        return false;
-      }
-      
-      // 搜索匹配
-      const credentialText = (link.credentials || [])
-        .flatMap(c => [c.label, c.username, c.account, c.remark])
-        .filter(Boolean)
-        .join(' ');
-      return (
-        link.title.toLowerCase().includes(q) ||
-        link.url.toLowerCase().includes(q) ||
-        (link.description && link.description.toLowerCase().includes(q)) ||
-        (link.note && link.note.toLowerCase().includes(q)) ||
-        (link.tags || []).some(t => t.toLowerCase().includes(q)) ||
-        credentialText.toLowerCase().includes(q)
-      );
+      if (currentCategoryIds.has(link.categoryId)) return false;
+      if (isCategoryLocked(link.categoryId) || link.deletedAt) return false;
+      if (searchQuery.trim() && (!matchesFilters(link, parsedQuery, categories) || !matchesQuery(link, parsedQuery.text))) return false;
+      return !advancedFilterActive || matchesAdvancedFilters(link);
     });
 
-    // 按目录分组
-    const groupedByCategory = otherLinks.reduce((acc, link) => {
-      if (!acc[link.categoryId]) {
-        acc[link.categoryId] = [];
-      }
+    return otherLinks.reduce((acc, link) => {
+      if (!acc[link.categoryId]) acc[link.categoryId] = [];
       acc[link.categoryId].push(link);
+      acc[link.categoryId] = searchQuery.trim() ? sortByRelevance(acc[link.categoryId], parsedQuery.text || searchQuery) : sortByManualOrder(acc[link.categoryId]);
       return acc;
     }, {} as Record<string, LinkItem[]>);
-
-    // 对每个目录内的链接进行排序
-    Object.keys(groupedByCategory).forEach(categoryId => {
-      groupedByCategory[categoryId].sort((a, b) => {
-        const aOrder = a.order !== undefined ? a.order : a.createdAt;
-        const bOrder = b.order !== undefined ? b.order : b.createdAt;
-        return aOrder - bOrder;
-      });
-    });
-
-    return groupedByCategory;
-  }, [links, selectedCategory, searchQuery, categories, unlockedCategoryIds]);
+  }, [links, selectedCategory, searchQuery, advancedFilters, advancedFilterActive, categories, unlockedCategoryIds]);
 
 
   const handleAiOrganizeCurrent = async () => {
@@ -2471,7 +2442,7 @@ function App() {
                       handleExternalSearch();
                     }
                   }}
-                  className="w-full pl-9 pr-4 py-2 rounded-full bg-slate-100 dark:bg-slate-700/50 border-none text-sm focus:ring-2 focus:ring-blue-500 dark:text-white placeholder-slate-400 outline-none transition-all"
+                  className="w-full pl-9 pr-20 py-2 rounded-full bg-slate-100 dark:bg-slate-700/50 border-none text-sm focus:ring-2 focus:ring-blue-500 dark:text-white placeholder-slate-400 outline-none transition-all"
                   // 移动端优化：防止页面缩放
                   style={{ fontSize: '16px' }}
                   inputMode="search"
@@ -2481,13 +2452,32 @@ function App() {
                 {searchMode === 'external' && searchQuery.trim() && (
                   <button
                     onClick={handleExternalSearch}
-                    className="absolute right-10 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-blue-500"
+                    className="absolute right-16 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-blue-500"
                     title="执行站外搜索"
                   >
                     <ExternalLink size={14} />
                   </button>
                 )}
                 
+                {searchMode === 'internal' && (
+                  <button
+                    onClick={() => setIsAdvancedFilterOpen(open => !open)}
+                    className={`absolute right-9 top-1/2 -translate-y-1/2 p-1 rounded-full transition-all ${advancedFilterActive ? 'text-blue-600 bg-blue-100 dark:bg-blue-900/40 dark:text-blue-300' : 'text-slate-400 hover:text-blue-500 hover:bg-slate-200 dark:hover:bg-slate-600'}`}
+                    title="高级筛选"
+                  >
+                    <Filter size={14} />
+                  </button>
+                )}
+
+                <AdvancedSearchBar
+                  isOpen={isAdvancedFilterOpen && searchMode === 'internal'}
+                  onClose={() => setIsAdvancedFilterOpen(false)}
+                  tags={allTags}
+                  workspaces={[]}
+                  filters={advancedFilters}
+                  onFilterChange={(next) => setAdvancedFilters(current => ({ ...current, ...next }))}
+                />
+
                 {searchQuery.trim() && (
                   <button
                     onClick={() => setSearchQuery('')}

@@ -20,7 +20,7 @@ const timeAgo = (ts: number) => {
 };
 
 const HomeDashboard: React.FC<HomeDashboardProps> = ({ links, categories, onOpenInbox, onClickLink, onSelectCategory }) => {
-  const [foldersCollapsed, setFoldersCollapsed] = useState(false);
+  const [foldersCollapsed, setFoldersCollapsed] = useState(true);
   const normalLinks = links.filter(l => l.categoryId !== INBOX_ID && !l.deletedAt);
   const inboxLinks = links.filter(l => l.categoryId === INBOX_ID && !l.deletedAt);
   const brokenLinks = normalLinks.filter(l => l.health?.status === 'broken' || l.health?.status === 'redirected');

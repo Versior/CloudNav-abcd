@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { Key, Sparkles, PauseCircle, FolderTree, Check, X } from 'lucide-react';
 import { AIConfig, LinkItem, Category, INBOX_ID } from '../types';
 import { generateLinkDescription, suggestCategory, testAIConnection } from '../services/geminiService';
+import { normalizeOpenAIEndpoint } from '../services/openaiEndpoint';
 
 interface AISettingsTabProps {
   config: AIConfig;
@@ -33,6 +34,14 @@ const AISettingsTab: React.FC<AISettingsTabProps> = ({ config, onChange, links, 
   const shouldStopRef = useRef(false);
 
   const getCategoryName = (id?: string) => categories.find(c => c.id === id)?.name || '未分类';
+  const finalOpenAIEndpoint = (() => {
+    if (config.provider !== 'openai' || !config.baseUrl.trim()) return '';
+    try {
+      return normalizeOpenAIEndpoint(config.baseUrl);
+    } catch (e) {
+      return e instanceof Error ? e.message : 'API 地址无效';
+    }
+  })();
 
   const handleTestConnection = async () => {
     if (!config.hasApiKey && !config.apiKey) {
@@ -257,6 +266,16 @@ const AISettingsTab: React.FC<AISettingsTabProps> = ({ config, onChange, links, 
                     className="w-full p-2 rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 <p className="text-xs text-slate-500 mt-1">必须是 API 地址，例如 https://api.openai.com/v1；不要填网页登录地址或控制台地址。</p>
+                {finalOpenAIEndpoint && (
+                    <div className={`mt-2 text-xs rounded-lg p-2 ${finalOpenAIEndpoint.startsWith('http') ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300' : 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-300'}`}>
+                        最终请求地址：{finalOpenAIEndpoint}
+                    </div>
+                )}
+                <div className="mt-2 grid gap-1 text-[11px] text-slate-500 dark:text-slate-400">
+                    <span>OpenAI：<code>https://api.openai.com/v1</code></span>
+                    <span>OpenRouter：<code>https://openrouter.ai</code></span>
+                    <span>DeepSeek：<code>https://api.deepseek.com</code></span>
+                </div>
             </div>
         )}
 

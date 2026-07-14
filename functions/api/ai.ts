@@ -1,4 +1,5 @@
 import { jsonResponse, optionsResponse, requireAuth } from '../_shared/auth';
+import { normalizeOpenAIEndpoint } from '../../services/openaiEndpoint';
 
 interface Env {
   CLOUDNAV_KV: KVNamespace;
@@ -45,42 +46,6 @@ const parseProviderJson = (provider: string, raw: string) => {
   } catch {
     throw new Error(`${provider} 返回的不是合法 JSON：${raw.slice(0, 120)}`);
   }
-};
-
-const normalizeOpenAIEndpoint = (baseUrl?: string) => {
-  const raw = (baseUrl || '').trim();
-  if (!raw) throw new Error('OpenAI 兼容 API 地址不能为空，例如 https://api.openai.com/v1');
-
-  let url: URL;
-  try {
-    url = new URL(raw);
-  } catch {
-    throw new Error('OpenAI 兼容 API 地址格式无效，必须以 http:// 或 https:// 开头');
-  }
-
-  if (!['https:', 'http:'].includes(url.protocol)) {
-    throw new Error('OpenAI 兼容 API 地址只支持 http:// 或 https://');
-  }
-
-  const host = url.hostname.toLowerCase();
-  if (host === 'chat.openai.com' || host === 'chatgpt.com' || host === 'claude.ai' || host === 'www.deepseek.com') {
-    throw new Error('API 地址不能填写网页登录页，请填写服务商的接口地址');
-  }
-
-  if (host === 'openrouter.ai' && (url.pathname === '/' || url.pathname === '')) {
-    url.pathname = '/api/v1/chat/completions';
-    return url.toString();
-  }
-
-  const cleanPath = url.pathname.replace(/\/+$/, '');
-  if (cleanPath.endsWith('/chat/completions')) return url.toString();
-
-  if (host === 'api.openai.com' && cleanPath !== '/v1') {
-    throw new Error('OpenAI 官方 API 地址应填写 https://api.openai.com/v1');
-  }
-
-  url.pathname = `${cleanPath || ''}/chat/completions`.replace(/\/+/g, '/');
-  return url.toString();
 };
 
 const validateAiConfig = (config: AIConfig) => {

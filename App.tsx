@@ -24,7 +24,7 @@ import {
   useSortable,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { LinkItem, Category, DEFAULT_CATEGORIES, INITIAL_LINKS, WebDavConfig, AIConfig, SearchMode, ExternalSearchSource, SearchConfig } from './types';
+import { LinkItem, Category, DEFAULT_CATEGORIES, INITIAL_LINKS, WebDavConfig, AIConfig, SearchMode, ExternalSearchSource, SearchConfig, INBOX_ID } from './types';
 import { parseBookmarks } from './services/bookmarkParser';
 import Icon from './components/Icon';
 import CommandPalette from './components/CommandPalette';
@@ -45,6 +45,18 @@ import HomeDashboard from './components/HomeDashboard';
 import SyncConflictModal from './components/SyncConflictModal';
 import OrganizeModeBar from './components/OrganizeModeBar';
 import AdvancedSearchBar from './components/AdvancedSearchBar';
+import ModalErrorBoundary from './components/ModalErrorBoundary';
+import { getDefaultSearchSources } from './services/defaultSearchSources';
+
+const getSearchSourceIconUrl = (url: string) => {
+  try {
+    const normalized = url.startsWith('http://') || url.startsWith('https://') ? url : `https://${url}`;
+    const hostname = new URL(normalized).hostname;
+    return `https://t3.gstatic.cn/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&size=128&url=https://${hostname}`;
+  } catch {
+    return '';
+  }
+};
 
 // --- 配置项 ---
 // 项目核心仓库地址
@@ -1450,21 +1462,13 @@ function App() {
     setHoveredSearchSource(null);
   };
 
-  // --- Search Config ---
-  const handleSaveSearchConfig = async (sources: ExternalSearchSource[], mode: SearchMode, selectedSource?: ExternalSearchSource | null) => {
+  const persistSearchConfig = async (sources: ExternalSearchSource[], mode: SearchMode, selectedSource?: ExternalSearchSource | null) => {
       const searchConfig: SearchConfig = {
           mode,
           externalSources: sources,
           selectedSource: selectedSource !== undefined ? selectedSource : selectedSearchSource
       };
-      
-      setExternalSearchSources(sources);
-      setSearchMode(mode);
-      if (selectedSource !== undefined) {
-          setSelectedSearchSource(selectedSource);
-      }
-      
-      // 只保存到KV空间（搜索配置允许无密码访问）
+
       try {
           const response = await fetch('/api/storage', {
               method: 'POST',
@@ -1476,7 +1480,7 @@ function App() {
                   config: searchConfig
               })
           });
-          
+
           if (!response.ok) {
               console.error('Failed to save search config to KV:', response.statusText);
           }
@@ -1485,99 +1489,22 @@ function App() {
       }
   };
 
-  const handleSearchModeChange = (mode: SearchMode) => {
+  // --- Search Config ---
+  const handleSaveSearchConfig = async (sources: ExternalSearchSource[], mode: SearchMode, selectedSource?: ExternalSearchSource | null) => {
+      setExternalSearchSources(sources);
       setSearchMode(mode);
-      
-      // 如果切换到外部搜索模式且搜索源列表为空，自动加载默认搜索源
-      if (mode === 'external' && externalSearchSources.length === 0) {
-          const defaultSources: ExternalSearchSource[] = [
-              {
-                  id: 'bing',
-                  name: '必应',
-                  url: 'https://www.bing.com/search?q={query}',
-                  icon: 'Search',
-                  enabled: true,
-                  createdAt: Date.now()
-              },
-              {
-                  id: 'google',
-                  name: 'Google',
-                  url: 'https://www.google.com/search?q={query}',
-                  icon: 'Search',
-                  enabled: true,
-                  createdAt: Date.now()
-              },
-              {
-                  id: 'baidu',
-                  name: '百度',
-                  url: 'https://www.baidu.com/s?wd={query}',
-                  icon: 'Globe',
-                  enabled: true,
-                  createdAt: Date.now()
-              },
-              {
-                  id: 'sogou',
-                  name: '搜狗',
-                  url: 'https://www.sogou.com/web?query={query}',
-                  icon: 'Globe',
-                  enabled: true,
-                  createdAt: Date.now()
-              },
-              {
-                  id: 'yandex',
-                  name: 'Yandex',
-                  url: 'https://yandex.com/search/?text={query}',
-                  icon: 'Globe',
-                  enabled: true,
-                  createdAt: Date.now()
-              },
-              {
-                  id: 'github',
-                  name: 'GitHub',
-                  url: 'https://github.com/search?q={query}',
-                  icon: 'Github',
-                  enabled: true,
-                  createdAt: Date.now()
-              },
-              {
-                  id: 'linuxdo',
-                  name: 'Linux.do',
-                  url: 'https://linux.do/search?q={query}',
-                  icon: 'Terminal',
-                  enabled: true,
-                  createdAt: Date.now()
-              },
-              {
-                  id: 'bilibili',
-                  name: 'B站',
-                  url: 'https://search.bilibili.com/all?keyword={query}',
-                  icon: 'Play',
-                  enabled: true,
-                  createdAt: Date.now()
-              },
-              {
-                  id: 'youtube',
-                  name: 'YouTube',
-                  url: 'https://www.youtube.com/results?search_query={query}',
-                  icon: 'Video',
-                  enabled: true,
-                  createdAt: Date.now()
-              },
-              {
-                  id: 'wikipedia',
-                  name: '维基',
-                  url: 'https://zh.wikipedia.org/wiki/Special:Search?search={query}',
-                  icon: 'BookOpen',
-                  enabled: true,
-                  createdAt: Date.now()
-              }
-          ];
-          
-          // 保存默认搜索源到状态和KV空间
-          handleSaveSearchConfig(defaultSources, mode);
-      } else {
-          handleSaveSearchConfig(externalSearchSources, mode);
+      if (selectedSource !== undefined) {
+          setSelectedSearchSource(selectedSource);
       }
+      await persistSearchConfig(sources, mode, selectedSource);
+  };
+
+  const handleSearchModeChange = (mode: SearchMode) => {
+      const nextSources = mode === 'external' && externalSearchSources.length === 0 ? getDefaultSearchSources() : externalSearchSources;
+
+      setSearchMode(mode);
+      setExternalSearchSources(nextSources);
+      persistSearchConfig(nextSources, mode);
   };
 
   const handleExternalSearch = () => {
@@ -1735,6 +1662,8 @@ function App() {
         return a.createdAt - b.createdAt;
       });
   }, [links, categories, unlockedCategoryIds]);
+
+  const inboxLinks = useMemo(() => links.filter(l => l.categoryId === INBOX_ID && !isCategoryLocked(l.categoryId)), [links, categories, unlockedCategoryIds]);
 
   const displayedLinks = useMemo(() => {
     let result = links;
@@ -2078,15 +2007,17 @@ function App() {
         onRestoreAIConfig={handleRestoreAIConfig}
       />
 
-      <ImportModal
-        isOpen={isImportModalOpen}
-        onClose={() => setIsImportModalOpen(false)}
-        existingLinks={links}
-        categories={categories}
-        onImport={handleImportConfirm}
-        onImportSearchConfig={handleRestoreSearchConfig}
-        onImportAIConfig={handleRestoreAIConfig}
-      />
+      <ModalErrorBoundary onClose={() => setIsImportModalOpen(false)}>
+        <ImportModal
+          isOpen={isImportModalOpen}
+          onClose={() => setIsImportModalOpen(false)}
+          existingLinks={links}
+          categories={categories}
+          onImport={handleImportConfirm}
+          onImportSearchConfig={handleRestoreSearchConfig}
+          onImportAIConfig={handleRestoreAIConfig}
+        />
+      </ModalErrorBoundary>
 
       <SettingsModal
         isOpen={isSettingsModalOpen}
@@ -2377,7 +2308,7 @@ function App() {
                             className="px-2 py-2 text-sm rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 flex items-center gap-1 justify-center"
                           >
                             <img 
-                              src={`https://t3.gstatic.cn/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&size=128&url=https://${new URL(source.url).hostname}`}
+                              src={getSearchSourceIconUrl(source.url)}
                               alt={source.name}
                               className="w-4 h-4"
                               onError={(e) => {
@@ -2411,7 +2342,7 @@ function App() {
                     </svg>
                   ) : (hoveredSearchSource || selectedSearchSource) ? (
                     <img 
-                      src={`https://t3.gstatic.cn/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&size=128&url=https://${new URL((hoveredSearchSource || selectedSearchSource).url).hostname}`}
+                      src={getSearchSourceIconUrl((hoveredSearchSource || selectedSearchSource).url)}
                       alt={(hoveredSearchSource || selectedSearchSource).name}
                       className="w-4 h-4"
                       onError={(e) => {
@@ -2497,11 +2428,11 @@ function App() {
               </button>
             </div>
 
-            {authToken && !isOrganizeMode && (
-              <button onClick={() => setIsOrganizeMode(true)}
+            {authToken && !isOrganizeMode && inboxLinks.length > 0 && (
+              <button onClick={() => { setSelectedCategory(INBOX_ID); setOrganizeIndex(0); setIsOrganizeMode(true); }}
                 className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-300 rounded-full hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors"
               >
-                整理
+                整理 {inboxLinks.length}
               </button>
             )}
 
@@ -2540,31 +2471,26 @@ function App() {
 
             <OrganizeModeBar
               isActive={isOrganizeMode}
-              totalCount={links.filter(l => isOrganizeMode).length}
-              currentIndex={organizeIndex}
+              totalCount={inboxLinks.length}
+              currentIndex={Math.min(organizeIndex, Math.max(inboxLinks.length - 1, 0))}
               onAccept={() => {
-                const inboxLinks = links.filter(l => l.categoryId === '__inbox__');
-                if (links[organizeIndex]) {
-                  updateData(
-                    links.map(l => l.id === inboxLinks[organizeIndex]?.id ? { ...l, status: 'read' as const, tags: [...(l.tags || [])] } : l),
-                    categories
-                  );
-                }
+                const current = inboxLinks[organizeIndex];
+                if (!current) { setIsOrganizeMode(false); setOrganizeIndex(0); return; }
+                const nextLinks = links.map(l => l.id === current.id ? { ...l, categoryId: 'common', status: 'read' as const, updatedAt: Date.now() } : l);
+                updateData(nextLinks, categories);
                 if (organizeIndex < inboxLinks.length - 1) setOrganizeIndex(i => i + 1);
-                else setIsOrganizeMode(false);
+                else { setIsOrganizeMode(false); setOrganizeIndex(0); }
               }}
               onDelete={() => {
-                const inboxLinks = links.filter(l => l.categoryId === '__inbox__');
-                if (inboxLinks[organizeIndex]) {
-                  updateData(links.filter(l => l.id !== inboxLinks[organizeIndex].id), categories);
-                }
+                const current = inboxLinks[organizeIndex];
+                if (!current) { setIsOrganizeMode(false); setOrganizeIndex(0); return; }
+                updateData(links.filter(l => l.id !== current.id), categories);
                 if (organizeIndex < inboxLinks.length - 1) setOrganizeIndex(i => i + 1);
-                else setIsOrganizeMode(false);
+                else { setIsOrganizeMode(false); setOrganizeIndex(0); }
               }}
               onSkip={() => {
-                const inboxLinks = links.filter(l => l.categoryId === '__inbox__');
                 if (organizeIndex < inboxLinks.length - 1) setOrganizeIndex(i => i + 1);
-                else setIsOrganizeMode(false);
+                else { setIsOrganizeMode(false); setOrganizeIndex(0); }
               }}
               onExit={() => { setIsOrganizeMode(false); setOrganizeIndex(0); }}
             />

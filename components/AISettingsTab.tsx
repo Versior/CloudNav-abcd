@@ -16,7 +16,7 @@ const AISettingsTab: React.FC<AISettingsTabProps> = ({ config, onChange, links, 
   const shouldStopRef = useRef(false);
 
   const handleBulkGenerate = async () => {
-    if (!config.apiKey) {
+    if (!config.hasApiKey && !config.apiKey) {
         alert("请先配置并保存 API Key");
         return;
     }

@@ -247,7 +247,8 @@ const ImportModal: React.FC<ImportModalProps> = ({
                             type="file" 
                             ref={fileInputRef} 
                             className="hidden" 
-                            accept=".html" 
+                            tabIndex={-1}
+                            accept=".html"
                             onChange={(e) => handleFileChange(e, 'html')} 
                         />
                         
@@ -276,7 +277,8 @@ const ImportModal: React.FC<ImportModalProps> = ({
                             type="file" 
                             ref={jsonFileInputRef} 
                             className="hidden" 
-                            accept=".json" 
+                            tabIndex={-1}
+                            accept=".json"
                             onChange={(e) => handleFileChange(e, 'json')} 
                         />
                         

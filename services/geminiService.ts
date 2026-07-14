@@ -8,15 +8,15 @@ const callAI = async (task: 'description' | 'category', body: Record<string, unk
             body: JSON.stringify({ task, ...body })
         });
 
+        const data = await response.json().catch(() => ({}));
         if (!response.ok) {
-            return null;
+            throw new Error(typeof data.error === 'string' ? data.error : 'AI 调用失败');
         }
 
-        const data = await response.json();
         return typeof data.text === 'string' ? data.text.trim() : null;
     } catch (e) {
         console.error("AI request failed", e);
-        return null;
+        throw e;
     }
 };
 

@@ -205,6 +205,7 @@ const LinkModal: React.FC<LinkModalProps> = ({ isOpen, onClose, onSave, onDelete
         
     } catch (e) {
         console.error("AI Assist failed", e);
+        alert(e instanceof Error ? `AI 调用失败：${e.message}` : 'AI 调用失败，请检查 API 配置');
     } finally {
         setIsGenerating(false);
     }

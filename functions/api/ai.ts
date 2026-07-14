@@ -26,7 +26,7 @@ const readAiConfig = async (env: Env) => {
 };
 
 const callOpenAICompatible = async (config: AIConfig, systemPrompt: string, userPrompt: string) => {
-  if (!config.apiKey || !config.baseUrl) return '';
+  if (!config.apiKey || !config.baseUrl) throw new Error('OpenAI compatible API key or base URL is not configured');
 
   let baseUrl = config.baseUrl.replace(/\/$/, '');
   if (!baseUrl.includes('/chat/completions')) {
@@ -49,13 +49,16 @@ const callOpenAICompatible = async (config: AIConfig, systemPrompt: string, user
     }),
   });
 
-  if (!response.ok) return '';
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`OpenAI compatible request failed: ${response.status} ${detail.slice(0, 200)}`);
+  }
   const data = await response.json() as any;
   return data.choices?.[0]?.message?.content?.trim() || '';
 };
 
 const callGemini = async (config: AIConfig, prompt: string) => {
-  if (!config.apiKey) return '';
+  if (!config.apiKey) throw new Error('Gemini API key is not configured');
   const model = config.model || 'gemini-2.5-flash';
   const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(config.apiKey)}`, {
     method: 'POST',
@@ -65,7 +68,10 @@ const callGemini = async (config: AIConfig, prompt: string) => {
     }),
   });
 
-  if (!response.ok) return '';
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`Gemini request failed: ${response.status} ${detail.slice(0, 200)}`);
+  }
   const data = await response.json() as any;
   return data.candidates?.[0]?.content?.parts?.map((part: any) => part.text || '').join('').trim() || '';
 };
@@ -111,7 +117,8 @@ export const onRequestPost = async (context: { request: Request; env: Env }) => 
       : await callOpenAICompatible(config, 'You are an intelligent classification assistant. You only output the category ID.', prompt);
 
     return jsonResponse({ text: text || null });
-  } catch {
-    return jsonResponse({ error: 'AI request failed' }, { status: 500 });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'AI request failed';
+    return jsonResponse({ error: message }, { status: 502 });
   }
 };

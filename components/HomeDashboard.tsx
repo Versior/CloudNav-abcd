@@ -24,7 +24,8 @@ const HomeDashboard: React.FC<HomeDashboardProps> = ({ links, categories, onOpen
   const [foldersCollapsed, setFoldersCollapsed] = useState(true);
   const normalLinks = links.filter(l => l.categoryId !== INBOX_ID && !l.deletedAt);
   const inboxLinks = links.filter(l => l.categoryId === INBOX_ID && !l.deletedAt);
-  const brokenLinks = normalLinks.filter(l => l.health?.status === 'broken' || l.health?.status === 'redirected');
+  // Only hard-dead links count as broken on the dashboard; soft probe blocks are excluded.
+  const brokenLinks = normalLinks.filter(l => l.health?.status === 'broken' || l.health?.statusCode === 404 || l.health?.statusCode === 410);
   const recentLinks = [...normalLinks].filter(l => l.lastVisitedAt).sort((a, b) => (b.lastVisitedAt || 0) - (a.lastVisitedAt || 0)).slice(0, 6);
   const freqLinks = [...normalLinks].filter(l => (l.visitCount || 0) > 0).sort((a, b) => (b.visitCount || 0) - (a.visitCount || 0)).slice(0, 6);
   const parentCategories = categories.filter(c => !c.parentId && c.id !== INBOX_ID);

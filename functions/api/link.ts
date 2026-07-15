@@ -13,6 +13,11 @@ interface LinkData {
   categoryId?: string;
 }
 
+type HealthStatus = 'ok' | 'broken' | 'redirected' | 'unknown' | 'invalid';
+
+const BROWSER_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
+
 const isPrivateHostname = (hostname: string) => {
   const normalized = hostname.toLowerCase();
   if (normalized === 'localhost' || normalized.endsWith('.localhost') || normalized.includes(':')) return true;
@@ -22,27 +27,81 @@ const isPrivateHostname = (hostname: string) => {
   return a === 0 || a === 10 || a === 127 || a >= 224 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
 };
 
-const classifyStatus = (statusCode: number, originalUrl: string, finalUrl?: string | null) => {
-  if (statusCode >= 200 && statusCode < 300) {
-    if (finalUrl && finalUrl !== originalUrl) {
-      try {
-        const a = new URL(originalUrl);
-        const b = new URL(finalUrl, originalUrl);
-        if (a.host.replace(/^www\./, '') !== b.host.replace(/^www\./, '') || a.pathname.replace(/\/$/, '') !== b.pathname.replace(/\/$/, '')) {
-          return 'redirected' as const;
-        }
-      } catch {
-        return 'redirected' as const;
-      }
-    }
-    return 'ok' as const;
+const sameSite = (originalUrl: string, finalUrl?: string | null) => {
+  if (!finalUrl) return true;
+  try {
+    const a = new URL(originalUrl);
+    const b = new URL(finalUrl, originalUrl);
+    const hostA = a.hostname.replace(/^www\./i, '').toLowerCase();
+    const hostB = b.hostname.replace(/^www\./i, '').toLowerCase();
+    const pathA = a.pathname.replace(/\/+$/, '') || '/';
+    const pathB = b.pathname.replace(/\/+$/, '') || '/';
+    return hostA === hostB && pathA === pathB;
+  } catch {
+    return originalUrl === finalUrl;
   }
-  if (statusCode >= 300 && statusCode < 400) return 'redirected' as const;
-  if (statusCode >= 400) return 'broken' as const;
-  return 'unknown' as const;
 };
 
-const fetchWithTimeout = async (url: string, init: RequestInit, timeoutMs = 10000) => {
+/**
+ * Classification rules (browser-friendly):
+ * - 2xx => ok (redirected if final URL meaningfully changed)
+ * - 3xx => redirected (still reachable)
+ * - 401/403/429/407 => unknown (auth / bot protection — often opens fine in real browsers)
+ * - 404/410 => broken (true dead)
+ * - other 4xx/5xx => unknown (temporary or anti-bot, not hard-delete)
+ * - network/timeout => unknown (Cloudflare egress may be blocked by target)
+ */
+const classifyStatus = (
+  statusCode: number,
+  originalUrl: string,
+  finalUrl?: string | null
+): { status: HealthStatus; reason?: string } => {
+  if (statusCode >= 200 && statusCode < 300) {
+    if (finalUrl && !sameSite(originalUrl, finalUrl)) {
+      return { status: 'redirected', reason: '站点返回了新地址' };
+    }
+    return { status: 'ok' };
+  }
+
+  if (statusCode >= 300 && statusCode < 400) {
+    return { status: 'redirected', reason: `HTTP ${statusCode} 跳转` };
+  }
+
+  // Auth / bot walls — site is usually fine in a real browser
+  if ([401, 403, 407, 429].includes(statusCode)) {
+    return {
+      status: 'unknown',
+      reason:
+        statusCode === 429
+          ? '站点限流/防爬，浏览器里通常仍可打开'
+          : statusCode === 401 || statusCode === 407
+            ? '需要登录或鉴权，不一定失效'
+            : '疑似防爬/WAF 拦截探测，浏览器里通常仍可打开',
+    };
+  }
+
+  // Hard dead
+  if (statusCode === 404 || statusCode === 410) {
+    return { status: 'broken', reason: statusCode === 410 ? '资源已永久移除' : '页面不存在 (404)' };
+  }
+
+  // Method issues after retries still shouldn't mean dead
+  if (statusCode === 405 || statusCode === 501) {
+    return { status: 'unknown', reason: '站点不支持当前探测方式' };
+  }
+
+  if (statusCode >= 500) {
+    return { status: 'unknown', reason: `服务器临时错误 HTTP ${statusCode}` };
+  }
+
+  if (statusCode >= 400) {
+    return { status: 'unknown', reason: `HTTP ${statusCode}，未判定为确定失效` };
+  }
+
+  return { status: 'unknown', reason: '无法确认状态' };
+};
+
+const fetchWithTimeout = async (url: string, init: RequestInit, timeoutMs = 12000) => {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -51,6 +110,24 @@ const fetchWithTimeout = async (url: string, init: RequestInit, timeoutMs = 1000
     clearTimeout(timeout);
   }
 };
+
+const commonHeaders = {
+  'User-Agent': BROWSER_UA,
+  Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+  'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+  'Cache-Control': 'no-cache',
+};
+
+const probeOnce = async (url: string, method: 'HEAD' | 'GET', extraHeaders: Record<string, string> = {}) => {
+  return fetchWithTimeout(url, {
+    method,
+    redirect: 'follow',
+    headers: { ...commonHeaders, ...extraHeaders },
+  });
+};
+
+const shouldRetryWithGet = (status: number) =>
+  [0, 403, 405, 501, 503, 520, 521, 522, 523, 524].includes(status);
 
 const handleCheckHealth = async (url: string) => {
   try {
@@ -70,48 +147,98 @@ const handleCheckHealth = async (url: string) => {
       return jsonResponse({ status: 'invalid', error: 'Private/internal URLs are not allowed' }, { status: 400 });
     }
 
-    const commonHeaders = {
-      'User-Agent': 'NaviX-HealthCheck/1.0 (+https://navix.local)',
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-    };
-
-    // Prefer HEAD first (cheap). Many sites reject HEAD — fall back to GET range/body.
     let response: Response | null = null;
+    let lastError = '';
+
+    // 1) HEAD
     try {
-      response = await fetchWithTimeout(url, { method: 'HEAD', redirect: 'follow', headers: commonHeaders });
-      if (response.status === 405 || response.status === 501 || response.status === 403) {
+      response = await probeOnce(url, 'HEAD');
+      if (shouldRetryWithGet(response.status)) {
         response = null;
       }
-    } catch {
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : 'HEAD failed';
       response = null;
     }
 
+    // 2) GET with Range (cheap body)
     if (!response) {
-      response = await fetchWithTimeout(url, {
-        method: 'GET',
-        redirect: 'follow',
-        headers: {
-          ...commonHeaders,
-          Range: 'bytes=0-0',
-        },
+      try {
+        response = await probeOnce(url, 'GET', { Range: 'bytes=0-1023' });
+        // Some CDNs return 416 for range — still means host is alive
+        if (response.status === 416) {
+          const finalUrl = response.url || url;
+          return jsonResponse({
+            status: 'ok',
+            statusCode: 416,
+            finalUrl,
+            checkedAt: Date.now(),
+            reason: '站点可达（Range 响应）',
+          });
+        }
+        if (shouldRetryWithGet(response.status) && response.status !== 403) {
+          // keep 403 for one more full GET attempt below if needed
+        }
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : 'GET range failed';
+        response = null;
+      }
+    }
+
+    // 3) Full GET fallback for stubborn anti-bot / HEAD-only failures
+    if (!response || shouldRetryWithGet(response.status)) {
+      try {
+        const full = await probeOnce(url, 'GET');
+        // Prefer a more informative successful-ish response
+        if (!response || full.status < response.status || [200, 301, 302, 303, 307, 308].includes(full.status)) {
+          response = full;
+        }
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : 'GET failed';
+        if (!response) {
+          const aborted = /abort/i.test(lastError);
+          return jsonResponse({
+            status: 'unknown',
+            statusCode: 0,
+            error: aborted ? 'Request timeout' : 'Request failed',
+            reason: aborted
+              ? '探测超时（站点可能屏蔽数据中心 IP）'
+              : '网络探测失败（站点可能屏蔽服务器访问，浏览器仍可打开）',
+            checkedAt: Date.now(),
+          });
+        }
+      }
+    }
+
+    if (!response) {
+      return jsonResponse({
+        status: 'unknown',
+        statusCode: 0,
+        error: lastError || 'Request failed',
+        reason: '无法完成探测',
+        checkedAt: Date.now(),
       });
     }
 
     const finalUrl = response.url || response.headers.get('Location') || url;
-    const status = classifyStatus(response.status, url, finalUrl);
+    const classified = classifyStatus(response.status, url, finalUrl);
     return jsonResponse({
-      status,
+      status: classified.status,
       statusCode: response.status,
       finalUrl,
+      reason: classified.reason,
       checkedAt: Date.now(),
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Request failed';
     const aborted = /abort/i.test(message);
     return jsonResponse({
-      status: 'broken',
+      status: 'unknown',
       statusCode: 0,
       error: aborted ? 'Request timeout' : 'Request failed',
+      reason: aborted
+        ? '探测超时（站点可能屏蔽数据中心 IP）'
+        : '网络探测失败（浏览器里可能仍可打开）',
       checkedAt: Date.now(),
     });
   }

@@ -37,9 +37,9 @@ const statusColors: Record<string, string> = {
   archived: 'text-slate-500 bg-slate-100 dark:bg-slate-700 dark:text-slate-400',
 };
 
-const healthLabels: Record<string, string> = { ok: '正常', broken: '失效', redirected: '已跳转', unknown: '未知' };
+const healthLabels: Record<string, string> = { ok: '正常', broken: '确定失效', redirected: '已跳转', unknown: '探测受阻/待确认' };
 const healthColors: Record<string, string> = {
-  ok: 'text-green-600', broken: 'text-red-600', redirected: 'text-amber-600', unknown: 'text-slate-400',
+  ok: 'text-green-600', broken: 'text-red-600', redirected: 'text-amber-600', unknown: 'text-slate-500',
 };
 
 const newId = () => crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;

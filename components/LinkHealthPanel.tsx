@@ -1,7 +1,13 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { Activity, AlertTriangle, Check, ExternalLink, PauseCircle, RefreshCw, Trash2 } from 'lucide-react';
 import { Category, LinkItem } from '../types';
-import { checkLinkHealth, healthLabel, isUnhealthy } from '../services/linkHealthService';
+import {
+  checkLinkHealth,
+  healthLabel,
+  healthReasonFromCode,
+  isHardBroken,
+  isSoftIssue,
+} from '../services/linkHealthService';
 
 interface LinkHealthPanelProps {
   links: LinkItem[];
@@ -11,6 +17,7 @@ interface LinkHealthPanelProps {
 }
 
 type Scope = 'all' | 'unchecked' | 'broken' | 'category';
+type Filter = 'broken' | 'soft' | 'redirected' | 'ok' | 'all';
 
 const LinkHealthPanel: React.FC<LinkHealthPanelProps> = ({
   links,
@@ -24,10 +31,10 @@ const LinkHealthPanel: React.FC<LinkHealthPanelProps> = ({
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [localLinks, setLocalLinks] = useState<LinkItem[]>(links);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [filter, setFilter] = useState<'all' | 'broken' | 'redirected' | 'ok' | 'unknown'>('broken');
+  const [filter, setFilter] = useState<Filter>('broken');
+  const [reasons, setReasons] = useState<Record<string, string>>({});
   const stopRef = useRef(false);
 
-  // keep in sync when parent links change after delete/save
   React.useEffect(() => {
     if (!isChecking) setLocalLinks(links);
   }, [links, isChecking]);
@@ -37,7 +44,7 @@ const LinkHealthPanel: React.FC<LinkHealthPanelProps> = ({
   const targets = useMemo(() => {
     const active = localLinks.filter(l => !l.deletedAt);
     if (scope === 'unchecked') return active.filter(l => !l.health?.checkedAt);
-    if (scope === 'broken') return active.filter(l => isUnhealthy(l.health?.status) || l.health?.status === 'redirected');
+    if (scope === 'broken') return active.filter(l => isHardBroken(l.health) || isSoftIssue(l.health) || l.health?.status === 'redirected');
     if (scope === 'category') return active.filter(l => l.categoryId === categoryId);
     return active;
   }, [localLinks, scope, categoryId]);
@@ -47,35 +54,27 @@ const LinkHealthPanel: React.FC<LinkHealthPanelProps> = ({
     [localLinks]
   );
 
-  const brokenList = useMemo(
-    () => scanned.filter(l => l.health?.status === 'broken' || l.health?.status === 'unknown'),
-    [scanned]
-  );
-  const redirectedList = useMemo(
-    () => scanned.filter(l => l.health?.status === 'redirected'),
-    [scanned]
-  );
-  const okList = useMemo(
-    () => scanned.filter(l => l.health?.status === 'ok'),
-    [scanned]
-  );
+  const brokenList = useMemo(() => scanned.filter(l => isHardBroken(l.health)), [scanned]);
+  const softList = useMemo(() => scanned.filter(l => isSoftIssue(l.health) && !isHardBroken(l.health)), [scanned]);
+  const redirectedList = useMemo(() => scanned.filter(l => l.health?.status === 'redirected'), [scanned]);
+  const okList = useMemo(() => scanned.filter(l => l.health?.status === 'ok'), [scanned]);
 
   const visible = useMemo(() => {
     const list =
       filter === 'broken' ? brokenList
+      : filter === 'soft' ? softList
       : filter === 'redirected' ? redirectedList
       : filter === 'ok' ? okList
-      : filter === 'unknown' ? scanned.filter(l => l.health?.status === 'unknown')
       : scanned;
     return [...list].sort((a, b) => (b.health?.checkedAt || 0) - (a.health?.checkedAt || 0));
-  }, [filter, brokenList, redirectedList, okList, scanned]);
+  }, [filter, brokenList, softList, redirectedList, okList, scanned]);
 
   const runCheck = async () => {
     if (targets.length === 0) {
       alert('没有可检测的链接');
       return;
     }
-    if (!confirm(`将检测 ${targets.length} 个链接的可访问性，可能需要一些时间。确定继续吗？`)) return;
+    if (!confirm(`将检测 ${targets.length} 个链接的可访问性。\n说明：部分站点会拦截服务器探测，可能显示“探测受阻/待确认”，这不等于失效。\n确定继续吗？`)) return;
 
     setIsChecking(true);
     stopRef.current = false;
@@ -84,20 +83,22 @@ const LinkHealthPanel: React.FC<LinkHealthPanelProps> = ({
     let working = [...localLinks];
     let nextIndex = 0;
     let completed = 0;
-    const workerCount = Math.min(3, targets.length);
+    const workerCount = Math.min(2, targets.length);
     const selectedBroken = new Set<string>();
+    const nextReasons: Record<string, string> = { ...reasons };
 
     const worker = async () => {
       while (!stopRef.current && nextIndex < targets.length) {
         const link = targets[nextIndex++];
         try {
           const result = await checkLinkHealth(link.url);
+          const status = result.status === 'invalid' ? 'unknown' : result.status;
           working = working.map(item =>
             item.id === link.id
               ? {
                   ...item,
                   health: {
-                    status: result.status === 'invalid' ? 'unknown' : result.status,
+                    status,
                     statusCode: result.statusCode,
                     finalUrl: result.finalUrl,
                     checkedAt: result.checkedAt,
@@ -106,7 +107,9 @@ const LinkHealthPanel: React.FC<LinkHealthPanelProps> = ({
                 }
               : item
           );
-          if (result.status === 'broken' || result.status === 'unknown') {
+          nextReasons[link.id] = healthReasonFromCode(status, result.statusCode, result.reason || result.error);
+          // Only auto-select hard dead links for deletion
+          if (status === 'broken' || result.statusCode === 404 || result.statusCode === 410) {
             selectedBroken.add(link.id);
           }
         } catch {
@@ -115,7 +118,7 @@ const LinkHealthPanel: React.FC<LinkHealthPanelProps> = ({
               ? {
                   ...item,
                   health: {
-                    status: 'broken',
+                    status: 'unknown',
                     statusCode: 0,
                     checkedAt: Date.now(),
                   },
@@ -123,13 +126,13 @@ const LinkHealthPanel: React.FC<LinkHealthPanelProps> = ({
                 }
               : item
           );
-          selectedBroken.add(link.id);
+          nextReasons[link.id] = '探测异常，浏览器可能仍可打开';
         } finally {
           completed += 1;
           setProgress({ current: completed, total: targets.length });
-          // persist progress periodically so refresh doesn't lose work
-          if (completed % 5 === 0 || completed === targets.length) {
-            setLocalLinks(working);
+          if (completed % 4 === 0 || completed === targets.length) {
+            setLocalLinks([...working]);
+            setReasons({ ...nextReasons });
             onUpdateLinks(working);
           }
         }
@@ -138,10 +141,15 @@ const LinkHealthPanel: React.FC<LinkHealthPanelProps> = ({
 
     await Promise.all(Array.from({ length: workerCount }, () => worker()));
     setLocalLinks(working);
+    setReasons(nextReasons);
     onUpdateLinks(working);
     setSelectedIds(selectedBroken);
-    setFilter('broken');
+    setFilter(selectedBroken.size > 0 ? 'broken' : softList.length > 0 ? 'soft' : 'all');
     setIsChecking(false);
+
+    const hard = working.filter(l => isHardBroken(l.health)).length;
+    const soft = working.filter(l => isSoftIssue(l.health) && !isHardBroken(l.health)).length;
+    alert(`检测完成。\n确定失效：${hard} 个（可清理）\n探测受阻/待确认：${soft} 个（不建议直接删除）`);
   };
 
   const toggleSelected = (id: string) => {
@@ -153,8 +161,8 @@ const LinkHealthPanel: React.FC<LinkHealthPanelProps> = ({
     });
   };
 
-  const selectVisibleBroken = () => {
-    setSelectedIds(new Set(visible.filter(l => isUnhealthy(l.health?.status)).map(l => l.id)));
+  const selectVisibleHardBroken = () => {
+    setSelectedIds(new Set(visible.filter(l => isHardBroken(l.health)).map(l => l.id)));
   };
 
   const applyDelete = () => {
@@ -162,12 +170,27 @@ const LinkHealthPanel: React.FC<LinkHealthPanelProps> = ({
       alert('请先勾选要删除的链接');
       return;
     }
-    if (!confirm(`确定删除 ${selectedIds.size} 个无法访问/无用链接吗？`)) return;
+    const softSelected = [...selectedIds].filter(id => {
+      const link = localLinks.find(l => l.id === id);
+      return link && isSoftIssue(link.health) && !isHardBroken(link.health);
+    });
+    if (softSelected.length > 0) {
+      if (!confirm(`勾选中有 ${softSelected.length} 个只是“探测受阻/待确认”，浏览器里可能仍可打开。\n仍要删除全部 ${selectedIds.size} 个吗？`)) return;
+    } else if (!confirm(`确定删除 ${selectedIds.size} 个失效链接吗？`)) {
+      return;
+    }
     const next = localLinks.filter(l => !selectedIds.has(l.id));
     setLocalLinks(next);
     onUpdateLinks(next);
     setSelectedIds(new Set());
     alert(`已删除 ${selectedIds.size} 个链接`);
+  };
+
+  const badgeClass = (link: LinkItem) => {
+    if (isHardBroken(link.health)) return 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300';
+    if (link.health?.status === 'redirected') return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300';
+    if (link.health?.status === 'ok') return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300';
+    return 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200';
   };
 
   return (
@@ -180,7 +203,7 @@ const LinkHealthPanel: React.FC<LinkHealthPanelProps> = ({
               链接健康检测
             </div>
             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-              批量测试网站是否可访问，标记失效链接后可一键清理。部分站点屏蔽探测，会标为未知/异常。
+              只有 404/410 等会标为「确定失效」。403/防爬/超时标为「探测受阻」，浏览器能打开的不要直接删。
             </p>
           </div>
           <button
@@ -204,7 +227,7 @@ const LinkHealthPanel: React.FC<LinkHealthPanelProps> = ({
           >
             <option value="all">全部链接</option>
             <option value="unchecked">仅未检测</option>
-            <option value="broken">仅异常/失效</option>
+            <option value="broken">仅异常项</option>
             <option value="category">指定文件夹</option>
           </select>
           {scope === 'category' && (
@@ -247,12 +270,12 @@ const LinkHealthPanel: React.FC<LinkHealthPanelProps> = ({
             <div className="text-[11px] text-slate-500">正常</div>
           </div>
           <div className="rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-2 py-2">
-            <div className="text-lg font-semibold text-amber-600 dark:text-amber-400">{redirectedList.length}</div>
-            <div className="text-[11px] text-slate-500">跳转</div>
+            <div className="text-lg font-semibold text-slate-600 dark:text-slate-300">{softList.length}</div>
+            <div className="text-[11px] text-slate-500">探测受阻</div>
           </div>
           <div className="rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-2 py-2">
             <div className="text-lg font-semibold text-rose-600 dark:text-rose-400">{brokenList.length}</div>
-            <div className="text-[11px] text-slate-500">失效/异常</div>
+            <div className="text-[11px] text-slate-500">确定失效</div>
           </div>
         </div>
       </div>
@@ -261,7 +284,8 @@ const LinkHealthPanel: React.FC<LinkHealthPanelProps> = ({
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
             {([
-              ['broken', `失效 ${brokenList.length}`],
+              ['broken', `确定失效 ${brokenList.length}`],
+              ['soft', `探测受阻 ${softList.length}`],
               ['redirected', `跳转 ${redirectedList.length}`],
               ['ok', `正常 ${okList.length}`],
               ['all', `全部 ${scanned.length}`],
@@ -275,8 +299,8 @@ const LinkHealthPanel: React.FC<LinkHealthPanelProps> = ({
                 {label}
               </button>
             ))}
-            <button type="button" onClick={selectVisibleBroken} className="px-3 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
-              勾选当前失效
+            <button type="button" onClick={selectVisibleHardBroken} className="px-3 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+              只勾选确定失效
             </button>
             <button
               type="button"
@@ -287,6 +311,13 @@ const LinkHealthPanel: React.FC<LinkHealthPanelProps> = ({
             </button>
           </div>
 
+          {filter === 'soft' && (
+            <div className="text-xs text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl px-3 py-2 flex gap-2">
+              <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+              这些链接多半只是拦了服务器探测（防爬/登录墙/超时），请先点“打开”人工确认，别直接清空。
+            </div>
+          )}
+
           {visible.length === 0 ? (
             <div className="rounded-2xl border border-emerald-200 dark:border-emerald-900/40 bg-emerald-50/70 dark:bg-emerald-900/10 px-4 py-8 text-center">
               <Check className="mx-auto mb-2 text-emerald-600 dark:text-emerald-400" size={22} />
@@ -295,9 +326,10 @@ const LinkHealthPanel: React.FC<LinkHealthPanelProps> = ({
           ) : (
             <div className="max-h-[28rem] overflow-auto rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 divide-y divide-slate-100 dark:divide-slate-700">
               {visible.map(link => {
-                const unhealthy = isUnhealthy(link.health?.status);
+                const hard = isHardBroken(link.health);
+                const reason = reasons[link.id] || healthReasonFromCode(link.health?.status, link.health?.statusCode);
                 return (
-                  <div key={link.id} className={`px-3 py-2.5 flex flex-wrap items-start gap-3 ${unhealthy ? 'bg-rose-50/40 dark:bg-rose-900/10' : ''}`}>
+                  <div key={link.id} className={`px-3 py-2.5 flex flex-wrap items-start gap-3 ${hard ? 'bg-rose-50/40 dark:bg-rose-900/10' : ''}`}>
                     <input
                       type="checkbox"
                       className="mt-1"
@@ -307,25 +339,22 @@ const LinkHealthPanel: React.FC<LinkHealthPanelProps> = ({
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <div className="font-medium text-sm text-slate-800 dark:text-slate-100 truncate">{link.title}</div>
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
-                          link.health?.status === 'ok' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
-                          : link.health?.status === 'redirected' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
-                          : 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300'
-                        }`}>
-                          {healthLabel(link.health?.status)}
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${badgeClass(link)}`}>
+                          {healthLabel(link.health?.status, link.health?.statusCode)}
                           {link.health?.statusCode ? ` ${link.health.statusCode}` : ''}
                         </span>
                       </div>
                       <div className="text-xs text-slate-400 truncate mt-0.5">{link.url}</div>
                       <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 flex flex-wrap gap-x-3 gap-y-1">
                         <span>分类：{categoryName(link.categoryId)}</span>
+                        {reason && <span className="text-slate-400">{reason}</span>}
                         {link.health?.finalUrl && link.health.finalUrl !== link.url && (
                           <span className="truncate max-w-[16rem]">最终：{link.health.finalUrl}</span>
                         )}
                       </div>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
-                      <a href={link.url} target="_blank" rel="noreferrer" className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500" title="打开">
+                      <a href={link.url} target="_blank" rel="noreferrer" className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500" title="打开验证">
                         <ExternalLink size={14} />
                       </a>
                       {onEditLink && (
@@ -349,7 +378,7 @@ const LinkHealthPanel: React.FC<LinkHealthPanelProps> = ({
       {!isChecking && scanned.length === 0 && (
         <div className="rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 px-4 py-10 text-center text-sm text-slate-400">
           <AlertTriangle className="mx-auto mb-2 opacity-60" size={20} />
-          还没有检测结果。点上方「开始检测」扫描无法访问的网站。
+          还没有检测结果。点上方「开始检测」。只有“确定失效”才适合批量清理。
         </div>
       )}
     </div>

@@ -617,7 +617,41 @@ const AISettingsTab: React.FC<AISettingsTabProps> = ({
     });
   };
 
+  const getChangedCategoryPreviewIds = () =>
+    categoryPreview
+      .filter(item => Boolean(item.toCategoryId) && item.toCategoryId !== item.fromCategoryId && !item.error)
+      .map(item => item.linkId);
+
+  const getChangedRenameIds = () =>
+    renamePreview
+      .filter(item => Boolean(item.toName) && item.toName !== item.fromName)
+      .map(item => item.categoryId);
+
+  const selectAllCategoryChanges = () => {
+    const changedIds = getChangedCategoryPreviewIds();
+    if (changedIds.length === 0) {
+      alert('当前没有可勾选的分类变更（可能 AI 建议与原分类相同，或全部失败）');
+      return;
+    }
+    const allSelected = changedIds.every(id => selectedPreviewIds.has(id));
+    setSelectedPreviewIds(allSelected ? new Set() : new Set(changedIds));
+  };
+
+  const selectAllRenameChanges = () => {
+    const changedIds = getChangedRenameIds();
+    if (changedIds.length === 0) {
+      alert('当前没有可勾选的重命名变更（可能建议保持原名，或全部失败）');
+      return;
+    }
+    const allSelected = changedIds.every(id => selectedRenameIds.has(id));
+    setSelectedRenameIds(allSelected ? new Set() : new Set(changedIds));
+  };
+
   const editableCategories = categories.filter(c => c.id !== INBOX_ID);
+  const changedCategoryCount = getChangedCategoryPreviewIds().length;
+  const selectedChangedCategoryCount = getChangedCategoryPreviewIds().filter(id => selectedPreviewIds.has(id)).length;
+  const changedRenameCount = getChangedRenameIds().length;
+  const selectedChangedRenameCount = getChangedRenameIds().filter(id => selectedRenameIds.has(id)).length;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
@@ -827,29 +861,47 @@ const AISettingsTab: React.FC<AISettingsTabProps> = ({
 
       {categoryPreview.length > 0 && !isProcessing && (
         <div className="rounded-2xl border border-blue-100 dark:border-blue-900/50 bg-blue-50/50 dark:bg-blue-900/10 p-4 space-y-3">
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-100">AI 分类预览</h4>
-              <p className="text-xs text-slate-500 dark:text-slate-400">只会应用勾选且分类发生变化的条目。</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                只会应用勾选且分类发生变化的条目。变更 {changedCategoryCount} 项，已勾选 {selectedChangedCategoryCount} 项。
+              </p>
             </div>
-            <div className="flex gap-2">
-              <button onClick={() => setSelectedPreviewIds(new Set(categoryPreview.filter(item => item.toCategoryId && item.toCategoryId !== item.fromCategoryId).map(item => item.linkId)))} className="px-3 py-1.5 text-xs rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">全选变更</button>
-              <button onClick={() => setCategoryPreview([])} className="px-3 py-1.5 text-xs rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center gap-1"><X size={12} /> 关闭</button>
-              <button onClick={applyCategoryPreview} className="px-3 py-1.5 text-xs rounded-lg bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1"><Check size={12} /> 应用勾选</button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={selectAllCategoryChanges}
+                className="px-3 py-1.5 text-xs rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700"
+              >
+                {changedCategoryCount > 0 && selectedChangedCategoryCount === changedCategoryCount ? '取消全选' : '全选变更'}
+              </button>
+              <button type="button" onClick={() => { setCategoryPreview([]); setSelectedPreviewIds(new Set()); }} className="px-3 py-1.5 text-xs rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center gap-1 hover:bg-slate-50 dark:hover:bg-slate-700"><X size={12} /> 关闭</button>
+              <button type="button" onClick={applyCategoryPreview} className="px-3 py-1.5 text-xs rounded-lg bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1"><Check size={12} /> 应用勾选</button>
             </div>
           </div>
           <div className="max-h-72 overflow-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 divide-y divide-slate-100 dark:divide-slate-700">
             {categoryPreview.map(item => {
-              const changed = item.toCategoryId && item.toCategoryId !== item.fromCategoryId;
+              const changed = Boolean(item.toCategoryId) && item.toCategoryId !== item.fromCategoryId && !item.error;
               return (
-                <label key={item.linkId} className="grid grid-cols-[auto,1fr,120px,120px] gap-3 items-center px-3 py-2 text-xs cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50">
-                  <input type="checkbox" disabled={!changed} checked={selectedPreviewIds.has(item.linkId)} onChange={() => togglePreviewSelection(item.linkId)} />
+                <label key={item.linkId} className={`grid grid-cols-[auto_minmax(0,1fr)_minmax(5rem,7.5rem)_minmax(5rem,7.5rem)] gap-3 items-center px-3 py-2 text-xs ${changed ? 'cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50' : 'opacity-70'}`}>
+                  <input
+                    type="checkbox"
+                    disabled={!changed}
+                    checked={changed && selectedPreviewIds.has(item.linkId)}
+                    onChange={() => {
+                      if (!changed) return;
+                      togglePreviewSelection(item.linkId);
+                    }}
+                  />
                   <div className="min-w-0">
                     <div className="font-medium text-slate-700 dark:text-slate-200 truncate">{item.title}</div>
                     <div className="text-slate-400 truncate">{item.error || item.url}</div>
                   </div>
                   <span className="truncate text-slate-500 dark:text-slate-400">{getCategoryName(item.fromCategoryId)}</span>
-                  <span className={changed ? 'truncate text-blue-600 dark:text-blue-300 font-medium' : 'truncate text-slate-400'}>{item.toCategoryId ? getCategoryName(item.toCategoryId) : '失败'}</span>
+                  <span className={changed ? 'truncate text-blue-600 dark:text-blue-300 font-medium' : 'truncate text-slate-400'}>
+                    {item.error ? '失败' : item.toCategoryId ? (changed ? getCategoryName(item.toCategoryId) : '保持原分类') : '失败'}
+                  </span>
                 </label>
               );
             })}
@@ -859,34 +911,47 @@ const AISettingsTab: React.FC<AISettingsTabProps> = ({
 
       {renamePreview.length > 0 && !isProcessing && (
         <div className="rounded-2xl border border-amber-100 dark:border-amber-900/50 bg-amber-50/50 dark:bg-amber-900/10 p-4 space-y-3">
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-100">AI 文件夹重命名预览</h4>
-              <p className="text-xs text-slate-500 dark:text-slate-400">根据文件夹内书签样本生成名称，勾选后一次应用。</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                根据文件夹内书签样本生成名称。变更 {changedRenameCount} 项，已勾选 {selectedChangedRenameCount} 项。
+              </p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <button
-                onClick={() => setSelectedRenameIds(new Set(renamePreview.filter(item => item.toName && item.toName !== item.fromName).map(item => item.categoryId)))}
-                className="px-3 py-1.5 text-xs rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700"
+                type="button"
+                onClick={selectAllRenameChanges}
+                className="px-3 py-1.5 text-xs rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700"
               >
-                全选变更
+                {changedRenameCount > 0 && selectedChangedRenameCount === changedRenameCount ? '取消全选' : '全选变更'}
               </button>
-              <button onClick={() => setRenamePreview([])} className="px-3 py-1.5 text-xs rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center gap-1"><X size={12} /> 关闭</button>
-              <button onClick={applyRenamePreview} className="px-3 py-1.5 text-xs rounded-lg bg-amber-600 hover:bg-amber-700 text-white flex items-center gap-1"><Check size={12} /> 应用勾选</button>
+              <button type="button" onClick={() => { setRenamePreview([]); setSelectedRenameIds(new Set()); }} className="px-3 py-1.5 text-xs rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center gap-1 hover:bg-slate-50 dark:hover:bg-slate-700"><X size={12} /> 关闭</button>
+              <button type="button" onClick={applyRenamePreview} className="px-3 py-1.5 text-xs rounded-lg bg-amber-600 hover:bg-amber-700 text-white flex items-center gap-1"><Check size={12} /> 应用勾选</button>
             </div>
           </div>
           <div className="max-h-72 overflow-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 divide-y divide-slate-100 dark:divide-slate-700">
             {renamePreview.map(item => {
-              const changed = Boolean(item.toName && item.toName !== item.fromName);
+              const changed = Boolean(item.toName) && item.toName !== item.fromName;
               return (
-                <label key={item.categoryId} className="grid grid-cols-[auto,1fr,140px,140px] gap-3 items-center px-3 py-2 text-xs cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50">
-                  <input type="checkbox" disabled={!changed} checked={selectedRenameIds.has(item.categoryId)} onChange={() => toggleRenameSelection(item.categoryId)} />
+                <label key={item.categoryId} className={`grid grid-cols-[auto_minmax(0,1fr)_minmax(5rem,8.5rem)_minmax(5rem,8.5rem)] gap-3 items-center px-3 py-2 text-xs ${changed ? 'cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50' : 'opacity-70'}`}>
+                  <input
+                    type="checkbox"
+                    disabled={!changed}
+                    checked={changed && selectedRenameIds.has(item.categoryId)}
+                    onChange={() => {
+                      if (!changed) return;
+                      toggleRenameSelection(item.categoryId);
+                    }}
+                  />
                   <div className="min-w-0">
                     <div className="font-medium text-slate-700 dark:text-slate-200 truncate">{item.fromName}</div>
                     <div className="text-slate-400 truncate">{item.error || `样本 ${item.sampleCount} 个`}</div>
                   </div>
                   <span className="truncate text-slate-500 dark:text-slate-400">{item.fromName}</span>
-                  <span className={changed ? 'truncate text-amber-600 dark:text-amber-300 font-medium' : 'truncate text-slate-400'}>{item.toName || '失败'}</span>
+                  <span className={changed ? 'truncate text-amber-600 dark:text-amber-300 font-medium' : 'truncate text-slate-400'}>
+                    {item.toName ? (changed ? item.toName : '保持原名') : '失败'}
+                  </span>
                 </label>
               );
             })}

@@ -253,7 +253,7 @@ function App() {
   });
   const [aiSettingsCategoryId, setAiSettingsCategoryId] = useState('');
   const [aiSettingsAction, setAiSettingsAction] = useState<'organize' | 'rename' | 'structure' | ''>('');
-  const [settingsInitialTab, setSettingsInitialTab] = useState<'site' | 'ai' | 'tools' | 'duplicates' | undefined>(undefined);
+  const [settingsInitialTab, setSettingsInitialTab] = useState<'site' | 'ai' | 'tools' | 'duplicates' | 'health' | undefined>(undefined);
   
   // QR Code Modal State
   const [qrCodeModal, setQrCodeModal] = useState<{
@@ -2208,6 +2208,7 @@ function App() {
           { id: 'add-link', title: '添加链接', description: '新建一个网站卡片', keywords: ['add', 'new', '添加', '链接'], icon: <Plus size={14} />, group: 'action', run: () => { if (!authToken) setIsAuthOpen(true); else { setEditingLink(undefined); setIsModalOpen(true); } } },
           { id: 'settings', title: '打开设置', description: '网站、AI 与扩展工具设置', keywords: ['settings', '设置', 'ai'], icon: <Settings size={14} />, group: 'action', run: () => { setSettingsInitialTab(undefined); setIsSettingsModalOpen(true); } },
           { id: 'duplicates', title: '检测重复网址', description: '扫描并清理重复书签', keywords: ['duplicate', '重复', '去重', '网址'], icon: <CopyCheck size={14} />, group: 'action', run: () => { if (!authToken) setIsAuthOpen(true); else { setSettingsInitialTab('duplicates'); setIsSettingsModalOpen(true); } } },
+          { id: 'health', title: '检测无法访问网站', description: '批量健康检测并清理失效链接', keywords: ['health', 'broken', '失效', '无法访问', '死链', '清理'], icon: <AlertCircle size={14} />, group: 'action', run: () => { if (!authToken) setIsAuthOpen(true); else { setSettingsInitialTab('health'); setIsSettingsModalOpen(true); } } },
           { id: 'backup', title: '备份与恢复', description: 'WebDAV 与本地导出', keywords: ['backup', '备份', '恢复'], icon: <Cloud size={14} />, group: 'action', run: () => setIsBackupModalOpen(true) },
           { id: 'import', title: '导入书签', description: '导入 HTML 或 JSON 备份', keywords: ['import', '导入', '书签'], icon: <Upload size={14} />, group: 'action', run: () => setIsImportModalOpen(true) },
           { id: 'organize', title: '整理待处理链接', description: `${inboxLinks.length} 个待整理`, keywords: ['organize', 'inbox', '整理', '待整理'], icon: <CheckSquare size={14} />, group: 'action', run: () => { if (inboxLinks.length > 0) { setSelectedCategory(INBOX_ID); setOrganizeIndex(0); setIsOrganizeMode(true); } } },
@@ -2698,6 +2699,10 @@ function App() {
                 onSelectCategory={(categoryId) => {
                   const category = categories.find(c => c.id === categoryId);
                   if (category) handleCategoryClick(category);
+                }}
+                onOpenHealthCheck={() => {
+                  if (!authToken) setIsAuthOpen(true);
+                  else { setSettingsInitialTab('health'); setIsSettingsModalOpen(true); }
                 }}
               />
             )}

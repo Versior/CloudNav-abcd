@@ -8,6 +8,7 @@ interface HomeDashboardProps {
   onOpenInbox: () => void;
   onClickLink: (link: LinkItem) => void;
   onSelectCategory: (categoryId: string) => void;
+  onOpenHealthCheck?: () => void;
 }
 
 const timeAgo = (ts: number) => {
@@ -19,7 +20,7 @@ const timeAgo = (ts: number) => {
   return `${days}天前`;
 };
 
-const HomeDashboard: React.FC<HomeDashboardProps> = ({ links, categories, onOpenInbox, onClickLink, onSelectCategory }) => {
+const HomeDashboard: React.FC<HomeDashboardProps> = ({ links, categories, onOpenInbox, onClickLink, onSelectCategory, onOpenHealthCheck }) => {
   const [foldersCollapsed, setFoldersCollapsed] = useState(true);
   const normalLinks = links.filter(l => l.categoryId !== INBOX_ID && !l.deletedAt);
   const inboxLinks = links.filter(l => l.categoryId === INBOX_ID && !l.deletedAt);
@@ -142,9 +143,20 @@ const HomeDashboard: React.FC<HomeDashboardProps> = ({ links, categories, onOpen
       </div>
 
       {brokenLinks.length > 0 && (
-        <div className="p-4 rounded-2xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/50">
-          <div className="flex items-center gap-2 text-red-700 dark:text-red-300 font-medium text-sm mb-1"><AlertTriangle size={14} /> {brokenLinks.length} 个链接可能已失效</div>
-          <p className="text-xs text-red-600 dark:text-red-400">打开链接详情侧边栏可查看健康状态。</p>
+        <div className="p-4 rounded-2xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/50 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2 text-red-700 dark:text-red-300 font-medium text-sm mb-1"><AlertTriangle size={14} /> {brokenLinks.length} 个链接可能已失效</div>
+            <p className="text-xs text-red-600 dark:text-red-400">可批量检测无法访问的网站并清理。</p>
+          </div>
+          {onOpenHealthCheck && (
+            <button
+              type="button"
+              onClick={onOpenHealthCheck}
+              className="px-3 py-1.5 text-xs rounded-lg bg-red-600 hover:bg-red-700 text-white"
+            >
+              去检测清理
+            </button>
+          )}
         </div>
       )}
     </section>

@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useModalA11y } from './useModalA11y';
-import { X, Save, Bot, Wrench, LayoutTemplate, CopyCheck } from 'lucide-react';
+import { X, Save, Bot, Wrench, LayoutTemplate, CopyCheck, Activity } from 'lucide-react';
 import { AIConfig, LinkItem, Category, SiteSettings } from '../types';
 import SiteSettingsTab from './SiteSettingsTab';
 import AISettingsTab from './AISettingsTab';
 import ExtensionToolsTab from './ExtensionToolsTab';
 import DuplicateLinksPanel from './DuplicateLinksPanel';
+import LinkHealthPanel from './LinkHealthPanel';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -23,7 +24,7 @@ interface SettingsModalProps {
   extensionToken: string;
   initialAICategoryId?: string;
   initialAIAction?: 'organize' | 'rename' | 'structure';
-  initialTab?: 'site' | 'ai' | 'tools' | 'duplicates';
+  initialTab?: 'site' | 'ai' | 'tools' | 'duplicates' | 'health';
 }
 
 const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -32,7 +33,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   const modalRef = useRef<HTMLDivElement>(null);
   useModalA11y(isOpen, onClose, modalRef);
 
-  const [activeTab, setActiveTab] = useState<'site' | 'ai' | 'tools' | 'duplicates'>('site');
+  const [activeTab, setActiveTab] = useState<'site' | 'ai' | 'tools' | 'duplicates' | 'health'>('site');
   const [localConfig, setLocalConfig] = useState<AIConfig>(config);
   const [localSiteSettings, setLocalSiteSettings] = useState<SiteSettings>(() => ({
       title: siteSettings?.title || 'NaviX - 我的导航',
@@ -108,6 +109,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     { id: 'site', label: '网站设置', icon: LayoutTemplate },
     { id: 'ai', label: 'AI 设置', icon: Bot },
     { id: 'duplicates', label: '重复检测', icon: CopyCheck },
+    { id: 'health', label: '健康检测', icon: Activity },
     { id: 'tools', label: '扩展工具', icon: Wrench },
   ];
 
@@ -159,6 +161,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                 )}
                 {activeTab === 'duplicates' && (
                     <DuplicateLinksPanel
+                      links={links}
+                      categories={categories}
+                      onUpdateLinks={onUpdateLinks}
+                      onEditLink={onEditLink}
+                    />
+                )}
+                {activeTab === 'health' && (
+                    <LinkHealthPanel
                       links={links}
                       categories={categories}
                       onUpdateLinks={onUpdateLinks}

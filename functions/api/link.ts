@@ -22,23 +22,98 @@ const isPrivateHostname = (hostname: string) => {
   return a === 0 || a === 10 || a === 127 || a >= 224 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
 };
 
+const classifyStatus = (statusCode: number, originalUrl: string, finalUrl?: string | null) => {
+  if (statusCode >= 200 && statusCode < 300) {
+    if (finalUrl && finalUrl !== originalUrl) {
+      try {
+        const a = new URL(originalUrl);
+        const b = new URL(finalUrl, originalUrl);
+        if (a.host.replace(/^www\./, '') !== b.host.replace(/^www\./, '') || a.pathname.replace(/\/$/, '') !== b.pathname.replace(/\/$/, '')) {
+          return 'redirected' as const;
+        }
+      } catch {
+        return 'redirected' as const;
+      }
+    }
+    return 'ok' as const;
+  }
+  if (statusCode >= 300 && statusCode < 400) return 'redirected' as const;
+  if (statusCode >= 400) return 'broken' as const;
+  return 'unknown' as const;
+};
+
+const fetchWithTimeout = async (url: string, init: RequestInit, timeoutMs = 10000) => {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+};
+
 const handleCheckHealth = async (url: string) => {
   try {
-    const parsed = new URL(url);
+    if (!url?.trim()) {
+      return jsonResponse({ status: 'invalid', error: 'URL is required' }, { status: 400 });
+    }
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      return jsonResponse({ status: 'invalid', error: 'Invalid URL' }, { status: 400 });
+    }
     if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
       return jsonResponse({ status: 'invalid', error: 'URL must use http or https' }, { status: 400 });
     }
     if (isPrivateHostname(parsed.hostname)) {
       return jsonResponse({ status: 'invalid', error: 'Private/internal URLs are not allowed' }, { status: 400 });
     }
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
-    const response = await fetch(url, { method: 'HEAD', redirect: 'manual', signal: controller.signal });
-    clearTimeout(timeout);
-    const status = response.status >= 200 && response.status < 400 ? 'ok' : response.status >= 400 ? 'broken' : 'unknown';
-    return jsonResponse({ status, statusCode: response.status, finalUrl: response.headers.get('Location') || url, checkedAt: Date.now() });
-  } catch {
-    return jsonResponse({ status: 'broken', statusCode: 0, error: 'Request failed', checkedAt: Date.now() });
+
+    const commonHeaders = {
+      'User-Agent': 'NaviX-HealthCheck/1.0 (+https://navix.local)',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    };
+
+    // Prefer HEAD first (cheap). Many sites reject HEAD — fall back to GET range/body.
+    let response: Response | null = null;
+    try {
+      response = await fetchWithTimeout(url, { method: 'HEAD', redirect: 'follow', headers: commonHeaders });
+      if (response.status === 405 || response.status === 501 || response.status === 403) {
+        response = null;
+      }
+    } catch {
+      response = null;
+    }
+
+    if (!response) {
+      response = await fetchWithTimeout(url, {
+        method: 'GET',
+        redirect: 'follow',
+        headers: {
+          ...commonHeaders,
+          Range: 'bytes=0-0',
+        },
+      });
+    }
+
+    const finalUrl = response.url || response.headers.get('Location') || url;
+    const status = classifyStatus(response.status, url, finalUrl);
+    return jsonResponse({
+      status,
+      statusCode: response.status,
+      finalUrl,
+      checkedAt: Date.now(),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Request failed';
+    const aborted = /abort/i.test(message);
+    return jsonResponse({
+      status: 'broken',
+      statusCode: 0,
+      error: aborted ? 'Request timeout' : 'Request failed',
+      checkedAt: Date.now(),
+    });
   }
 };
 
@@ -118,9 +193,10 @@ export const onRequestPost = async (context: { request: Request; env: Env }) => 
     return jsonResponse({
       success: true,
       link: newLink,
-      categoryName: targetCatName,
+      category: { id: targetCatId, name: targetCatName },
     });
-  } catch (err: any) {
-    return jsonResponse({ error: err.message }, { status: 500 });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Request failed';
+    return jsonResponse({ error: message }, { status: 500 });
   }
 };

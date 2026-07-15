@@ -87,56 +87,100 @@ const formatProviderError = (provider: string, response: Response, detail: strin
   if (contentType.includes('text/html') || isHtmlText(text)) {
     return `${provider} 返回了 HTML 错误页（HTTP ${response.status}）。API 地址大概率填成了网页地址，请改成服务商的接口地址。`;
   }
+  if (response.status === 429 || /rate limit|too many requests|quota/i.test(text)) {
+    return `${provider} 请求失败：HTTP 429，限流中，请稍后重试。${text ? text.slice(0, 180) : ''}`;
+  }
   return `${provider} 请求失败：HTTP ${response.status}${text ? `，${text.slice(0, 300)}` : ''}`;
+};
+
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+const parseRetryAfterMs = (response: Response, rawText: string) => {
+  const header = response.headers.get('retry-after');
+  if (header) {
+    const asNumber = Number(header);
+    if (!Number.isNaN(asNumber) && asNumber >= 0) return Math.min(asNumber * 1000, 20000);
+    const asDate = Date.parse(header);
+    if (!Number.isNaN(asDate)) return Math.min(Math.max(asDate - Date.now(), 500), 20000);
+  }
+  try {
+    const data = JSON.parse(rawText) as any;
+    const retry = data?.error?.retry_after || data?.retry_after;
+    if (typeof retry === 'number') return Math.min(Math.max(retry * 1000, 500), 20000);
+  } catch {
+    // ignore
+  }
+  return 0;
 };
 
 const callOpenAICompatible = async (config: AIConfig, systemPrompt: string, userPrompt: string, temperature = 0.7) => {
   if (!config.apiKey || !config.baseUrl) throw new Error('OpenAI compatible API key or base URL is not configured');
 
   const baseUrl = normalizeOpenAIEndpoint(config.baseUrl);
+  let lastError: Error | null = null;
 
-  const response = await fetch(baseUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${config.apiKey}`,
-    },
-    body: JSON.stringify({
-      model: config.model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      temperature,
-    }),
-  });
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const response = await fetch(baseUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: config.model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        temperature,
+      }),
+    });
 
-  const rawText = await response.text();
-  if (!response.ok) {
-    throw new Error(formatProviderError('OpenAI Compatible', response, rawText));
+    const rawText = await response.text();
+    if (response.ok) {
+      const data = parseProviderJson('OpenAI Compatible', rawText, baseUrl);
+      return data.choices?.[0]?.message?.content?.trim() || '';
+    }
+
+    lastError = new Error(formatProviderError('OpenAI Compatible', response, rawText));
+    if (response.status !== 429 && response.status !== 503) throw lastError;
+    if (attempt === 3) throw lastError;
+    const wait = parseRetryAfterMs(response, rawText) || Math.min(800 * (2 ** (attempt - 1)), 6000);
+    await sleep(wait);
   }
-  const data = parseProviderJson('OpenAI Compatible', rawText, baseUrl);
-  return data.choices?.[0]?.message?.content?.trim() || '';
+
+  throw lastError || new Error('OpenAI Compatible request failed');
 };
 
 const callGemini = async (config: AIConfig, prompt: string) => {
   if (!config.apiKey) throw new Error('Gemini API key is not configured');
   const model = config.model || 'gemini-2.5-flash';
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
-  const response = await fetch(`${endpoint}?key=${encodeURIComponent(config.apiKey)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-    }),
-  });
+  let lastError: Error | null = null;
 
-  const rawText = await response.text();
-  if (!response.ok) {
-    throw new Error(formatProviderError('Gemini', response, rawText));
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const response = await fetch(`${endpoint}?key=${encodeURIComponent(config.apiKey)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+      }),
+    });
+
+    const rawText = await response.text();
+    if (response.ok) {
+      const data = parseProviderJson('Gemini', rawText, endpoint);
+      return data.candidates?.[0]?.content?.parts?.map((part: any) => part.text || '').join('').trim() || '';
+    }
+
+    lastError = new Error(formatProviderError('Gemini', response, rawText));
+    if (response.status !== 429 && response.status !== 503) throw lastError;
+    if (attempt === 3) throw lastError;
+    const wait = parseRetryAfterMs(response, rawText) || Math.min(800 * (2 ** (attempt - 1)), 6000);
+    await sleep(wait);
   }
-  const data = parseProviderJson('Gemini', rawText, endpoint);
-  return data.candidates?.[0]?.content?.parts?.map((part: any) => part.text || '').join('').trim() || '';
+
+  throw lastError || new Error('Gemini request failed');
 };
 
 export const onRequestOptions = async () => optionsResponse();

@@ -233,7 +233,8 @@ const AISettingsTab: React.FC<AISettingsTabProps> = ({
     const preview: CategoryPreviewItem[] = [];
     let nextIndex = 0;
     let completed = 0;
-    const workerCount = Math.min(4, targetLinks.length);
+    // Keep concurrency low to reduce provider 429 rate limits.
+    const workerCount = Math.min(2, targetLinks.length);
 
     const worker = async () => {
       while (!shouldStopRef.current && nextIndex < targetLinks.length) {
@@ -400,7 +401,7 @@ const AISettingsTab: React.FC<AISettingsTabProps> = ({
     const preview: FolderRenamePreviewItem[] = [];
     let nextIndex = 0;
     let completed = 0;
-    const workerCount = Math.min(3, targets.length);
+    const workerCount = Math.min(2, targets.length);
 
     const worker = async () => {
       while (!shouldStopRef.current && nextIndex < targets.length) {

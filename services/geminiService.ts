@@ -31,6 +31,55 @@ const parseJsonResponse = (rawText: string, provider: string, endpoint?: string)
   }
 };
 
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+const isRateLimitError = (status: number, text: string) =>
+  status === 429 || /rate limit|too many requests|quota|超过.*限制|限流/i.test(text);
+
+const parseRetryAfterMs = (response: Response, rawText: string) => {
+  const header = response.headers.get('retry-after');
+  if (header) {
+    const asNumber = Number(header);
+    if (!Number.isNaN(asNumber) && asNumber >= 0) return Math.min(asNumber * 1000, 30000);
+    const asDate = Date.parse(header);
+    if (!Number.isNaN(asDate)) return Math.min(Math.max(asDate - Date.now(), 1000), 30000);
+  }
+  try {
+    const data = JSON.parse(rawText) as any;
+    const retry = data?.error?.retry_after || data?.retry_after;
+    if (typeof retry === 'number') return Math.min(Math.max(retry * 1000, 1000), 30000);
+  } catch {
+    // ignore
+  }
+  return 0;
+};
+
+// Serialize AI calls in the browser to reduce 429 under bulk operations.
+let aiQueue: Promise<unknown> = Promise.resolve();
+const enqueueAI = async <T>(fn: () => Promise<T>): Promise<T> => {
+  const run = aiQueue.then(fn, fn);
+  aiQueue = run.then(() => undefined, () => undefined);
+  return run;
+};
+
+const withRetry = async <T>(fn: () => Promise<T>, label: string, maxAttempts = 4): Promise<T> => {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      const message = error instanceof Error ? error.message : String(error);
+      const retryable = /HTTP 429|rate limit|too many requests|quota|限流|超时|timeout|503|502/i.test(message);
+      if (!retryable || attempt === maxAttempts) throw error;
+      const delay = Math.min(1000 * (2 ** (attempt - 1)) + Math.floor(Math.random() * 400), 12000);
+      console.warn(`${label} 第 ${attempt} 次失败，${delay}ms 后重试：`, message);
+      await sleep(delay);
+    }
+  }
+  throw lastError;
+};
+
 const stripCodeFence = (text: string) =>
   text.trim().replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
 
@@ -176,7 +225,7 @@ const parseFolderStructure = (
   };
 };
 
-const callGeminiDirect = async (task: AITask, body: Record<string, unknown>, config: AIConfig) => {
+const callGeminiDirectOnce = async (task: AITask, body: Record<string, unknown>, config: AIConfig) => {
   if (!config.apiKey) throw new Error('Gemini API key is not configured');
   const model = config.model || 'gemini-2.5-flash';
   const prompts = buildPrompts(task, body);
@@ -187,12 +236,19 @@ const callGeminiDirect = async (task: AITask, body: Record<string, unknown>, con
     body: JSON.stringify({ contents: [{ parts: [{ text: `${prompts.system}\n${prompts.user}` }] }] }),
   });
   const rawText = await response.text().catch(() => '');
-  if (!response.ok) throw new Error(`Gemini 请求失败：HTTP ${response.status}，${parseJsonError(rawText).slice(0, 240)}`);
+  if (!response.ok) {
+    const detail = parseJsonError(rawText).slice(0, 240);
+    if (isRateLimitError(response.status, detail)) {
+      const wait = parseRetryAfterMs(response, rawText) || 1500;
+      throw new Error(`Gemini 请求失败：HTTP 429，限流中，请稍后重试（建议等待 ${Math.ceil(wait / 1000)} 秒）。${detail}`);
+    }
+    throw new Error(`Gemini 请求失败：HTTP ${response.status}，${detail}`);
+  }
   const data = parseJsonResponse(rawText, 'Gemini', endpoint);
   return data.candidates?.[0]?.content?.parts?.map((part: any) => part.text || '').join('').trim() || '';
 };
 
-const callOpenAIDirect = async (task: AITask, body: Record<string, unknown>, config: AIConfig) => {
+const callOpenAIDirectOnce = async (task: AITask, body: Record<string, unknown>, config: AIConfig) => {
   if (!config.apiKey) throw new Error('OpenAI compatible API key is not configured');
   const endpoint = normalizeOpenAIEndpoint(config.baseUrl);
   const prompts = buildPrompts(task, body);
@@ -209,51 +265,67 @@ const callOpenAIDirect = async (task: AITask, body: Record<string, unknown>, con
     }),
   });
   const rawText = await response.text().catch(() => '');
-  if (!response.ok) throw new Error(`OpenAI Compatible 请求失败：HTTP ${response.status}，${parseJsonError(rawText).slice(0, 240)}`);
+  if (!response.ok) {
+    const detail = parseJsonError(rawText).slice(0, 240);
+    if (isRateLimitError(response.status, detail)) {
+      const wait = parseRetryAfterMs(response, rawText) || 1500;
+      throw new Error(`OpenAI Compatible 请求失败：HTTP 429，限流中，请稍后重试（建议等待 ${Math.ceil(wait / 1000)} 秒）。${detail}`);
+    }
+    throw new Error(`OpenAI Compatible 请求失败：HTTP ${response.status}，${detail}`);
+  }
   const data = parseJsonResponse(rawText, 'OpenAI Compatible', endpoint);
   return data.choices?.[0]?.message?.content?.trim() || '';
 };
 
 const callDirectAI = async (task: AITask, body: Record<string, unknown>, config: AIConfig) => {
-  const text = config.provider === 'openai'
-    ? await callOpenAIDirect(task, body, config)
-    : await callGeminiDirect(task, body, config);
+  const text = await withRetry(
+    () => config.provider === 'openai'
+      ? callOpenAIDirectOnce(task, body, config)
+      : callGeminiDirectOnce(task, body, config),
+    'AI 直连'
+  );
   if (task === 'category') return sanitizeCategoryResponse(text, (body.categories as Pick<Category, 'id' | 'name'>[]) || []);
   return text;
 };
 
-const callAI = async (task: AITask, body: Record<string, unknown>, config: AIConfig): Promise<string | null> => {
-  try {
-    const response = await fetch('/api/ai', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ task, ...body, config })
-    });
+const callAI = async (task: AITask, body: Record<string, unknown>, config: AIConfig): Promise<string | null> =>
+  enqueueAI(async () => {
+    try {
+      return await withRetry(async () => {
+        const response = await fetch('/api/ai', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ task, ...body, config })
+        });
 
-    const rawText = await response.text().catch(() => '');
-    if (isHtml(rawText) && config.apiKey) return callDirectAI(task, body, config);
-    let data: any = {};
-    try { data = rawText ? JSON.parse(rawText) : {}; } catch {
-      throw new Error(`AI 代理返回的不是合法 JSON：${rawText.slice(0, 120)}`);
+        const rawText = await response.text().catch(() => '');
+        if (isHtml(rawText) && config.apiKey) return callDirectAI(task, body, config);
+        let data: any = {};
+        try { data = rawText ? JSON.parse(rawText) : {}; } catch {
+          throw new Error(`AI 代理返回的不是合法 JSON：${rawText.slice(0, 120)}`);
+        }
+
+        if (!response.ok) {
+          if (isHtml(rawText) && config.apiKey) return callDirectAI(task, body, config);
+          const detail = typeof data.error === 'string' && data.error.trim()
+            ? data.error.trim()
+            : isHtml(rawText)
+              ? `AI 代理返回了 HTML 错误页（HTTP ${response.status}），请检查 Cloudflare Pages Functions 部署状态。`
+              : rawText.trim() || `请求失败（HTTP ${response.status}）`;
+          if (isRateLimitError(response.status, detail)) {
+            throw new Error(`AI 请求失败：HTTP 429，限流中，请稍后重试。${detail.slice(0, 180)}`);
+          }
+          throw new Error(detail.slice(0, 300));
+        }
+
+        return typeof data.text === 'string' ? data.text.trim() : null;
+      }, 'AI 代理');
+    } catch (e) {
+      if (e instanceof Error && /AI 代理返回了 HTML 错误页/.test(e.message) && config.apiKey) return callDirectAI(task, body, config);
+      console.error("AI request failed", e);
+      throw e;
     }
-
-    if (!response.ok) {
-      if (isHtml(rawText) && config.apiKey) return callDirectAI(task, body, config);
-      const detail = typeof data.error === 'string' && data.error.trim()
-        ? data.error.trim()
-        : isHtml(rawText)
-          ? `AI 代理返回了 HTML 错误页（HTTP ${response.status}），请检查 Cloudflare Pages Functions 部署状态。`
-          : rawText.trim() || `请求失败（HTTP ${response.status}）`;
-      throw new Error(detail.slice(0, 300));
-    }
-
-    return typeof data.text === 'string' ? data.text.trim() : null;
-  } catch (e) {
-    if (e instanceof Error && /AI 代理返回了 HTML 错误页/.test(e.message) && config.apiKey) return callDirectAI(task, body, config);
-    console.error("AI request failed", e);
-    throw e;
-  }
-};
+  });
 
 export const testAIConnection = async (config: AIConfig): Promise<string> => {
   const result = await callAI('test', { title: 'NaviX AI Test', url: 'https://example.com' }, config);

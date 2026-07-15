@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { X, ExternalLink, Clock, Eye, EyeOff, Activity, Tag, FileText, Bookmark, KeyRound, Plus, Trash2, Copy, Lock, Save, Eraser, ChevronDown } from 'lucide-react';
+import { X, ExternalLink, Clock, Eye, EyeOff, Activity, Tag, FileText, Bookmark, KeyRound, Plus, Trash2, Copy, Lock, Save, Eraser, ChevronDown, CheckCircle2, RefreshCw } from 'lucide-react';
 import { LinkItem, Category, SiteCredential } from '../types';
 import { decryptCredentialPassword, encryptCredentialPassword } from '../services/credentialCrypto';
+import { checkLinkHealth, healthLabel, makeCorrectedOkHealth, needsHealthCorrection } from '../services/linkHealthService';
 
 interface LinkDetailsDrawerProps {
   link: LinkItem | null;
@@ -37,7 +38,6 @@ const statusColors: Record<string, string> = {
   archived: 'text-slate-500 bg-slate-100 dark:bg-slate-700 dark:text-slate-400',
 };
 
-const healthLabels: Record<string, string> = { ok: '正常', broken: '确定失效', redirected: '已跳转', unknown: '探测受阻/待确认' };
 const healthColors: Record<string, string> = {
   ok: 'text-green-600', broken: 'text-red-600', redirected: 'text-amber-600', unknown: 'text-slate-500',
 };
@@ -76,6 +76,7 @@ const LinkDetailsDrawer: React.FC<LinkDetailsDrawerProps> = ({ link, isOpen, onC
   const [masterPassword, setMasterPassword] = useState('');
   const [credentialMessage, setCredentialMessage] = useState('');
   const [expandedCredentialIds, setExpandedCredentialIds] = useState<Set<string>>(new Set());
+  const [isRechecking, setIsRechecking] = useState(false);
 
   useEffect(() => {
     if (link) {
@@ -87,6 +88,7 @@ const LinkDetailsDrawer: React.FC<LinkDetailsDrawerProps> = ({ link, isOpen, onC
       setMasterPassword('');
       setCredentialMessage('');
       setExpandedCredentialIds(new Set());
+      setIsRechecking(false);
     }
   }, [link]);
 
@@ -105,6 +107,32 @@ const LinkDetailsDrawer: React.FC<LinkDetailsDrawerProps> = ({ link, isOpen, onC
   };
 
   const parseTags = (s: string) => s.split(',').map(t => t.trim()).filter(Boolean);
+
+  const correctHealthToOk = () => {
+    onUpdate(link.id, { health: makeCorrectedOkHealth(link.url) });
+    setCredentialMessage('已纠正为正常（人工确认可访问）');
+  };
+
+  const recheckHealth = async () => {
+    setIsRechecking(true);
+    try {
+      const result = await checkLinkHealth(link.url);
+      const status = result.status === 'invalid' ? 'unknown' : result.status;
+      onUpdate(link.id, {
+        health: {
+          status,
+          statusCode: result.statusCode,
+          finalUrl: result.finalUrl,
+          checkedAt: result.checkedAt,
+        },
+      });
+      setCredentialMessage(`重新检测完成：${healthLabel(status, result.statusCode)}`);
+    } catch {
+      setCredentialMessage('重新检测失败，请稍后再试');
+    } finally {
+      setIsRechecking(false);
+    }
+  };
 
   const saveNote = () => {
     onUpdate(link.id, { note: note.trim() || undefined });
@@ -305,14 +333,40 @@ const LinkDetailsDrawer: React.FC<LinkDetailsDrawerProps> = ({ link, isOpen, onC
           <span className="flex items-center gap-1"><Eye size={12} /> {link.visitCount || 0} 次</span>
         </div>
 
-        {health && (
-          <div className={`flex items-center gap-1 text-xs ${healthColors[health.status] || ''}`}>
-            <Activity size={12} />
-            {healthLabels[health.status] || '未知'}
-            {health.statusCode ? ` (${health.statusCode})` : ''}
-            <span className="text-slate-400 ml-1">{timeAgo(health.checkedAt)}</span>
+        <div className="rounded-xl border border-slate-200 dark:border-slate-700 p-3 bg-white dark:bg-slate-800 space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className={`flex items-center gap-1 text-xs ${health ? (healthColors[health.status] || '') : 'text-slate-400'}`}>
+              <Activity size={12} />
+              {health
+                ? `${healthLabel(health.status, health.statusCode)}${health.statusCode ? ` (${health.statusCode})` : ''}`
+                : '未检测健康状态'}
+              {health?.checkedAt && <span className="text-slate-400 ml-1">{timeAgo(health.checkedAt)}</span>}
+            </div>
+            <div className="flex items-center gap-1">
+              {needsHealthCorrection(health) && (
+                <button
+                  type="button"
+                  onClick={correctHealthToOk}
+                  className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded-md border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/20"
+                >
+                  <CheckCircle2 size={12} /> 纠正为正常
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={recheckHealth}
+                disabled={isRechecking}
+                className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded-md border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50"
+              >
+                <RefreshCw size={12} className={isRechecking ? 'animate-spin' : ''} />
+                {isRechecking ? '检测中' : '重新检测'}
+              </button>
+            </div>
           </div>
-        )}
+          {needsHealthCorrection(health) && (
+            <p className="text-[11px] text-slate-400">如果浏览器能正常打开，点「纠正为正常」即可，不必删除。</p>
+          )}
+        </div>
 
         {link.description && (
           <p className="text-sm text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-700/50 p-3 rounded-lg">{link.description}</p>

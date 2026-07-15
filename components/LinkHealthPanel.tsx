@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { Activity, AlertTriangle, Check, ExternalLink, PauseCircle, RefreshCw, Trash2 } from 'lucide-react';
+import { Activity, AlertTriangle, Check, CheckCircle2, ExternalLink, PauseCircle, RefreshCw, Trash2 } from 'lucide-react';
 import { Category, LinkItem } from '../types';
 import {
   checkLinkHealth,
@@ -7,6 +7,8 @@ import {
   healthReasonFromCode,
   isHardBroken,
   isSoftIssue,
+  makeCorrectedOkHealth,
+  needsHealthCorrection,
 } from '../services/linkHealthService';
 
 interface LinkHealthPanelProps {
@@ -179,11 +181,85 @@ const LinkHealthPanel: React.FC<LinkHealthPanelProps> = ({
     } else if (!confirm(`确定删除 ${selectedIds.size} 个失效链接吗？`)) {
       return;
     }
+    const count = selectedIds.size;
     const next = localLinks.filter(l => !selectedIds.has(l.id));
     setLocalLinks(next);
     onUpdateLinks(next);
     setSelectedIds(new Set());
-    alert(`已删除 ${selectedIds.size} 个链接`);
+    alert(`已删除 ${count} 个链接`);
+  };
+
+  const correctLinksToOk = (ids: string[], silent = false) => {
+    if (ids.length === 0) {
+      if (!silent) alert('请先勾选要纠正的链接');
+      return;
+    }
+    const idSet = new Set(ids);
+    const nextReasons = { ...reasons };
+    const next = localLinks.map(link => {
+      if (!idSet.has(link.id)) return link;
+      nextReasons[link.id] = '已人工纠正为正常';
+      return {
+        ...link,
+        health: makeCorrectedOkHealth(link.url),
+        updatedAt: Date.now(),
+      };
+    });
+    setLocalLinks(next);
+    setReasons(nextReasons);
+    onUpdateLinks(next);
+    setSelectedIds(prev => {
+      const remain = new Set(prev);
+      ids.forEach(id => remain.delete(id));
+      return remain;
+    });
+    if (!silent) alert(`已纠正 ${ids.length} 个链接为正常`);
+  };
+
+  const correctSelectedToOk = () => {
+    const ids = [...selectedIds].filter(id => {
+      const link = localLinks.find(l => l.id === id);
+      return link && needsHealthCorrection(link.health);
+    });
+    if (ids.length === 0) {
+      alert('请勾选失效/探测受阻/跳转的链接后再纠正');
+      return;
+    }
+    if (!confirm(`将把 ${ids.length} 个链接标记为「正常」（人工确认可访问）。确定吗？`)) return;
+    correctLinksToOk(ids);
+  };
+
+  const correctOneToOk = (linkId: string) => {
+    correctLinksToOk([linkId], true);
+  };
+
+  const recheckOne = async (link: LinkItem) => {
+    try {
+      const result = await checkLinkHealth(link.url);
+      const status = result.status === 'invalid' ? 'unknown' : result.status;
+      const next = localLinks.map(item =>
+        item.id === link.id
+          ? {
+              ...item,
+              health: {
+                status,
+                statusCode: result.statusCode,
+                finalUrl: result.finalUrl,
+                checkedAt: result.checkedAt,
+              },
+              updatedAt: Date.now(),
+            }
+          : item
+      );
+      setLocalLinks(next);
+      setReasons(prev => ({
+        ...prev,
+        [link.id]: healthReasonFromCode(status, result.statusCode, result.reason || result.error),
+      }));
+      onUpdateLinks(next);
+    } catch {
+      alert('重新检测失败，请稍后再试');
+    }
   };
 
   const badgeClass = (link: LinkItem) => {
@@ -203,7 +279,7 @@ const LinkHealthPanel: React.FC<LinkHealthPanelProps> = ({
               链接健康检测
             </div>
             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-              只有 404/410 等会标为「确定失效」。403/防爬/超时标为「探测受阻」，浏览器能打开的不要直接删。
+              只有 404/410 等会标为「确定失效」。403/防爬/超时标为「探测受阻」。浏览器能打开的可用「纠正为正常」。
             </p>
           </div>
           <button
@@ -304,6 +380,13 @@ const LinkHealthPanel: React.FC<LinkHealthPanelProps> = ({
             </button>
             <button
               type="button"
+              onClick={correctSelectedToOk}
+              className="px-3 py-1.5 text-xs rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 inline-flex items-center gap-1"
+            >
+              <CheckCircle2 size={12} /> 纠正勾选为正常
+            </button>
+            <button
+              type="button"
               onClick={applyDelete}
               className="px-3 py-1.5 text-xs rounded-lg bg-red-600 hover:bg-red-700 text-white inline-flex items-center gap-1"
             >
@@ -357,6 +440,24 @@ const LinkHealthPanel: React.FC<LinkHealthPanelProps> = ({
                       <a href={link.url} target="_blank" rel="noreferrer" className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500" title="打开验证">
                         <ExternalLink size={14} />
                       </a>
+                      {needsHealthCorrection(link.health) && (
+                        <button
+                          type="button"
+                          onClick={() => correctOneToOk(link.id)}
+                          className="px-2 py-1 text-[11px] rounded-lg border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/20"
+                          title="人工确认可访问，标记为正常"
+                        >
+                          纠正
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => recheckOne(link)}
+                        className="px-2 py-1 text-[11px] rounded-lg border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"
+                        title="重新检测"
+                      >
+                        重测
+                      </button>
                       {onEditLink && (
                         <button
                           type="button"

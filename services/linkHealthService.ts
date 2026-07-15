@@ -62,6 +62,17 @@ export const healthReasonFromCode = (status?: string, statusCode?: number, reaso
   return '';
 };
 
+/** Manual correction after human verification — treat link as healthy. */
+export const makeCorrectedOkHealth = (finalUrl?: string): NonNullable<LinkItem['health']> => ({
+  status: 'ok',
+  statusCode: 200,
+  finalUrl,
+  checkedAt: Date.now(),
+});
+
+export const needsHealthCorrection = (health?: LinkItem['health'] | null) =>
+  Boolean(health && health.status && health.status !== 'ok');
+
 export const checkLinkHealth = async (url: string): Promise<HealthCheckResult> => {
   const response = await fetch('/api/link', {
     method: 'POST',

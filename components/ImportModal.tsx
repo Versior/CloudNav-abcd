@@ -3,6 +3,7 @@ import { useModalA11y } from './useModalA11y';
 import { X, Upload, FileText, ArrowRight, Check, AlertCircle, FolderInput, ListTree, Database } from 'lucide-react';
 import { Category, LinkItem, SearchConfig, AIConfig } from '../types';
 import { parseBookmarks } from '../services/bookmarkParser';
+import { normalizeUrl } from '../services/duplicateService';
 
 interface ImportModalProps {
   isOpen: boolean;
@@ -104,17 +105,18 @@ const ImportModal: React.FC<ImportModalProps> = ({
             result = await parseJsonBackup(selectedFile);
         }
         
-        // 2. Diff Logic
-        const existingUrls = new Set(existingLinks.map(l => l.url.trim().replace(/\/$/, ''))); // Normalize URLs slightly
-        
+        // 2. Diff Logic — ignore protocol/www/trailing slash/tracking params
+        const existingUrls = new Set(existingLinks.map(l => normalizeUrl(l.url)).filter(Boolean));
+
         const uniqueNewLinks: LinkItem[] = [];
         let duplicates = 0;
 
         result.links.forEach(link => {
-            const normalizedUrl = link.url.trim().replace(/\/$/, '');
-            if (existingUrls.has(normalizedUrl)) {
+            const normalizedUrl = normalizeUrl(link.url);
+            if (normalizedUrl && existingUrls.has(normalizedUrl)) {
                 duplicates++;
             } else {
+                if (normalizedUrl) existingUrls.add(normalizedUrl); // also skip dups inside import file
                 uniqueNewLinks.push(link);
             }
         });

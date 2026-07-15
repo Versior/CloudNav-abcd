@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useModalA11y } from './useModalA11y';
-import { X, Save, Bot, Wrench, LayoutTemplate } from 'lucide-react';
+import { X, Save, Bot, Wrench, LayoutTemplate, CopyCheck } from 'lucide-react';
 import { AIConfig, LinkItem, Category, SiteSettings } from '../types';
 import SiteSettingsTab from './SiteSettingsTab';
 import AISettingsTab from './AISettingsTab';
 import ExtensionToolsTab from './ExtensionToolsTab';
+import DuplicateLinksPanel from './DuplicateLinksPanel';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -17,19 +18,21 @@ interface SettingsModalProps {
   onUpdateLinks: (links: LinkItem[]) => void;
   onUpdateCategories?: (categories: Category[]) => void;
   onUpdateData?: (links: LinkItem[], categories: Category[]) => void;
+  onEditLink?: (link: LinkItem) => void;
   authToken: boolean;
   extensionToken: string;
   initialAICategoryId?: string;
   initialAIAction?: 'organize' | 'rename' | 'structure';
+  initialTab?: 'site' | 'ai' | 'tools' | 'duplicates';
 }
 
 const SettingsModal: React.FC<SettingsModalProps> = ({
-    isOpen, onClose, config, siteSettings, onSave, links, categories, onUpdateLinks, onUpdateCategories, onUpdateData, authToken, extensionToken, initialAICategoryId, initialAIAction
+    isOpen, onClose, config, siteSettings, onSave, links, categories, onUpdateLinks, onUpdateCategories, onUpdateData, onEditLink, authToken, extensionToken, initialAICategoryId, initialAIAction, initialTab
 }) => {
   const modalRef = useRef<HTMLDivElement>(null);
   useModalA11y(isOpen, onClose, modalRef);
 
-  const [activeTab, setActiveTab] = useState<'site' | 'ai' | 'tools'>('site');
+  const [activeTab, setActiveTab] = useState<'site' | 'ai' | 'tools' | 'duplicates'>('site');
   const [localConfig, setLocalConfig] = useState<AIConfig>(config);
   const [localSiteSettings, setLocalSiteSettings] = useState<SiteSettings>(() => ({
       title: siteSettings?.title || 'NaviX - 我的导航',
@@ -50,9 +53,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
           passwordExpiryDays: siteSettings?.passwordExpiryDays ?? 7
       };
       setLocalSiteSettings(safeSettings);
-      if (initialAICategoryId || initialAIAction) setActiveTab('ai');
+      if (initialTab) setActiveTab(initialTab);
+      else if (initialAICategoryId || initialAIAction) setActiveTab('ai');
     }
-  }, [isOpen, config, siteSettings, initialAICategoryId, initialAIAction]);
+  }, [isOpen, config, siteSettings, initialAICategoryId, initialAIAction, initialTab]);
 
   const handleChange = (key: keyof AIConfig, value: string) => {
     setLocalConfig(prev => ({ ...prev, [key]: value }));
@@ -103,6 +107,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   const tabs = [
     { id: 'site', label: '网站设置', icon: LayoutTemplate },
     { id: 'ai', label: 'AI 设置', icon: Bot },
+    { id: 'duplicates', label: '重复检测', icon: CopyCheck },
     { id: 'tools', label: '扩展工具', icon: Wrench },
   ];
 
@@ -150,6 +155,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                       onUpdateData={onUpdateData}
                       initialCategoryId={initialAICategoryId}
                       initialAIAction={initialAIAction}
+                    />
+                )}
+                {activeTab === 'duplicates' && (
+                    <DuplicateLinksPanel
+                      links={links}
+                      categories={categories}
+                      onUpdateLinks={onUpdateLinks}
+                      onEditLink={onEditLink}
                     />
                 )}
                 {activeTab === 'tools' && (

@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useModalA11y } from './useModalA11y';
-import { X, Sparkles, Loader2, Pin, Wand2, Trash2 } from 'lucide-react';
+import { X, Sparkles, Loader2, Pin, Wand2, Trash2, AlertTriangle } from 'lucide-react';
 import { LinkItem, Category, AIConfig } from '../types';
 import { generateLinkDescription, suggestCategory } from '../services/geminiService';
+import { findDuplicatesOfUrl } from '../services/duplicateService';
 
 interface LinkModalProps {
   isOpen: boolean;
@@ -10,12 +11,13 @@ interface LinkModalProps {
   onSave: (link: Omit<LinkItem, 'id' | 'createdAt'>) => void;
   onDelete?: (id: string) => void;
   categories: Category[];
+  links?: LinkItem[];
   initialData?: LinkItem;
   aiConfig: AIConfig;
   defaultCategoryId?: string;
 }
 
-const LinkModal: React.FC<LinkModalProps> = ({ isOpen, onClose, onSave, onDelete, categories, initialData, aiConfig, defaultCategoryId }) => {
+const LinkModal: React.FC<LinkModalProps> = ({ isOpen, onClose, onSave, onDelete, categories, links = [], initialData, aiConfig, defaultCategoryId }) => {
   const modalRef = useRef<HTMLDivElement>(null);
   useModalA11y(isOpen, onClose, modalRef);
   const [title, setTitle] = useState('');
@@ -30,7 +32,12 @@ const LinkModal: React.FC<LinkModalProps> = ({ isOpen, onClose, onSave, onDelete
   const [batchMode, setBatchMode] = useState(false);
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
   const [tagsInput, setTagsInput] = useState('');
-  
+
+  const duplicateHits = useMemo(
+    () => (url.trim() ? findDuplicatesOfUrl(url, links, initialData?.id) : []),
+    [url, links, initialData?.id]
+  );
+
   // 当模态框关闭时，重置批量模式为默认关闭状态
   useEffect(() => {
     if (!isOpen) {
@@ -128,15 +135,22 @@ const LinkModal: React.FC<LinkModalProps> = ({ isOpen, onClose, onSave, onDelete
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!title || !url) return;
-    
+
     // 确保URL有协议前缀
     let finalUrl = url;
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
       finalUrl = 'https://' + url;
     }
-    
+
+    const duplicates = findDuplicatesOfUrl(finalUrl, links, initialData?.id);
+    if (duplicates.length > 0) {
+      const names = duplicates.slice(0, 3).map(d => d.title).join('、');
+      const more = duplicates.length > 3 ? ` 等 ${duplicates.length} 条` : '';
+      if (!confirm(`检测到可能重复的网址：${names}${more}。\n仍要${initialData ? '保存' : '添加'}吗？`)) return;
+    }
+
     // 计算标签
     const tags = tagsInput.split(',').map(t => t.trim()).filter(Boolean);
 
@@ -342,6 +356,18 @@ const LinkModal: React.FC<LinkModalProps> = ({ isOpen, onClose, onSave, onDelete
                 placeholder="example.com 或 https://..."
                 />
             </div>
+            {duplicateHits.length > 0 && (
+              <div className="mt-2 rounded-lg border border-amber-200 dark:border-amber-800/50 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-xs text-amber-700 dark:text-amber-300 flex gap-2">
+                <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                <div className="min-w-0">
+                  <div className="font-medium">检测到 {duplicateHits.length} 条可能重复的网址</div>
+                  <div className="truncate mt-0.5 opacity-90">
+                    {duplicateHits.slice(0, 3).map(d => d.title).join('、')}
+                    {duplicateHits.length > 3 ? ` 等` : ''}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           <div>

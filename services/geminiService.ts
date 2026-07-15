@@ -1,7 +1,7 @@
-import { Category, AIConfig } from "../types";
+import { Category, AIConfig, LinkItem } from "../types";
 import { normalizeOpenAIEndpoint } from './openaiEndpoint';
 
-type AITask = 'description' | 'category' | 'test';
+type AITask = 'description' | 'category' | 'test' | 'folder_rename' | 'folder_structure';
 
 const isHtml = (text: string) => /<!doctype\s+html/i.test(text.trim()) || /<html[\s>]/i.test(text.trim());
 
@@ -31,12 +31,75 @@ const parseJsonResponse = (rawText: string, provider: string, endpoint?: string)
   }
 };
 
+const stripCodeFence = (text: string) =>
+  text.trim().replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
+
+const cleanFolderName = (name: string) =>
+  name
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/^["'「『【\[]+|["'」』】\]]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 24);
+
+export interface FolderRenameSuggestion {
+  name: string;
+  reason?: string;
+}
+
+export interface FolderStructureSuggestion {
+  rename?: string;
+  reason?: string;
+  folders: Array<{
+    name: string;
+    linkIds: string[];
+    reason?: string;
+  }>;
+  keepInParent: string[];
+}
+
 const buildPrompts = (task: AITask, body: Record<string, unknown>) => {
   if (task === 'test') return { system: 'You are a connection tester. Reply with exactly OK.', user: 'Reply with exactly: OK' };
   if (task === 'description') {
     return {
       system: 'You are a helpful assistant that summarizes website bookmarks.',
       user: `Title: ${body.title}\nURL: ${body.url}\nPlease write a very short description (max 15 words) in Chinese (Simplified) that explains what this website is for. Return ONLY the description text. No quotes.`,
+    };
+  }
+  if (task === 'folder_rename') {
+    const samples = (body.samples as string[] | undefined) || [];
+    return {
+      system: 'You rename bookmark folders. Reply with ONLY a short Chinese folder name, max 12 characters. No quotes, no explanation.',
+      user: `Current folder name: ${body.folderName}\nSample bookmarks:\n${samples.map((s, i) => `${i + 1}. ${s}`).join('\n') || '无'}\n\nSuggest a clearer Chinese folder name based on the bookmarks. Return ONLY the name.`,
+    };
+  }
+  if (task === 'folder_structure') {
+    const links = (body.links as Array<{ id: string; title: string; url: string; description?: string }> | undefined) || [];
+    const existing = (body.existingNames as string[] | undefined) || [];
+    return {
+      system: 'You reorganize bookmark folders. Return ONLY valid JSON, no markdown.',
+      user: `Parent folder: ${body.folderName}
+Existing sibling/child folder names: ${existing.join('、') || '无'}
+Bookmarks:
+${links.map(l => `- id=${l.id} | ${l.title} | ${l.url}${l.description ? ` | ${l.description}` : ''}`).join('\n')}
+
+Return JSON only with this shape:
+{
+  "rename": "optional better parent folder name in Chinese",
+  "reason": "short reason",
+  "folders": [
+    { "name": "new child folder name", "linkIds": ["id1","id2"], "reason": "short reason" }
+  ],
+  "keepInParent": ["ids remaining in parent"]
+}
+
+Rules:
+1. Names must be short Simplified Chinese, max 12 chars.
+2. Prefer 2-6 child folders when bookmarks are mixed.
+3. Every provided link id must appear exactly once in folders.linkIds or keepInParent.
+4. Do not invent link ids.
+5. Avoid duplicating existing folder names unless necessary.
+6. If no structure change is needed, return empty folders and put all ids in keepInParent.`,
     };
   }
   const categories = (body.categories as Pick<Category, 'id' | 'name'>[] | undefined) || [];
@@ -52,6 +115,65 @@ const sanitizeCategoryResponse = (text: string, categories: Pick<Category, 'id' 
   const ids = categories.map(c => c.id);
   if (ids.includes(cleaned)) return cleaned;
   return ids.find(id => new RegExp(`(^|[^a-zA-Z0-9_-])${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-zA-Z0-9_-]|$)`).test(cleaned)) || null;
+};
+
+const parseFolderRename = (text: string, fallbackName: string): FolderRenameSuggestion => {
+  const cleaned = cleanFolderName(stripCodeFence(text));
+  if (!cleaned) throw new Error('AI 未返回可用文件夹名称');
+  if (cleaned === cleanFolderName(fallbackName)) {
+    return { name: cleaned, reason: '保持原名' };
+  }
+  return { name: cleaned };
+};
+
+const parseFolderStructure = (
+  text: string,
+  links: Array<{ id: string; title: string; url: string; description?: string }>
+): FolderStructureSuggestion => {
+  const raw = stripCodeFence(text);
+  let data: any;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error('AI 未返回合法的文件夹结构 JSON');
+    data = JSON.parse(match[0]);
+  }
+
+  const validIds = new Set(links.map(l => l.id));
+  const used = new Set<string>();
+  const folders: FolderStructureSuggestion['folders'] = [];
+
+  for (const folder of Array.isArray(data.folders) ? data.folders : []) {
+    const name = cleanFolderName(String(folder?.name || ''));
+    if (!name) continue;
+    const linkIds = Array.isArray(folder?.linkIds)
+      ? folder.linkIds.map((id: unknown) => String(id)).filter((id: string) => validIds.has(id) && !used.has(id))
+      : [];
+    linkIds.forEach((id: string) => used.add(id));
+    if (linkIds.length === 0) continue;
+    folders.push({
+      name,
+      linkIds,
+      reason: typeof folder?.reason === 'string' ? folder.reason.slice(0, 80) : undefined,
+    });
+  }
+
+  const keepFromAi = Array.isArray(data.keepInParent)
+    ? data.keepInParent.map((id: unknown) => String(id)).filter((id: string) => validIds.has(id) && !used.has(id))
+    : [];
+  keepFromAi.forEach((id: string) => used.add(id));
+
+  const missing = links.map(l => l.id).filter(id => !used.has(id));
+  const keepInParent = [...keepFromAi, ...missing];
+  const rename = data.rename ? cleanFolderName(String(data.rename)) : undefined;
+
+  return {
+    rename: rename || undefined,
+    reason: typeof data.reason === 'string' ? data.reason.slice(0, 120) : undefined,
+    folders,
+    keepInParent,
+  };
 };
 
 const callGeminiDirect = async (task: AITask, body: Record<string, unknown>, config: AIConfig) => {
@@ -83,7 +205,7 @@ const callOpenAIDirect = async (task: AITask, body: Record<string, unknown>, con
         { role: 'system', content: prompts.system },
         { role: 'user', content: prompts.user },
       ],
-      temperature: 0.2,
+      temperature: task === 'folder_structure' ? 0.3 : 0.2,
     }),
   });
   const rawText = await response.text().catch(() => '');
@@ -146,4 +268,42 @@ export const generateLinkDescription = async (title: string, url: string, config
 
 export const suggestCategory = async (title: string, url: string, categories: Pick<Category, 'id' | 'name'>[], config: AIConfig): Promise<string | null> => {
   return callAI('category', { title, url, categories }, config);
+};
+
+export const suggestFolderRename = async (
+  folderName: string,
+  samples: string[],
+  config: AIConfig
+): Promise<FolderRenameSuggestion> => {
+  const result = await callAI('folder_rename', {
+    title: folderName,
+    url: 'https://folder.local/rename',
+    folderName,
+    samples: samples.slice(0, 12),
+  }, config);
+  if (!result) throw new Error('AI 未返回文件夹名称');
+  return parseFolderRename(result, folderName);
+};
+
+export const suggestFolderStructure = async (
+  folderName: string,
+  links: Array<Pick<LinkItem, 'id' | 'title' | 'url' | 'description'>>,
+  existingNames: string[],
+  config: AIConfig
+): Promise<FolderStructureSuggestion> => {
+  const compactLinks = links.slice(0, 40).map(l => ({
+    id: l.id,
+    title: l.title,
+    url: l.url,
+    description: l.description,
+  }));
+  const result = await callAI('folder_structure', {
+    title: folderName,
+    url: 'https://folder.local/structure',
+    folderName,
+    links: compactLinks,
+    existingNames: existingNames.slice(0, 30),
+  }, config);
+  if (!result) throw new Error('AI 未返回文件夹结构');
+  return parseFolderStructure(result, compactLinks);
 };

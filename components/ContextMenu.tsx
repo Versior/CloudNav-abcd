@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { Copy, QrCode, Edit2, Trash2, Pin, FolderOpen, Sparkles, LucideIcon } from 'lucide-react';
+import { Copy, QrCode, Edit2, Trash2, Pin, FolderOpen, Sparkles, Type, FolderPlus, LucideIcon } from 'lucide-react';
 
 type MenuItem = {
   icon: LucideIcon;
@@ -22,6 +22,8 @@ interface ContextMenuProps {
   onOpenCategory?: () => void;
   onEditCategory?: () => void;
   onOrganizeCategory?: () => void;
+  onRenameCategory?: () => void;
+  onStructureCategory?: () => void;
   onDeleteCategory?: () => void;
 }
 
@@ -39,6 +41,8 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
   onOpenCategory,
   onEditCategory,
   onOrganizeCategory,
+  onRenameCategory,
+  onStructureCategory,
   onDeleteCategory
 }) => {
   const menuRef = useRef<HTMLDivElement>(null);
@@ -89,6 +93,8 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
   if (onOpenCategory) categoryMenuItems.push({ icon: FolderOpen, label: '打开文件夹', onClick: onOpenCategory });
   if (onEditCategory) categoryMenuItems.push({ icon: Edit2, label: isCategoryEditable ? '编辑文件夹' : '管理分类', onClick: onEditCategory });
   if (onOrganizeCategory) categoryMenuItems.push({ icon: Sparkles, label: 'AI 整理此文件夹', onClick: onOrganizeCategory });
+  if (isCategoryEditable && onRenameCategory) categoryMenuItems.push({ icon: Type, label: 'AI 重命名文件夹', onClick: onRenameCategory });
+  if (isCategoryEditable && onStructureCategory) categoryMenuItems.push({ icon: FolderPlus, label: 'AI 拆分子文件夹', onClick: onStructureCategory });
   if (isCategoryEditable && onDeleteCategory) categoryMenuItems.push({ icon: Trash2, label: '删除文件夹', onClick: onDeleteCategory, className: 'text-red-600 dark:text-red-400' });
 
   const menuItems = targetType === 'category' ? categoryMenuItems : linkMenuItems;
@@ -96,7 +102,7 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
   return (
     <div
       ref={menuRef}
-      className="fixed z-50 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg py-1 min-w-[180px]"
+      className="fixed z-50 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg py-1 min-w-[200px]"
       style={{
         left: adjustedPosition.x,
         top: adjustedPosition.y

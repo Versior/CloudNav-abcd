@@ -15,13 +15,16 @@ interface SettingsModalProps {
   links: LinkItem[];
   categories: Category[];
   onUpdateLinks: (links: LinkItem[]) => void;
+  onUpdateCategories?: (categories: Category[]) => void;
+  onUpdateData?: (links: LinkItem[], categories: Category[]) => void;
   authToken: boolean;
   extensionToken: string;
   initialAICategoryId?: string;
+  initialAIAction?: 'organize' | 'rename' | 'structure';
 }
 
 const SettingsModal: React.FC<SettingsModalProps> = ({
-    isOpen, onClose, config, siteSettings, onSave, links, categories, onUpdateLinks, authToken, extensionToken, initialAICategoryId
+    isOpen, onClose, config, siteSettings, onSave, links, categories, onUpdateLinks, onUpdateCategories, onUpdateData, authToken, extensionToken, initialAICategoryId, initialAIAction
 }) => {
   const modalRef = useRef<HTMLDivElement>(null);
   useModalA11y(isOpen, onClose, modalRef);
@@ -47,9 +50,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
           passwordExpiryDays: siteSettings?.passwordExpiryDays ?? 7
       };
       setLocalSiteSettings(safeSettings);
-      if (initialAICategoryId) setActiveTab('ai');
+      if (initialAICategoryId || initialAIAction) setActiveTab('ai');
     }
-  }, [isOpen, config, siteSettings, initialAICategoryId]);
+  }, [isOpen, config, siteSettings, initialAICategoryId, initialAIAction]);
 
   const handleChange = (key: keyof AIConfig, value: string) => {
     setLocalConfig(prev => ({ ...prev, [key]: value }));
@@ -137,7 +140,17 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     <SiteSettingsTab value={localSiteSettings} onChange={handleSiteChange} />
                 )}
                 {activeTab === 'ai' && (
-                    <AISettingsTab config={localConfig} onChange={handleChange} links={links} categories={categories} onUpdateLinks={onUpdateLinks} initialCategoryId={initialAICategoryId} />
+                    <AISettingsTab
+                      config={localConfig}
+                      onChange={handleChange}
+                      links={links}
+                      categories={categories}
+                      onUpdateLinks={onUpdateLinks}
+                      onUpdateCategories={onUpdateCategories}
+                      onUpdateData={onUpdateData}
+                      initialCategoryId={initialAICategoryId}
+                      initialAIAction={initialAIAction}
+                    />
                 )}
                 {activeTab === 'tools' && (
                     <ExtensionToolsTab authToken={authToken} extensionToken={extensionToken} favicon={localSiteSettings.favicon} navTitle={localSiteSettings.navTitle} />

@@ -15,6 +15,8 @@ interface AIConfig {
   model?: string;
 }
 
+type AITask = 'description' | 'category' | 'test' | 'folder_rename' | 'folder_structure';
+
 const readAiConfig = async (env: Env, requestConfig: AIConfig = {}) => {
   const value = await env.CLOUDNAV_KV.get('ai_config');
   const config = value ? JSON.parse(value) as AIConfig : {};
@@ -71,6 +73,14 @@ const sanitizeCategoryResponse = (text: string, categories: Array<{ id: string; 
   return matched || null;
 };
 
+const cleanFolderName = (name: string) =>
+  name
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/^["'「『【\[]+|["'」』】\]]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 24);
+
 const formatProviderError = (provider: string, response: Response, detail: string) => {
   const text = parseProviderErrorDetail(detail).toString().trim();
   const contentType = response.headers.get('content-type') || '';
@@ -80,7 +90,7 @@ const formatProviderError = (provider: string, response: Response, detail: strin
   return `${provider} 请求失败：HTTP ${response.status}${text ? `，${text.slice(0, 300)}` : ''}`;
 };
 
-const callOpenAICompatible = async (config: AIConfig, systemPrompt: string, userPrompt: string) => {
+const callOpenAICompatible = async (config: AIConfig, systemPrompt: string, userPrompt: string, temperature = 0.7) => {
   if (!config.apiKey || !config.baseUrl) throw new Error('OpenAI compatible API key or base URL is not configured');
 
   const baseUrl = normalizeOpenAIEndpoint(config.baseUrl);
@@ -97,7 +107,7 @@ const callOpenAICompatible = async (config: AIConfig, systemPrompt: string, user
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
-      temperature: 0.7,
+      temperature,
     }),
   });
 
@@ -139,34 +149,93 @@ export const onRequestPost = async (context: { request: Request; env: Env }) => 
 
   try {
     const body = await request.json() as {
-      task?: 'description' | 'category' | 'test';
+      task?: AITask;
       title?: string;
       url?: string;
       categories?: Array<{ id: string; name: string }>;
+      folderName?: string;
+      samples?: string[];
+      links?: Array<{ id: string; title: string; url: string; description?: string }>;
+      existingNames?: string[];
       config?: AIConfig;
     };
 
-    if (!body.title || !body.url || !['description', 'category', 'test'].includes(body.task || '')) {
+    const task = body.task || '';
+    const allowed: AITask[] = ['description', 'category', 'test', 'folder_rename', 'folder_structure'];
+    if (!allowed.includes(task as AITask)) {
+      return jsonResponse({ error: 'Invalid request' }, { status: 400 });
+    }
+
+    // legacy tasks still require title/url; folder tasks use synthetic placeholders from client
+    if ((task === 'description' || task === 'category' || task === 'test') && (!body.title || !body.url)) {
+      return jsonResponse({ error: 'Invalid request' }, { status: 400 });
+    }
+    if ((task === 'folder_rename' || task === 'folder_structure') && !body.folderName && !body.title) {
       return jsonResponse({ error: 'Invalid request' }, { status: 400 });
     }
 
     const config = await readAiConfig(env, body.config || {});
     validateAiConfig(config);
 
-    if (body.task === 'test') {
+    if (task === 'test') {
       const text = config.provider === 'gemini'
         ? await callGemini(config, 'Reply with exactly: OK')
-        : await callOpenAICompatible(config, 'You are a connection tester. Reply with exactly OK.', 'Reply with exactly: OK');
+        : await callOpenAICompatible(config, 'You are a connection tester. Reply with exactly OK.', 'Reply with exactly: OK', 0.1);
       return jsonResponse({ text: text || 'OK' });
     }
 
-    if (body.task === 'description') {
+    if (task === 'description') {
       const prompt = `Title: ${body.title}\nURL: ${body.url}\nPlease write a very short description (max 15 words) in Chinese (Simplified) that explains what this website is for. Return ONLY the description text. No quotes.`;
       const text = config.provider === 'gemini'
         ? await callGemini(config, `I have a website bookmark. ${prompt}`)
-        : await callOpenAICompatible(config, 'You are a helpful assistant that summarizes website bookmarks.', prompt);
+        : await callOpenAICompatible(config, 'You are a helpful assistant that summarizes website bookmarks.', prompt, 0.4);
 
       if (!text) throw new Error('AI 未返回描述内容');
+      return jsonResponse({ text });
+    }
+
+    if (task === 'folder_rename') {
+      const folderName = body.folderName || body.title || '';
+      const samples = (body.samples || []).slice(0, 12);
+      const userPrompt = `Current folder name: ${folderName}\nSample bookmarks:\n${samples.map((s, i) => `${i + 1}. ${s}`).join('\n') || '无'}\n\nSuggest a clearer Chinese folder name based on the bookmarks. Return ONLY the name.`;
+      const text = config.provider === 'gemini'
+        ? await callGemini(config, `You rename bookmark folders. Reply with ONLY a short Chinese folder name, max 12 characters. No quotes, no explanation.\n${userPrompt}`)
+        : await callOpenAICompatible(config, 'You rename bookmark folders. Reply with ONLY a short Chinese folder name, max 12 characters. No quotes, no explanation.', userPrompt, 0.2);
+      const cleaned = cleanFolderName(text || '');
+      if (!cleaned) throw new Error('AI 未返回可用文件夹名称');
+      return jsonResponse({ text: cleaned });
+    }
+
+    if (task === 'folder_structure') {
+      const folderName = body.folderName || body.title || '';
+      const links = (body.links || []).slice(0, 40);
+      const existing = (body.existingNames || []).slice(0, 30);
+      const userPrompt = `Parent folder: ${folderName}
+Existing sibling/child folder names: ${existing.join('、') || '无'}
+Bookmarks:
+${links.map(l => `- id=${l.id} | ${l.title} | ${l.url}${l.description ? ` | ${l.description}` : ''}`).join('\n')}
+
+Return JSON only with this shape:
+{
+  "rename": "optional better parent folder name in Chinese",
+  "reason": "short reason",
+  "folders": [
+    { "name": "new child folder name", "linkIds": ["id1","id2"], "reason": "short reason" }
+  ],
+  "keepInParent": ["ids remaining in parent"]
+}
+
+Rules:
+1. Names must be short Simplified Chinese, max 12 chars.
+2. Prefer 2-6 child folders when bookmarks are mixed.
+3. Every provided link id must appear exactly once in folders.linkIds or keepInParent.
+4. Do not invent link ids.
+5. Avoid duplicating existing folder names unless necessary.
+6. If no structure change is needed, return empty folders and put all ids in keepInParent.`;
+      const text = config.provider === 'gemini'
+        ? await callGemini(config, `You reorganize bookmark folders. Return ONLY valid JSON, no markdown.\n${userPrompt}`)
+        : await callOpenAICompatible(config, 'You reorganize bookmark folders. Return ONLY valid JSON, no markdown.', userPrompt, 0.3);
+      if (!text) throw new Error('AI 未返回文件夹结构');
       return jsonResponse({ text });
     }
 
@@ -174,7 +243,7 @@ export const onRequestPost = async (context: { request: Request; env: Env }) => 
     const prompt = `Website: "${body.title}" (${body.url})\n\nAvailable Categories:\n${catList}\n\nReturn ONLY the 'id' of the best matching category. If unsure, return 'common'.`;
     const text = config.provider === 'gemini'
       ? await callGemini(config, `Task: Categorize this website.\n${prompt}`)
-      : await callOpenAICompatible(config, 'You are an intelligent classification assistant. You only output the category ID.', prompt);
+      : await callOpenAICompatible(config, 'You are an intelligent classification assistant. You only output the category ID.', prompt, 0.2);
 
     const categoryId = sanitizeCategoryResponse(text || '', body.categories || []);
     return jsonResponse({ text: categoryId });

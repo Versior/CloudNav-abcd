@@ -252,6 +252,7 @@ function App() {
     type: 'link'
   });
   const [aiSettingsCategoryId, setAiSettingsCategoryId] = useState('');
+  const [aiSettingsAction, setAiSettingsAction] = useState<'organize' | 'rename' | 'structure' | ''>('');
   
   // QR Code Modal State
   const [qrCodeModal, setQrCodeModal] = useState<{
@@ -528,15 +529,24 @@ function App() {
     openCategoryActionAuth('edit', category.id, category.name);
   };
 
-  const organizeCategoryFromContextMenu = () => {
+  const openAICategoryAction = (action: 'organize' | 'rename' | 'structure') => {
     if (!contextMenu.category) return;
     if (!authToken) {
       setIsAuthOpen(true);
       return;
     }
+    if ((action === 'rename' || action === 'structure') && (contextMenu.category.id === 'common' || contextMenu.category.id === '__inbox__')) {
+      alert(action === 'rename' ? '该系统文件夹不支持 AI 重命名' : '该系统文件夹不支持 AI 拆分');
+      return;
+    }
     setAiSettingsCategoryId(contextMenu.category.id);
+    setAiSettingsAction(action);
     setIsSettingsModalOpen(true);
   };
+
+  const organizeCategoryFromContextMenu = () => openAICategoryAction('organize');
+  const renameCategoryFromContextMenu = () => openAICategoryAction('rename');
+  const structureCategoryFromContextMenu = () => openAICategoryAction('structure');
 
   const deleteCategoryFromContextMenu = () => {
     const category = contextMenu.category;
@@ -2159,16 +2169,19 @@ function App() {
 
       <SettingsModal
         isOpen={isSettingsModalOpen}
-        onClose={() => { setIsSettingsModalOpen(false); setAiSettingsCategoryId(''); }}
+        onClose={() => { setIsSettingsModalOpen(false); setAiSettingsCategoryId(''); setAiSettingsAction(''); }}
         config={aiConfig}
         siteSettings={siteSettings}
         onSave={handleSaveAIConfig}
         links={links}
         categories={categories}
         onUpdateLinks={(newLinks) => updateData(newLinks, categories)}
+        onUpdateCategories={(newCats) => updateData(links, newCats)}
+        onUpdateData={(nextLinks, nextCats) => updateData(nextLinks, nextCats)}
         authToken={authToken}
         extensionToken={extensionToken}
         initialAICategoryId={aiSettingsCategoryId}
+        initialAIAction={aiSettingsAction || undefined}
       />
 
       <SearchConfigModal
@@ -3066,6 +3079,8 @@ function App() {
             onOpenCategory={openCategoryFromContextMenu}
             onEditCategory={editCategoryFromContextMenu}
             onOrganizeCategory={organizeCategoryFromContextMenu}
+            onRenameCategory={renameCategoryFromContextMenu}
+            onStructureCategory={structureCategoryFromContextMenu}
             onDeleteCategory={deleteCategoryFromContextMenu}
           />
 

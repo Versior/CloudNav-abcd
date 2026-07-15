@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Key, Sparkles, PauseCircle, FolderTree, Check, X } from 'lucide-react';
 import { AIConfig, LinkItem, Category, INBOX_ID } from '../types';
 import { generateLinkDescription, suggestCategory, testAIConnection } from '../services/geminiService';
@@ -10,9 +10,28 @@ interface AISettingsTabProps {
   links: LinkItem[];
   categories: Category[];
   onUpdateLinks: (links: LinkItem[]) => void;
+  initialCategoryId?: string;
 }
 
 type CategorizeScope = 'all' | 'inbox' | 'uncategorized' | 'category';
+
+type AIPreset = {
+  id: string;
+  label: string;
+  provider: AIConfig['provider'];
+  baseUrl: string;
+  model: string;
+  hint: string;
+};
+
+const AI_PRESETS: AIPreset[] = [
+  { id: 'gemini', label: 'Gemini', provider: 'gemini', baseUrl: '', model: 'gemini-2.5-flash', hint: 'Google Gemini 官方接口' },
+  { id: 'deepseek', label: 'DeepSeek', provider: 'openai', baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat', hint: '国内常用，分类速度快' },
+  { id: 'openrouter', label: 'OpenRouter', provider: 'openai', baseUrl: 'https://openrouter.ai', model: 'openai/gpt-4o-mini', hint: '多模型聚合接口' },
+  { id: 'openai', label: 'OpenAI', provider: 'openai', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini', hint: 'OpenAI 官方接口' },
+  { id: 'siliconflow', label: '硅基流动', provider: 'openai', baseUrl: 'https://api.siliconflow.cn/v1', model: 'Qwen/Qwen2.5-7B-Instruct', hint: 'OpenAI 兼容接口' },
+  { id: 'moonshot', label: 'Moonshot', provider: 'openai', baseUrl: 'https://api.moonshot.cn/v1', model: 'moonshot-v1-8k', hint: 'Kimi 开放平台' },
+];
 
 interface CategoryPreviewItem {
   linkId: string;
@@ -23,7 +42,7 @@ interface CategoryPreviewItem {
   error?: string;
 }
 
-const AISettingsTab: React.FC<AISettingsTabProps> = ({ config, onChange, links, categories, onUpdateLinks }) => {
+const AISettingsTab: React.FC<AISettingsTabProps> = ({ config, onChange, links, categories, onUpdateLinks, initialCategoryId }) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingLabel, setProcessingLabel] = useState('');
   const [progress, setProgress] = useState({ current: 0, total: 0 });
@@ -36,6 +55,21 @@ const AISettingsTab: React.FC<AISettingsTabProps> = ({ config, onChange, links, 
   const shouldStopRef = useRef(false);
 
   const getCategoryName = (id?: string) => categories.find(c => c.id === id)?.name || '未分类';
+
+  const applyPreset = (preset: AIPreset) => {
+    onChange('provider', preset.provider);
+    onChange('baseUrl', preset.baseUrl);
+    onChange('model', preset.model);
+    setTestMessage(`已套用 ${preset.label} 预设，请确认 API Key 后保存`);
+  };
+
+  useEffect(() => {
+    if (!initialCategoryId) return;
+    setCategorizeScope('category');
+    setCategorizeCategoryId(initialCategoryId);
+    setIncludeSubCategories(true);
+  }, [initialCategoryId]);
+
   const finalOpenAIEndpoint = (() => {
     if (config.provider !== 'openai' || !config.baseUrl.trim()) return '';
     try {
@@ -120,13 +154,15 @@ const AISettingsTab: React.FC<AISettingsTabProps> = ({ config, onChange, links, 
     return preview;
   };
 
+  const isInvalidDescription = (description?: string) => !description || description.trim() === '生成描述失败';
+
   const handleBulkGenerate = async () => {
     if (!config.hasApiKey && !config.apiKey) {
         alert("请先配置并保存 API Key");
         return;
     }
 
-    const missingLinks = links.filter(l => !l.description);
+    const missingLinks = links.filter(l => isInvalidDescription(l.description));
     if (missingLinks.length === 0) {
         alert("所有链接都已有描述！");
         return;
@@ -151,6 +187,8 @@ const AISettingsTab: React.FC<AISettingsTabProps> = ({ config, onChange, links, 
 
     let currentLinks = [...links];
     let firstError = '';
+    let successCount = 0;
+    let failedCount = 0;
 
     for (let i = 0; i < missingLinks.length; i++) {
         if (shouldStopRef.current) break;
@@ -158,21 +196,27 @@ const AISettingsTab: React.FC<AISettingsTabProps> = ({ config, onChange, links, 
         const link = missingLinks[i];
         try {
             const desc = await generateLinkDescription(link.title, link.url, config);
-            if (desc) {
+            if (!isInvalidDescription(desc)) {
+                successCount += 1;
                 currentLinks = currentLinks.map(l => l.id === link.id ? { ...l, description: desc } : l);
                 onUpdateLinks(currentLinks);
+            } else {
+                failedCount += 1;
+                firstError ||= 'AI 未返回有效描述';
             }
             setProgress({ current: i + 1, total: missingLinks.length });
         } catch (e) {
+            failedCount += 1;
             const message = e instanceof Error ? e.message : '未知错误';
             firstError ||= message;
             console.error(`Failed to generate for ${link.title}`, e);
+            setProgress({ current: i + 1, total: missingLinks.length });
         }
     }
 
     setIsProcessing(false);
     setProcessingLabel('');
-    if (firstError) alert(`部分描述生成失败：${firstError}`);
+    if (firstError) alert(`描述生成完成：成功 ${successCount} 个，失败 ${failedCount} 个。首个失败原因：${firstError}`);
   };
 
   const handleBulkCategorize = async () => {
@@ -268,6 +312,23 @@ const AISettingsTab: React.FC<AISettingsTabProps> = ({ config, onChange, links, 
             </select>
         </div>
 
+        <div className="rounded-xl border border-slate-200 dark:border-slate-700 p-3 bg-slate-50 dark:bg-slate-800/60">
+            <div className="text-sm font-medium text-slate-700 dark:text-slate-200 mb-2">常用配置预设</div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {AI_PRESETS.map(preset => (
+                    <button
+                        key={preset.id}
+                        type="button"
+                        onClick={() => applyPreset(preset)}
+                        className={`text-left rounded-lg border px-3 py-2 transition-colors hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 ${config.provider === preset.provider && config.baseUrl === preset.baseUrl && config.model === preset.model ? 'border-blue-400 bg-blue-50 dark:bg-blue-900/20' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800'}`}
+                    >
+                        <div className="text-sm font-medium text-slate-700 dark:text-slate-100">{preset.label}</div>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{preset.hint}</div>
+                    </button>
+                ))}
+            </div>
+        </div>
+
         <div>
             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">API Key</label>
             <div className="relative">
@@ -338,7 +399,14 @@ const AISettingsTab: React.FC<AISettingsTabProps> = ({ config, onChange, links, 
         </div>
 
         <div className="pt-4 border-t border-slate-100 dark:border-slate-700">
-            <h4 className="text-sm font-semibold mb-2 dark:text-slate-200">批量操作</h4>
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                <h4 className="text-sm font-semibold dark:text-slate-200">批量操作</h4>
+                {categorizeScope === 'category' && categorizeCategoryId && (
+                    <span className="text-xs rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300 px-2 py-1">
+                        当前范围：{getCategoryName(categorizeCategoryId)}{includeSubCategories ? '及子文件夹' : ''}
+                    </span>
+                )}
+            </div>
             {isProcessing ? (
                 <div className="space-y-2">
                     <div className="flex justify-between text-xs text-slate-600 dark:text-slate-400">

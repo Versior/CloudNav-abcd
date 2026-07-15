@@ -166,7 +166,8 @@ export const onRequestPost = async (context: { request: Request; env: Env }) => 
         ? await callGemini(config, `I have a website bookmark. ${prompt}`)
         : await callOpenAICompatible(config, 'You are a helpful assistant that summarizes website bookmarks.', prompt);
 
-      return jsonResponse({ text: text || '生成描述失败' });
+      if (!text) throw new Error('AI 未返回描述内容');
+      return jsonResponse({ text });
     }
 
     const catList = (body.categories || []).map(c => `${c.id}: ${c.name}`).join('\n');

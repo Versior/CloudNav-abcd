@@ -36,6 +36,7 @@ import AuthModal from './components/AuthModal';
 import CategoryManagerModal from './components/CategoryManagerModal';
 import BackupModal from './components/BackupModal';
 import CategoryAuthModal from './components/CategoryAuthModal';
+import CategoryActionAuthModal from './components/CategoryActionAuthModal';
 import ImportModal from './components/ImportModal';
 import SettingsModal from './components/SettingsModal';
 import SearchConfigModal from './components/SearchConfigModal';
@@ -206,6 +207,7 @@ function App() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isCatManagerOpen, setIsCatManagerOpen] = useState(false);
+  const [categoryManagerEditId, setCategoryManagerEditId] = useState('');
   const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
@@ -240,11 +242,16 @@ function App() {
     isOpen: boolean;
     position: { x: number; y: number };
     link: LinkItem | null;
+    category: Category | null;
+    type: 'link' | 'category';
   }>({
     isOpen: false,
     position: { x: 0, y: 0 },
-    link: null
+    link: null,
+    category: null,
+    type: 'link'
   });
+  const [aiSettingsCategoryId, setAiSettingsCategoryId] = useState('');
   
   // QR Code Modal State
   const [qrCodeModal, setQrCodeModal] = useState<{
@@ -398,14 +405,29 @@ function App() {
   const handleContextMenu = (event: React.MouseEvent, link: LinkItem) => {
     event.preventDefault();
     event.stopPropagation();
-    
-    // 在批量编辑模式下禁用右键菜单
+
     if (isBatchEditMode) return;
-    
+
     setContextMenu({
       isOpen: true,
       position: { x: event.clientX, y: event.clientY },
-      link: link
+      link,
+      category: null,
+      type: 'link'
+    });
+  };
+
+  const handleCategoryContextMenu = (event: React.MouseEvent, category: Category) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    setHoveredCategory(null);
+    setContextMenu({
+      isOpen: true,
+      position: { x: event.clientX, y: event.clientY },
+      link: null,
+      category,
+      type: 'category'
     });
   };
 
@@ -413,7 +435,9 @@ function App() {
     setContextMenu({
       isOpen: false,
       position: { x: 0, y: 0 },
-      link: null
+      link: null,
+      category: null,
+      type: 'link'
     });
   };
 
@@ -465,26 +489,63 @@ function App() {
 
   const togglePinFromContextMenu = () => {
     if (!contextMenu.link) return;
-    
+
     const linkToToggle = links.find(l => l.id === contextMenu.link!.id);
     if (!linkToToggle) return;
-    
-    // 如果是设置为置顶，则设置pinnedOrder为当前置顶链接数量
-    // 如果是取消置顶，则清除pinnedOrder
+
     const updated = links.map(l => {
       if (l.id === contextMenu.link!.id) {
         const isPinned = !l.pinned;
-        return { 
-          ...l, 
+        return {
+          ...l,
           pinned: isPinned,
           pinnedOrder: isPinned ? links.filter(link => link.pinned).length : undefined
         };
       }
       return l;
     });
-    
+
     updateData(updated, categories);
     closeContextMenu();
+  };
+
+  const openCategoryFromContextMenu = () => {
+    if (!contextMenu.category) return;
+    handleCategoryClick(contextMenu.category);
+  };
+
+  const editCategoryFromContextMenu = () => {
+    const category = contextMenu.category;
+    if (!category) return;
+    if (!authToken) {
+      setIsAuthOpen(true);
+      return;
+    }
+    if (category.id === 'common') {
+      setIsCatManagerOpen(true);
+      return;
+    }
+    openCategoryActionAuth('edit', category.id, category.name);
+  };
+
+  const organizeCategoryFromContextMenu = () => {
+    if (!contextMenu.category) return;
+    if (!authToken) {
+      setIsAuthOpen(true);
+      return;
+    }
+    setAiSettingsCategoryId(contextMenu.category.id);
+    setIsSettingsModalOpen(true);
+  };
+
+  const deleteCategoryFromContextMenu = () => {
+    const category = contextMenu.category;
+    if (!category || category.id === 'common') return;
+    if (!authToken) {
+      setIsAuthOpen(true);
+      return;
+    }
+    openCategoryActionAuth('delete', category.id, category.name);
   };
 
   // 加载链接图标缓存
@@ -1011,6 +1072,21 @@ function App() {
       categoryId: '',
       categoryName: ''
     });
+  };
+
+  const handleCategoryActionVerified = () => {
+    const { action, categoryId } = categoryActionAuth;
+    if (action === 'edit') {
+      setCategoryManagerEditId(categoryId);
+      setIsCatManagerOpen(true);
+      closeCategoryActionAuth();
+      return;
+    }
+
+    if (window.confirm(`确定删除"${categoryActionAuth.categoryName}"分类吗？该分类下的书签将移动到"常用推荐"。`)) {
+      handleDeleteCategory(categoryId);
+    }
+    closeCategoryActionAuth();
   };
 
   const handleImportConfirm = (newLinks: LinkItem[], newCategories: Category[]) => {
@@ -2045,13 +2121,14 @@ function App() {
         onUnlock={handleUnlockCategory}
       />
 
-      <CategoryManagerModal 
-        isOpen={isCatManagerOpen} 
-        onClose={() => setIsCatManagerOpen(false)}
+      <CategoryManagerModal
+        isOpen={isCatManagerOpen}
+        onClose={() => { setIsCatManagerOpen(false); setCategoryManagerEditId(''); }}
         categories={categories}
         onUpdateCategories={handleUpdateCategories}
         onDeleteCategory={handleDeleteCategory}
         onVerifyPassword={handleCategoryActionAuth}
+        initialEditId={categoryManagerEditId}
       />
 
       <BackupModal
@@ -2082,7 +2159,7 @@ function App() {
 
       <SettingsModal
         isOpen={isSettingsModalOpen}
-        onClose={() => setIsSettingsModalOpen(false)}
+        onClose={() => { setIsSettingsModalOpen(false); setAiSettingsCategoryId(''); }}
         config={aiConfig}
         siteSettings={siteSettings}
         onSave={handleSaveAIConfig}
@@ -2091,6 +2168,7 @@ function App() {
         onUpdateLinks={(newLinks) => updateData(newLinks, categories)}
         authToken={authToken}
         extensionToken={extensionToken}
+        initialAICategoryId={aiSettingsCategoryId}
       />
 
       <SearchConfigModal
@@ -2186,6 +2264,7 @@ function App() {
                   >
                     <button
                       onClick={() => handleCategoryClick(cat)}
+                      onContextMenu={(e) => handleCategoryContextMenu(e, cat)}
                       className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all group ${
                         selectedCategory === cat.id || (subCats.some(sc => sc.id === selectedCategory))
                           ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium' 
@@ -2222,6 +2301,7 @@ function App() {
                             <button
                               key={subCat.id}
                               onClick={() => handleCategoryClick(subCat)}
+                              onContextMenu={(e) => handleCategoryContextMenu(e, subCat)}
                               className={`w-full flex items-center gap-3 px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors text-left ${
                                 selectedCategory === subCat.id ? 'text-blue-600 dark:text-blue-400 font-medium' : 'text-slate-600 dark:text-slate-400'
                               }`}
@@ -2975,12 +3055,27 @@ function App() {
           <ContextMenu
             isOpen={contextMenu.isOpen}
             position={contextMenu.position}
+            targetType={contextMenu.type}
+            isCategoryEditable={contextMenu.category?.id !== 'common'}
             onClose={closeContextMenu}
             onCopyLink={copyLinkToClipboard}
             onShowQRCode={showQRCode}
             onEditLink={editLinkFromContextMenu}
             onDeleteLink={deleteLinkFromContextMenu}
             onTogglePin={togglePinFromContextMenu}
+            onOpenCategory={openCategoryFromContextMenu}
+            onEditCategory={editCategoryFromContextMenu}
+            onOrganizeCategory={organizeCategoryFromContextMenu}
+            onDeleteCategory={deleteCategoryFromContextMenu}
+          />
+
+          <CategoryActionAuthModal
+            isOpen={categoryActionAuth.isOpen}
+            onClose={closeCategoryActionAuth}
+            onVerify={handleCategoryActionAuth}
+            onVerified={handleCategoryActionVerified}
+            actionType={categoryActionAuth.action}
+            categoryName={categoryActionAuth.categoryName}
           />
 
           {/* 二维码模态框 */}

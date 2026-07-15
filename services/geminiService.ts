@@ -140,7 +140,8 @@ export const testAIConnection = async (config: AIConfig): Promise<string> => {
 
 export const generateLinkDescription = async (title: string, url: string, config: AIConfig): Promise<string> => {
   const result = await callAI('description', { title, url }, config);
-  return result || "生成描述失败";
+  if (!result) throw new Error('AI 未返回描述内容');
+  return result;
 };
 
 export const suggestCategory = async (title: string, url: string, categories: Pick<Category, 'id' | 'name'>[], config: AIConfig): Promise<string | null> => {

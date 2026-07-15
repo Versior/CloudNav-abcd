@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useModalA11y } from './useModalA11y';
 import { X, ArrowUp, ArrowDown, Trash2, Edit2, Plus, Check, Lock, Unlock, Palette } from 'lucide-react';
 import { Category } from '../types';
@@ -13,15 +13,17 @@ interface CategoryManagerModalProps {
   onUpdateCategories: (newCategories: Category[]) => void;
   onDeleteCategory: (id: string) => void;
   onVerifyPassword?: (password: string) => Promise<boolean>;
+  initialEditId?: string;
 }
 
-const CategoryManagerModal: React.FC<CategoryManagerModalProps> = ({ 
-  isOpen, 
-  onClose, 
-  categories, 
+const CategoryManagerModal: React.FC<CategoryManagerModalProps> = ({
+  isOpen,
+  onClose,
+  categories,
   onUpdateCategories,
   onDeleteCategory,
-  onVerifyPassword
+  onVerifyPassword,
+  initialEditId
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   useModalA11y(isOpen, onClose, containerRef);
@@ -45,6 +47,12 @@ const CategoryManagerModal: React.FC<CategoryManagerModalProps> = ({
     categoryId: string;
     categoryName: string;
   } | null>(null);
+
+  useEffect(() => {
+    if (!isOpen || !initialEditId) return;
+    const target = categories.find(c => c.id === initialEditId);
+    if (target && target.id !== 'common') startEdit(target);
+  }, [isOpen, initialEditId, categories]);
 
   if (!isOpen) return null;
 

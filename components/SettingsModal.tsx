@@ -17,10 +17,11 @@ interface SettingsModalProps {
   onUpdateLinks: (links: LinkItem[]) => void;
   authToken: boolean;
   extensionToken: string;
+  initialAICategoryId?: string;
 }
 
 const SettingsModal: React.FC<SettingsModalProps> = ({
-    isOpen, onClose, config, siteSettings, onSave, links, categories, onUpdateLinks, authToken, extensionToken
+    isOpen, onClose, config, siteSettings, onSave, links, categories, onUpdateLinks, authToken, extensionToken, initialAICategoryId
 }) => {
   const modalRef = useRef<HTMLDivElement>(null);
   useModalA11y(isOpen, onClose, modalRef);
@@ -46,8 +47,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
           passwordExpiryDays: siteSettings?.passwordExpiryDays ?? 7
       };
       setLocalSiteSettings(safeSettings);
+      if (initialAICategoryId) setActiveTab('ai');
     }
-  }, [isOpen, config, siteSettings]);
+  }, [isOpen, config, siteSettings, initialAICategoryId]);
 
   const handleChange = (key: keyof AIConfig, value: string) => {
     setLocalConfig(prev => ({ ...prev, [key]: value }));
@@ -135,7 +137,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     <SiteSettingsTab value={localSiteSettings} onChange={handleSiteChange} />
                 )}
                 {activeTab === 'ai' && (
-                    <AISettingsTab config={localConfig} onChange={handleChange} links={links} categories={categories} onUpdateLinks={onUpdateLinks} />
+                    <AISettingsTab config={localConfig} onChange={handleChange} links={links} categories={categories} onUpdateLinks={onUpdateLinks} initialCategoryId={initialAICategoryId} />
                 )}
                 {activeTab === 'tools' && (
                     <ExtensionToolsTab authToken={authToken} extensionToken={extensionToken} favicon={localSiteSettings.favicon} navTitle={localSiteSettings.navTitle} />

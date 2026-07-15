@@ -1,26 +1,45 @@
 import React, { useEffect, useRef } from 'react';
-import { Copy, QrCode, Edit2, Trash2, Pin } from 'lucide-react';
+import { Copy, QrCode, Edit2, Trash2, Pin, FolderOpen, Sparkles, LucideIcon } from 'lucide-react';
+
+type MenuItem = {
+  icon: LucideIcon;
+  label: string;
+  onClick: () => void;
+  className?: string;
+};
 
 interface ContextMenuProps {
   isOpen: boolean;
   position: { x: number; y: number };
+  targetType?: 'link' | 'category';
+  isCategoryEditable?: boolean;
   onClose: () => void;
   onCopyLink: () => void;
   onShowQRCode: () => void;
   onEditLink: () => void;
   onDeleteLink: () => void;
   onTogglePin: () => void;
+  onOpenCategory?: () => void;
+  onEditCategory?: () => void;
+  onOrganizeCategory?: () => void;
+  onDeleteCategory?: () => void;
 }
 
 const ContextMenu: React.FC<ContextMenuProps> = ({
   isOpen,
   position,
+  targetType = 'link',
+  isCategoryEditable = true,
   onClose,
   onCopyLink,
   onShowQRCode,
   onEditLink,
   onDeleteLink,
-  onTogglePin
+  onTogglePin,
+  onOpenCategory,
+  onEditCategory,
+  onOrganizeCategory,
+  onDeleteCategory
 }) => {
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -40,8 +59,7 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
     if (isOpen) {
       document.addEventListener('mousedown', handleClickOutside);
       document.addEventListener('keydown', handleEscape);
-      
-      // 防止页面滚动
+
       document.body.style.overflow = 'hidden';
     }
 
@@ -54,13 +72,12 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
 
   if (!isOpen) return null;
 
-  // 确保菜单位置不会超出屏幕边界
   const adjustedPosition = {
-    x: Math.min(position.x, window.innerWidth - 200),
-    y: Math.min(position.y, window.innerHeight - 200)
+    x: Math.min(position.x, window.innerWidth - 220),
+    y: Math.min(position.y, window.innerHeight - 220)
   };
 
-  const menuItems = [
+  const linkMenuItems: MenuItem[] = [
     { icon: Copy, label: '复制链接', onClick: onCopyLink },
     { icon: QrCode, label: '显示二维码', onClick: onShowQRCode },
     { icon: Edit2, label: '编辑链接', onClick: onEditLink },
@@ -68,10 +85,18 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
     { icon: Trash2, label: '删除链接', onClick: onDeleteLink, className: 'text-red-600 dark:text-red-400' }
   ];
 
+  const categoryMenuItems: MenuItem[] = [];
+  if (onOpenCategory) categoryMenuItems.push({ icon: FolderOpen, label: '打开文件夹', onClick: onOpenCategory });
+  if (onEditCategory) categoryMenuItems.push({ icon: Edit2, label: isCategoryEditable ? '编辑文件夹' : '管理分类', onClick: onEditCategory });
+  if (onOrganizeCategory) categoryMenuItems.push({ icon: Sparkles, label: 'AI 整理此文件夹', onClick: onOrganizeCategory });
+  if (isCategoryEditable && onDeleteCategory) categoryMenuItems.push({ icon: Trash2, label: '删除文件夹', onClick: onDeleteCategory, className: 'text-red-600 dark:text-red-400' });
+
+  const menuItems = targetType === 'category' ? categoryMenuItems : linkMenuItems;
+
   return (
     <div
       ref={menuRef}
-      className="fixed z-50 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg py-1 min-w-[160px]"
+      className="fixed z-50 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg py-1 min-w-[180px]"
       style={{
         left: adjustedPosition.x,
         top: adjustedPosition.y

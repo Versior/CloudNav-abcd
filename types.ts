@@ -17,6 +17,7 @@ export interface LinkItem {
   description?: string;
   categoryId: string;
   tags?: string[];
+  aliases?: string[];
   createdAt: number;
   updatedAt?: number;
   deletedAt?: number;
@@ -101,6 +102,86 @@ export interface SearchConfig {
   mode: SearchMode;
   externalSources: ExternalSearchSource[];
   selectedSource?: ExternalSearchSource | null; // 选中的搜索源
+}
+
+export type DashboardWidgetId = 'stats' | 'folders' | 'activity' | 'tools';
+
+export interface DashboardConfig {
+  order: DashboardWidgetId[];
+  hidden: DashboardWidgetId[];
+}
+
+export interface RssFeed {
+  id: string;
+  url: string;
+  title: string;
+  siteUrl?: string;
+  icon?: string;
+  preset?: boolean;
+  addedAt: number;
+  lastFetchedAt?: number;
+  error?: string;
+}
+
+export interface RssArticle {
+  id: string;
+  feedId: string;
+  title: string;
+  url: string;
+  summary?: string;
+  author?: string;
+  sourceTitle?: string;
+  publishedAt?: number;
+  imageUrl?: string;
+  read?: boolean;
+  starred?: boolean;
+}
+
+export interface RssState {
+  feeds: RssFeed[];
+  articles: RssArticle[];
+}
+
+export interface AppBootstrapSnapshot {
+  links: LinkItem[];
+  categories: Category[];
+  dashboardConfig: DashboardConfig;
+  workbenchTools: import('./services/workbenchTools').WorkbenchToolsState;
+}
+
+export type AppBootstrapStatus = 'local' | 'hydrating' | 'ready' | 'error';
+
+export const DEFAULT_DASHBOARD_CONFIG: DashboardConfig = {
+  order: ['stats', 'folders', 'activity', 'tools'],
+  hidden: [],
+};
+
+export type HealthFrequency = '6h' | '12h' | 'daily' | 'weekly';
+export type HealthScheduleScope = 'all' | 'unchecked' | 'category';
+
+export interface HealthScheduleConfig {
+  enabled: boolean;
+  frequency: HealthFrequency;
+  scope: HealthScheduleScope;
+  categoryId?: string;
+  maxLinksPerRun: number;
+  lastRunAt?: number;
+}
+
+export interface HealthRunSummary {
+  checked: number;
+  ok: number;
+  broken: number;
+  soft: number;
+  redirected: number;
+}
+
+export interface HistorySnapshotMeta {
+  id: string;
+  version: number;
+  createdAt: number;
+  linkCount: number;
+  categoryCount: number;
 }
 
 export const INBOX_ID = '__inbox__';

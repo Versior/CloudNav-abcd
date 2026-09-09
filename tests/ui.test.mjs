@@ -214,3 +214,11 @@ test('desktop shell has a visible continuity frame beyond motion-only changes', 
   assert.match(css, /\.cloudnav-desktop-frame/);
   assert.match(css, /\.cloudnav-desktop-active/);
 });
+
+test('app uses cache-first bootstrap without a full-screen remote loading gate', () => {
+  const app = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
+  const bootstrap = readFileSync(new URL('../hooks/useAppBootstrap.ts', import.meta.url), 'utf8');
+  assert.match(app, /useAppBootstrap/);
+  assert.match(bootstrap, /readBootstrapSnapshot/);
+  assert.doesNotMatch(app, /isCheckingAuth && \(/);
+});

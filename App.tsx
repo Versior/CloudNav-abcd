@@ -47,6 +47,7 @@ import { appendRecoverySnapshot, createRecoverySnapshot, normalizeRecoverySnapsh
 import { RECOVERY_SNAPSHOTS_KEY } from './constants/storageKeys';
 import { normalizeWorkbenchTools, type WorkbenchToolsState } from './services/workbenchTools';
 import SpatialViewTransition from './components/SpatialViewTransition';
+import { useAppBootstrap } from './hooks/useAppBootstrap';
 
 // 非首屏模块按需加载，避免首页把所有弹窗、备份工具和二维码库一次性打进首包。
 const CommandPalette = React.lazy(() => import('./components/CommandPalette'));
@@ -191,6 +192,7 @@ const readLocalDashboardConfig = (): DashboardConfig => {
 
 function App() {
   const { showToast } = useToast();
+  const { snapshot: bootstrapSnapshot, refresh: refreshBootstrap } = useAppBootstrap();
   const [isPaletteOpen, setIsPaletteOpen] = useState(false);
   const [selectedLinkId, setSelectedLinkId] = useState<string | null>(null);
   const [detailsOrigin, setDetailsOrigin] = useState<'right' | 'bottom'>('right');
@@ -213,14 +215,15 @@ function App() {
   };
 
   // --- State ---
-  const [localInitialData] = useState(() => readLocalData());
+  const [localInitialData] = useState(() => ({
+    links: bootstrapSnapshot.links,
+    categories: bootstrapSnapshot.categories,
+  }));
   const [links, setLinks] = useState<LinkItem[]>(localInitialData.links);
   const [categories, setCategories] = useState<Category[]>(localInitialData.categories);
   const [activeView, setActiveView] = useState<'links' | 'workbench' | 'rss'>('links');
-  const [dashboardConfig, setDashboardConfig] = useState<DashboardConfig>(() => readLocalDashboardConfig());
-  const [workbenchTools, setWorkbenchTools] = useState<WorkbenchToolsState>(() => {
-    try { return normalizeWorkbenchTools(JSON.parse(localStorage.getItem(WORKBENCH_TOOLS_KEY) || 'null')); } catch { return normalizeWorkbenchTools(null); }
-  });
+  const [dashboardConfig, setDashboardConfig] = useState<DashboardConfig>(() => bootstrapSnapshot.dashboardConfig);
+  const [workbenchTools, setWorkbenchTools] = useState<WorkbenchToolsState>(() => bootstrapSnapshot.workbenchTools);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchHistory, setSearchHistory] = useState<string[]>(() => {
@@ -825,22 +828,14 @@ function App() {
             console.warn("Failed to check auth requirement.", e);
         }
 
-        // 认证通过后，这三份数据互不依赖，避免配置请求串行阻塞首屏。
-        const [webDavConfigRes, aiConfigRes, storageRes, dashboardConfigRes] = await Promise.all([
-            fetch('/api/storage?getConfig=webdav').catch((error) => {
-                console.warn("Failed to fetch WebDAV config.", error);
-                return null;
+        // 认证通过后，配置和内容请求互不依赖；本地快照已经先行渲染。
+        const [webDavConfigRes, aiConfigRes] = await Promise.all([
+          fetch('/api/storage?getConfig=webdav').catch((error) => {
+            console.warn("Failed to fetch WebDAV config.", error);
+            return null;
             }),
             fetch('/api/storage?getConfig=ai').catch((error) => {
                 console.warn("Failed to fetch AI config.", error);
-                return null;
-            }),
-            fetch('/api/storage').catch((error) => {
-                console.warn("Failed to fetch from cloud, falling back to local.", error);
-                return null;
-            }),
-            fetch('/api/storage?getConfig=dashboard').catch((error) => {
-                console.warn("Failed to fetch dashboard config.", error);
                 return null;
             }),
         ]);
@@ -856,34 +851,28 @@ function App() {
             localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(mergedConfig));
         }
 
-        if (dashboardConfigRes?.ok) {
-            const remoteConfig = normalizeDashboardConfig(await dashboardConfigRes.json());
-            setDashboardConfig(remoteConfig);
-            localStorage.setItem(DASHBOARD_CONFIG_KEY, JSON.stringify(remoteConfig));
-        }
-
-        // 获取数据
         let hasCloudData = false;
-        if (storageRes?.ok) {
-            const data = await storageRes.json();
-            cloudVersionRef.current = typeof data.version === 'number' ? data.version : 0;
-         if (data.links && data.links.length > 0) {
-                const mergedLinks = mergeLocalVisitState(normalizeLinks(data.links));
-                const nextCategories = normalizeCategories(data.categories);
-                 setLinks(mergedLinks);
-                 setCategories(nextCategories);
-                 cloudBaseRef.current = { links: mergedLinks, categories: nextCategories };
-                localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ ...data, links: mergedLinks, categories: nextCategories }));
-
-                // 加载链接图标缓存
-                loadLinkIcons(mergedLinks);
-                hasCloudData = true;
-            }
-        } else if (storageRes?.status === 401) {
+        try {
+          const bootstrapResult = await refreshBootstrap();
+          setDashboardConfig(bootstrapResult.snapshot.dashboardConfig);
+          if (bootstrapResult.remoteData) {
+            const { links: mergedLinks, categories: nextCategories } = bootstrapResult.snapshot;
+            cloudVersionRef.current = bootstrapResult.remoteData.version || 0;
+            setLinks(mergedLinks);
+            setCategories(nextCategories);
+            cloudBaseRef.current = { links: mergedLinks, categories: nextCategories };
+            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ ...bootstrapResult.remoteData, links: mergedLinks, categories: nextCategories }));
+            loadLinkIcons(mergedLinks);
+            hasCloudData = true;
+          }
+        } catch (error) {
+          if (error instanceof Error && error.message === 'AUTH_REQUIRED') {
             setAuthToken(false);
             setIsAuthOpen(true);
             setIsCheckingAuth(false);
             return;
+          }
+          console.warn('Failed to hydrate bootstrap data; keeping local snapshot.', error);
         }
         
         // 无论是否有云端数据，都尝试从KV空间加载搜索配置和网站配置
@@ -957,15 +946,11 @@ function App() {
             setExternalSearchSources(getDefaultSearchSources());
         }
 
-        // 如果有云端数据，则不需要加载本地数据
         if (hasCloudData) {
             setIsLoadingSearchConfig(false);
             setIsCheckingAuth(false);
             return;
         }
-
-        // 如果没有云端数据，则加载本地数据
-        loadFromLocal();
 
         setIsLoadingSearchConfig(false);
         setIsCheckingAuth(false);

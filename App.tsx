@@ -2307,7 +2307,7 @@ function App() {
   return (
     <React.Suspense fallback={null}>
       <AppShell>
-      <div className="cloudnav-desktop-frame flex h-screen overflow-hidden text-slate-900 dark:text-slate-50">
+      <div data-ui-skin="command-desk" className="cloudnav-desktop-frame cloudnav-command-desk flex h-screen overflow-hidden text-slate-900 dark:text-slate-50">
       {/* 认证遮罩层 - 当需要认证时显示 */}
       {requiresAuth && !authToken && (
         <div className="fixed inset-0 z-50 bg-white dark:bg-slate-900 flex items-center justify-center">
@@ -2477,7 +2477,7 @@ function App() {
             <div className="px-4 space-y-1">
               <button
                 onClick={openWorkbench}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
+                className={`command-desk-nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
                   activeView === 'workbench'
                     ? 'cloudnav-desktop-active bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium'
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'
@@ -2488,7 +2488,7 @@ function App() {
               </button>
               <button
                 onClick={() => openLinksView('all')}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
+                className={`command-desk-nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
                   activeView === 'links' && selectedCategory === 'all'
                     ? 'cloudnav-desktop-active bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium'
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'
@@ -2499,7 +2499,7 @@ function App() {
               </button>
               <button
                 onClick={openRssReader}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
+                className={`command-desk-nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
                   activeView === 'rss'
                     ? 'cloudnav-desktop-active bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium'
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'

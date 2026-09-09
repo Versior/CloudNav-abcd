@@ -284,3 +284,14 @@ test('full rebuild keeps the application entry focused on orchestration boundari
   assert.match(pages, /data-page=/);
   assert.doesNotMatch(pages, /\bfetch\s*\(/);
 });
+
+test('desktop command-desk skin is a visible visual system, not a wrapper-only refactor', () => {
+  const app = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('../index.css', import.meta.url), 'utf8');
+
+  assert.match(app, /cloudnav-command-desk/);
+  assert.match(css, /cloudnav-command-desk/);
+  assert.match(css, /cloudnav-command-desk.*cloudnav-desktop-sidebar/s);
+  assert.match(css, /#111a33|#10182f/);
+  assert.match(css, /command-desk-nav-item/);
+});

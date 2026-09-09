@@ -24,3 +24,51 @@ body {
   transition: opacity 0.2s, visibility 0.2s;
   pointer-events: none;
 }
+
+.cloudnav-spatial-stage {
+  position: relative;
+  isolation: isolate;
+}
+
+.cloudnav-spatial-forward {
+  animation: cloudnav-spatial-forward 360ms cubic-bezier(.22, 1, .36, 1) both;
+}
+
+.cloudnav-spatial-backward {
+  animation: cloudnav-spatial-backward 300ms cubic-bezier(.22, 1, .36, 1) both;
+}
+
+.cloudnav-spatial-same {
+  animation: cloudnav-spatial-settle 180ms ease-out both;
+}
+
+@keyframes cloudnav-spatial-forward {
+  from { opacity: .78; transform: translate3d(20px, 0, 0) scale(.992); }
+  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+
+@keyframes cloudnav-spatial-backward {
+  from { opacity: .78; transform: translate3d(-16px, 0, 0) scale(.994); }
+  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+
+@keyframes cloudnav-spatial-settle {
+  from { opacity: .88; }
+  to { opacity: 1; }
+}
+
+.cloudnav-details-from-left { transform-origin: left center; }
+.cloudnav-details-from-right { transform-origin: right center; }
+.cloudnav-details-from-bottom { transform-origin: center bottom; }
+
+@media (prefers-reduced-motion: reduce) {
+  .cloudnav-spatial-forward,
+  .cloudnav-spatial-backward,
+  .cloudnav-spatial-same {
+    animation: none;
+  }
+}
+
+@media (max-width: 1023px) {
+  body { padding-bottom: calc(5rem + env(safe-area-inset-bottom)); }
+}

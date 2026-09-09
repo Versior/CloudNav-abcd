@@ -264,3 +264,23 @@ test('RSS page is split into source, list, reader, and state regions', () => {
   assert.match(page, /data-page=["']rss["']/);
   assert.match(page, /RssReaderPage/);
 });
+
+test('full rebuild keeps the application entry focused on orchestration boundaries', () => {
+  const app = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
+  const shell = readFileSync(new URL('../components/AppShell.tsx', import.meta.url), 'utf8');
+  const pages = [
+    readFileSync(new URL('../components/PinnedSitesPage.tsx', import.meta.url), 'utf8'),
+    readFileSync(new URL('../components/WorkbenchPage.tsx', import.meta.url), 'utf8'),
+    readFileSync(new URL('../components/RssPage.tsx', import.meta.url), 'utf8'),
+  ].join('\n');
+
+  assert.match(app, /AppShell/);
+  assert.match(app, /PinnedSitesPage/);
+  assert.match(app, /WorkbenchPage/);
+  assert.match(app, /const RssPage = React\.lazy/);
+  assert.match(shell, /DesktopSidebar/);
+  assert.match(shell, /TopCommandBar/);
+  assert.match(shell, /PageContainer/);
+  assert.match(pages, /data-page=/);
+  assert.doesNotMatch(pages, /\bfetch\s*\(/);
+});

@@ -24,32 +24,47 @@ import {
   useSortable,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { LinkItem, Category, DEFAULT_CATEGORIES, INITIAL_LINKS, WebDavConfig, AIConfig, SearchMode, ExternalSearchSource, SearchConfig, INBOX_ID } from './types';
-import { parseBookmarks } from './services/bookmarkParser';
+import { LinkItem, Category, DEFAULT_CATEGORIES, INITIAL_LINKS, WebDavConfig, AIConfig, SearchMode, ExternalSearchSource, SearchConfig, DashboardConfig, DEFAULT_DASHBOARD_CONFIG, INBOX_ID } from './types';
 import Icon from './components/Icon';
-import CommandPalette from './components/CommandPalette';
 import { useToast } from './components/Toast';
-import { AI_CONFIG_KEY, SITE_SETTINGS_KEY } from './constants/storageKeys';
-import { suggestCategory } from './services/geminiService';
-import LinkModal from './components/LinkModal';
+import { AI_CONFIG_KEY, DASHBOARD_CONFIG_KEY, SEARCH_HISTORY_KEY, SITE_SETTINGS_KEY, WORKBENCH_TOOLS_KEY } from './constants/storageKeys';
 import AuthModal from './components/AuthModal';
-import CategoryManagerModal from './components/CategoryManagerModal';
-import BackupModal from './components/BackupModal';
-import CategoryAuthModal from './components/CategoryAuthModal';
-import CategoryActionAuthModal from './components/CategoryActionAuthModal';
-import ImportModal from './components/ImportModal';
-import SettingsModal from './components/SettingsModal';
-import SearchConfigModal from './components/SearchConfigModal';
-import ContextMenu from './components/ContextMenu';
-import QRCodeModal from './components/QRCodeModal';
-import LinkDetailsDrawer from './components/LinkDetailsDrawer';
 import HomeDashboard from './components/HomeDashboard';
-import SyncConflictModal from './components/SyncConflictModal';
-import OrganizeModeBar from './components/OrganizeModeBar';
-import AdvancedSearchBar from './components/AdvancedSearchBar';
 import ModalErrorBoundary from './components/ModalErrorBoundary';
 import { getDefaultSearchSources } from './services/defaultSearchSources';
-import { matchesFilters, matchesQuery, parseSearchQuery, sortByRelevance } from './services/searchService';
+import { matchesFilters, matchesQuery, parseSearchQuery, preloadPinyin, sortByRelevance } from './services/searchService';
+import { normalizeDashboardConfig } from './services/dashboardConfig';
+import { applyBulkAction } from './services/bulkActions';
+import { normalizeSearchHistory, recordSearch } from './services/searchHistory';
+import { buildSearchIndex } from './services/searchIndex';
+import MobileBottomNav from './components/MobileBottomNav';
+import InstallPrompt from './components/InstallPrompt';
+import { softDeleteLinks } from './services/recycleBin';
+import { mergeThreeWay } from './services/mergeService';
+import { enqueuePendingMutation, readPendingMutations, replacePendingMutations } from './services/offlineStore';
+import { takeNextMutation } from './services/offlineQueue';
+import { appendRecoverySnapshot, createRecoverySnapshot, normalizeRecoverySnapshots } from './services/recoverySnapshots';
+import { RECOVERY_SNAPSHOTS_KEY } from './constants/storageKeys';
+import { normalizeWorkbenchTools, type WorkbenchToolsState } from './services/workbenchTools';
+import SpatialViewTransition from './components/SpatialViewTransition';
+
+// 非首屏模块按需加载，避免首页把所有弹窗、备份工具和二维码库一次性打进首包。
+const CommandPalette = React.lazy(() => import('./components/CommandPalette'));
+const LinkModal = React.lazy(() => import('./components/LinkModal'));
+const CategoryManagerModal = React.lazy(() => import('./components/CategoryManagerModal'));
+const BackupModal = React.lazy(() => import('./components/BackupModal'));
+const CategoryAuthModal = React.lazy(() => import('./components/CategoryAuthModal'));
+const CategoryActionAuthModal = React.lazy(() => import('./components/CategoryActionAuthModal'));
+const ImportModal = React.lazy(() => import('./components/ImportModal'));
+const SettingsModal = React.lazy(() => import('./components/SettingsModal'));
+const SearchConfigModal = React.lazy(() => import('./components/SearchConfigModal'));
+const ContextMenu = React.lazy(() => import('./components/ContextMenu'));
+const QRCodeModal = React.lazy(() => import('./components/QRCodeModal'));
+const LinkDetailsDrawer = React.lazy(() => import('./components/LinkDetailsDrawer'));
+const SyncConflictModal = React.lazy(() => import('./components/SyncConflictModal'));
+const OrganizeModeBar = React.lazy(() => import('./components/OrganizeModeBar'));
+const AdvancedSearchBar = React.lazy(() => import('./components/AdvancedSearchBar'));
+const RssReaderPage = React.lazy(() => import('./components/RssReaderPage'));
 
 const getSearchSourceIconUrl = (url: string) => {
   try {
@@ -138,6 +153,42 @@ const normalizeLinks = (value: unknown): LinkItem[] => {
   return cleaned.length > 0 ? cleaned : INITIAL_LINKS;
 };
 
+const readLocalData = (): { links: LinkItem[]; categories: Category[] } => {
+  try {
+    const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
+    if (!stored) return { links: INITIAL_LINKS, categories: DEFAULT_CATEGORIES };
+
+    const parsed = JSON.parse(stored);
+    let categories = normalizeCategories(parsed.categories);
+    if (!categories.some(category => category.id === 'common')) {
+      categories = [{ id: 'common', name: '常用推荐', icon: 'Star' }, ...categories];
+    } else {
+      const commonIndex = categories.findIndex(category => category.id === 'common');
+      if (commonIndex > 0) {
+        const commonCategory = categories[commonIndex];
+        categories = [commonCategory, ...categories.slice(0, commonIndex), ...categories.slice(commonIndex + 1)];
+      }
+    }
+
+    const validCategoryIds = new Set(categories.map(category => category.id));
+    const links = normalizeLinks(parsed.links).map(link => (
+      validCategoryIds.has(link.categoryId) ? link : { ...link, categoryId: 'common' }
+    ));
+    return { links, categories };
+  } catch {
+    return { links: INITIAL_LINKS, categories: DEFAULT_CATEGORIES };
+  }
+};
+
+const readLocalDashboardConfig = (): DashboardConfig => {
+  try {
+    const saved = localStorage.getItem(DASHBOARD_CONFIG_KEY);
+    return normalizeDashboardConfig(saved ? JSON.parse(saved) : DEFAULT_DASHBOARD_CONFIG);
+  } catch {
+    return { ...DEFAULT_DASHBOARD_CONFIG, order: [...DEFAULT_DASHBOARD_CONFIG.order], hidden: [] };
+  }
+};
+
 function App() {
   const { showToast } = useToast();
   const [isPaletteOpen, setIsPaletteOpen] = useState(false);
@@ -149,6 +200,7 @@ function App() {
   const [isAdvancedFilterOpen, setIsAdvancedFilterOpen] = useState(false);
   const [advancedFilters, setAdvancedFilters] = useState<Record<string, string | boolean | undefined>>({});
   const [syncConflictResolve, setSyncConflictResolve] = useState<{ useLocal: () => void; useCloud: () => void; merge: () => void } | null>(null);
+  const [syncConflictPreview, setSyncConflictPreview] = useState<{ links: number; categories: number } | null>(null);
 
   // Visit tracking stays local so opening links never waits on cloud sync.
   const recordVisit = (id: string) => {
@@ -160,12 +212,23 @@ function App() {
   };
 
   // --- State ---
-  const [links, setLinks] = useState<LinkItem[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
+  const [localInitialData] = useState(() => readLocalData());
+  const [links, setLinks] = useState<LinkItem[]>(localInitialData.links);
+  const [categories, setCategories] = useState<Category[]>(localInitialData.categories);
+  const [activeView, setActiveView] = useState<'links' | 'workbench' | 'rss'>('links');
+  const [dashboardConfig, setDashboardConfig] = useState<DashboardConfig>(() => readLocalDashboardConfig());
+  const [workbenchTools, setWorkbenchTools] = useState<WorkbenchToolsState>(() => {
+    try { return normalizeWorkbenchTools(JSON.parse(localStorage.getItem(WORKBENCH_TOOLS_KEY) || 'null')); } catch { return normalizeWorkbenchTools(null); }
+  });
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchHistory, setSearchHistory] = useState<string[]>(() => {
+    try { return normalizeSearchHistory(JSON.parse(localStorage.getItem(SEARCH_HISTORY_KEY) || '[]')); } catch { return []; }
+  });
+  const [pinyinReady, setPinyinReady] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isOnline, setIsOnline] = useState(() => navigator.onLine);
   
   // Search Mode State
   const [searchMode, setSearchMode] = useState<SearchMode>('external');
@@ -222,6 +285,7 @@ function App() {
   const [syncStatus, setSyncStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [authToken, setAuthToken] = useState<boolean>(false);
   const cloudVersionRef = useRef(0);
+  const cloudBaseRef = useRef<{ links: LinkItem[]; categories: Category[] }>({ links: localInitialData.links, categories: localInitialData.categories });
   const [extensionToken, setExtensionToken] = useState('');
   const [requiresAuth, setRequiresAuth] = useState<boolean | null>(null); // null表示未检查，true表示需要认证，false表示不需要
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
@@ -254,7 +318,7 @@ function App() {
   });
   const [aiSettingsCategoryId, setAiSettingsCategoryId] = useState('');
   const [aiSettingsAction, setAiSettingsAction] = useState<'organize' | 'rename' | 'structure' | ''>('');
-  const [settingsInitialTab, setSettingsInitialTab] = useState<'site' | 'ai' | 'tools' | 'duplicates' | 'health' | undefined>(undefined);
+  const [settingsInitialTab, setSettingsInitialTab] = useState<'site' | 'ai' | 'tools' | 'duplicates' | 'health' | 'recycle' | undefined>(undefined);
   
   // QR Code Modal State
   const [qrCodeModal, setQrCodeModal] = useState<{
@@ -282,58 +346,102 @@ function App() {
     categoryId: '',
     categoryName: ''
   });
+
+  const openWorkbench = () => {
+    setActiveView('workbench');
+    setSelectedCategory('all');
+    setSearchQuery('');
+    setIsOrganizeMode(false);
+    setSidebarOpen(false);
+  };
+
+  const openLinksView = (categoryId = 'all') => {
+    setActiveView('links');
+    setSelectedCategory(categoryId);
+    setSearchQuery('');
+    setSidebarOpen(false);
+  };
+
+  const openRssReader = () => {
+    setActiveView('rss');
+    setSelectedCategory('all');
+    setSearchQuery('');
+    setIsOrganizeMode(false);
+    setSidebarOpen(false);
+  };
+
+  const saveRssArticleToLinks = (article: import('./types').RssArticle) => {
+    setPrefillLink({
+      title: article.title,
+      url: article.url,
+      description: article.summary || `来自 ${article.sourceTitle || 'RSS'} 的文章`,
+      categoryId: 'common',
+    });
+    setEditingLink(undefined);
+    if (!authToken) {
+      setIsAuthOpen(true);
+      return;
+    }
+    setIsModalOpen(true);
+  };
+
+  const updateDashboardConfig = (nextConfig: DashboardConfig) => {
+    const normalized = normalizeDashboardConfig(nextConfig);
+    setDashboardConfig(normalized);
+    localStorage.setItem(DASHBOARD_CONFIG_KEY, JSON.stringify(normalized));
+    if (authToken) {
+      void fetch('/api/storage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ saveConfig: 'dashboard', config: normalized }),
+      }).catch(error => console.warn('Failed to save dashboard config.', error));
+    }
+  };
+
+  const updateWorkbenchTools = (next: WorkbenchToolsState) => {
+    const normalized = normalizeWorkbenchTools(next);
+    setWorkbenchTools(normalized);
+    localStorage.setItem(WORKBENCH_TOOLS_KEY, JSON.stringify(normalized));
+  };
+
+  const saveSearchQuery = (query: string) => {
+    const next = recordSearch(searchHistory, query);
+    setSearchHistory(next);
+    localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(next));
+  };
   
   // --- Helpers & Sync Logic ---
 
   const loadFromLocal = () => {
-    const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored);
-        let loadedCategories = normalizeCategories(parsed.categories);
-        
-        // 确保"常用推荐"分类始终存在，并确保它是第一个分类
-        if (!loadedCategories.some(c => c.id === 'common')) {
-          loadedCategories = [
-            { id: 'common', name: '常用推荐', icon: 'Star' },
-            ...loadedCategories
-          ];
-        } else {
-          // 如果"常用推荐"分类已存在，确保它是第一个分类
-          const commonIndex = loadedCategories.findIndex(c => c.id === 'common');
-          if (commonIndex > 0) {
-            const commonCategory = loadedCategories[commonIndex];
-            loadedCategories = [
-              commonCategory,
-              ...loadedCategories.slice(0, commonIndex),
-              ...loadedCategories.slice(commonIndex + 1)
-            ];
-          }
-        }
-        
-        // 检查是否有链接的categoryId不存在于当前分类中，将这些链接移动到"常用推荐"
-        const validCategoryIds = new Set(loadedCategories.map(c => c.id));
-        let loadedLinks = normalizeLinks(parsed.links);
-        loadedLinks = loadedLinks.map(link => {
-          if (!validCategoryIds.has(link.categoryId)) {
-            return { ...link, categoryId: 'common' };
-          }
-          return link;
-        });
-        
-        setLinks(loadedLinks);
-        setCategories(loadedCategories);
-      } catch (e) {
-        setLinks(INITIAL_LINKS);
-        setCategories(DEFAULT_CATEGORIES);
-      }
-    } else {
-      setLinks(INITIAL_LINKS);
-      setCategories(DEFAULT_CATEGORIES);
-    }
+    const localData = readLocalData();
+    setLinks(localData.links);
+    setCategories(localData.categories);
+  };
+
+  const applyCloudData = (remoteLinks: LinkItem[], remoteCategories: Category[], version?: number) => {
+    setLinks(remoteLinks);
+    setCategories(remoteCategories);
+    cloudBaseRef.current = { links: remoteLinks, categories: remoteCategories };
+    if (typeof version === 'number') cloudVersionRef.current = version;
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ links: remoteLinks, categories: remoteCategories, version: cloudVersionRef.current }));
+  };
+
+  const queueOfflineMutation = async (newLinks: LinkItem[], newCategories: Category[]) => {
+    await enqueuePendingMutation({
+      id: 'latest',
+      createdAt: Date.now(),
+      links: newLinks,
+      categories: newCategories,
+      baseVersion: cloudVersionRef.current,
+    });
+    setSyncStatus('error');
   };
 
   const syncToCloud = async (newLinks: LinkItem[], newCategories: Category[]) => {
+    if (!navigator.onLine) {
+      await queueOfflineMutation(newLinks, newCategories);
+      return false;
+    }
     setSyncStatus('saving');
     try {
         const response = await fetch('/api/storage', {
@@ -351,18 +459,19 @@ function App() {
                 if (cloudData && Array.isArray(cloudData.links)) {
                     cloudVersionRef.current = typeof cloudData.version === 'number' ? cloudData.version : cloudVersionRef.current;
                     const localSnapshot = { links: newLinks, categories: newCategories };
+                    const mergeResult = mergeThreeWay(cloudBaseRef.current, localSnapshot, { links: cloudData.links, categories: cloudData.categories || [] });
+                    setSyncConflictPreview({
+                      links: mergeResult.linkConflicts,
+                      categories: mergeResult.categoryConflicts,
+                    });
                     setSyncConflictResolve({
                         useLocal: () => syncToCloud(localSnapshot.links, localSnapshot.categories),
                         useCloud: () => {
-                            updateData(cloudData.links, cloudData.categories || []);
+                            void replacePendingMutations([]);
+                            applyCloudData(cloudData.links, cloudData.categories || [], cloudData.version);
                         },
                         merge: () => {
-                            const mergedLinks = [
-                                ...cloudData.links.filter((cl: LinkItem) => !localSnapshot.links.find((ll: LinkItem) => ll.id === cl.id)),
-                                ...localSnapshot.links,
-                            ];
-                            const mergedCats = [...cloudData.categories || [], ...newCategories];
-                            updateData(mergedLinks, mergedCats);
+                            updateData(mergeResult.data.links, mergeResult.data.categories);
                         },
                     });
                     setIsSyncConflict(true);
@@ -384,17 +493,35 @@ function App() {
         const result = await response.json().catch(() => ({}));
         if (typeof result.version === 'number') cloudVersionRef.current = result.version;
 
+        cloudBaseRef.current = { links: newLinks, categories: newCategories };
+        await replacePendingMutations([]);
+
         setSyncStatus('saved');
         setTimeout(() => setSyncStatus('idle'), 2000);
         return true;
     } catch (error) {
         console.error("Sync failed", error);
+        await queueOfflineMutation(newLinks, newCategories);
         setSyncStatus('error');
         return false;
     }
   };
 
+  const flushPendingSync = async () => {
+    if (!authToken || !navigator.onLine) return;
+    const pending = await readPendingMutations();
+    const [next] = takeNextMutation(pending);
+    if (!next) return;
+    const ok = await syncToCloud(next.links as LinkItem[], next.categories as Category[]);
+    if (ok) await replacePendingMutations([]);
+  };
+
   const updateData = (newLinks: LinkItem[], newCategories: Category[]) => {
+      try {
+        const currentRaw = localStorage.getItem(RECOVERY_SNAPSHOTS_KEY);
+        const snapshot = createRecoverySnapshot({ links, categories });
+        localStorage.setItem(RECOVERY_SNAPSHOTS_KEY, JSON.stringify(appendRecoverySnapshot(currentRaw ? JSON.parse(currentRaw) : [], snapshot)));
+      } catch {}
       // 1. Optimistic UI Update
       setLinks(newLinks);
       setCategories(newCategories);
@@ -403,9 +530,11 @@ function App() {
       localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ links: newLinks, categories: newCategories }));
 
       // 3. Sync to Cloud (if authenticated)
-      if (authToken) {
-          syncToCloud(newLinks, newCategories);
-      }
+       if (authToken && navigator.onLine) {
+           syncToCloud(newLinks, newCategories);
+       } else if (authToken) {
+           void queueOfflineMutation(newLinks, newCategories);
+       }
   };
 
   // --- Context Menu Functions ---
@@ -487,7 +616,7 @@ function App() {
     if (!contextMenu.link) return;
     
     if (window.confirm(`确定要删除"${contextMenu.link.title}"吗？`)) {
-      const newLinks = links.filter(link => link.id !== contextMenu.link!.id);
+      const newLinks = softDeleteLinks(links, [contextMenu.link!.id]);
       updateData(newLinks, categories);
     }
     
@@ -695,95 +824,112 @@ function App() {
             console.warn("Failed to check auth requirement.", e);
         }
 
-        try {
-            const webDavConfigRes = await fetch('/api/storage?getConfig=webdav');
-            if (webDavConfigRes.ok) {
-                setWebDavConfig(await webDavConfigRes.json());
-            }
-        } catch (e) {
-            console.warn("Failed to fetch WebDAV config.", e);
+        // 认证通过后，这三份数据互不依赖，避免配置请求串行阻塞首屏。
+        const [webDavConfigRes, aiConfigRes, storageRes, dashboardConfigRes] = await Promise.all([
+            fetch('/api/storage?getConfig=webdav').catch((error) => {
+                console.warn("Failed to fetch WebDAV config.", error);
+                return null;
+            }),
+            fetch('/api/storage?getConfig=ai').catch((error) => {
+                console.warn("Failed to fetch AI config.", error);
+                return null;
+            }),
+            fetch('/api/storage').catch((error) => {
+                console.warn("Failed to fetch from cloud, falling back to local.", error);
+                return null;
+            }),
+            fetch('/api/storage?getConfig=dashboard').catch((error) => {
+                console.warn("Failed to fetch dashboard config.", error);
+                return null;
+            }),
+        ]);
+
+        if (webDavConfigRes?.ok) {
+            setWebDavConfig(await webDavConfigRes.json());
         }
 
-        try {
-            const aiConfigRes = await fetch('/api/storage?getConfig=ai');
-            if (aiConfigRes.ok) {
-                const remoteConfig = await aiConfigRes.json();
-                const mergedConfig = mergeClientAIConfig(remoteConfig);
-                setAiConfig(mergedConfig);
-                localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(mergedConfig));
-            }
-        } catch (e) {
-            console.warn("Failed to fetch AI config.", e);
+        if (aiConfigRes?.ok) {
+            const remoteConfig = await aiConfigRes.json();
+            const mergedConfig = mergeClientAIConfig(remoteConfig);
+            setAiConfig(mergedConfig);
+            localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(mergedConfig));
+        }
+
+        if (dashboardConfigRes?.ok) {
+            const remoteConfig = normalizeDashboardConfig(await dashboardConfigRes.json());
+            setDashboardConfig(remoteConfig);
+            localStorage.setItem(DASHBOARD_CONFIG_KEY, JSON.stringify(remoteConfig));
         }
 
         // 获取数据
         let hasCloudData = false;
-        try {
-            const res = await fetch('/api/storage');
-            if (res.ok) {
-                const data = await res.json();
-                cloudVersionRef.current = typeof data.version === 'number' ? data.version : 0;
-                if (data.links && data.links.length > 0) {
-                    const mergedLinks = mergeLocalVisitState(normalizeLinks(data.links));
-                    const nextCategories = normalizeCategories(data.categories);
-                    setLinks(mergedLinks);
-                    setCategories(nextCategories);
-                    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ ...data, links: mergedLinks, categories: nextCategories }));
+        if (storageRes?.ok) {
+            const data = await storageRes.json();
+            cloudVersionRef.current = typeof data.version === 'number' ? data.version : 0;
+         if (data.links && data.links.length > 0) {
+                const mergedLinks = mergeLocalVisitState(normalizeLinks(data.links));
+                const nextCategories = normalizeCategories(data.categories);
+                 setLinks(mergedLinks);
+                 setCategories(nextCategories);
+                 cloudBaseRef.current = { links: mergedLinks, categories: nextCategories };
+                localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ ...data, links: mergedLinks, categories: nextCategories }));
 
-                    // 加载链接图标缓存
-                    loadLinkIcons(mergedLinks);
-                    hasCloudData = true;
-                }
-            } else if (res.status === 401) {
-                setAuthToken(false);
-                setIsAuthOpen(true);
-                setIsCheckingAuth(false);
-                return;
+                // 加载链接图标缓存
+                loadLinkIcons(mergedLinks);
+                hasCloudData = true;
             }
-        } catch (e) {
-            console.warn("Failed to fetch from cloud, falling back to local.", e);
+        } else if (storageRes?.status === 401) {
+            setAuthToken(false);
+            setIsAuthOpen(true);
+            setIsCheckingAuth(false);
+            return;
         }
         
         // 无论是否有云端数据，都尝试从KV空间加载搜索配置和网站配置
         let hasLoadedSearchConfig = false;
-        try {
-            const searchConfigRes = await fetch('/api/storage?getConfig=search');
-            if (searchConfigRes.ok) {
-                const searchConfigData = await searchConfigRes.json();
-                // 检查搜索配置是否有效（包含必要的字段）
-                if (searchConfigData && (searchConfigData.mode || searchConfigData.externalSources || searchConfigData.selectedSource)) {
-                    setSearchMode(searchConfigData.mode || 'external');
-                    setExternalSearchSources(searchConfigData.externalSources || []);
-                    // 加载已保存的选中搜索源
-                    if (searchConfigData.selectedSource) {
-                        setSelectedSearchSource(searchConfigData.selectedSource);
-                    }
-                    localStorage.setItem(SEARCH_CONFIG_KEY, JSON.stringify(searchConfigData));
-                    hasLoadedSearchConfig = true;
+        const [searchConfigRes, websiteConfigRes] = await Promise.all([
+            fetch('/api/storage?getConfig=search').catch((error) => {
+                console.warn("Failed to fetch search config from KV.", error);
+                return null;
+            }),
+            fetch('/api/storage?getConfig=website').catch((error) => {
+                console.warn("Failed to fetch website config from KV.", error);
+                return null;
+            }),
+        ]);
+
+        if (searchConfigRes?.ok) {
+            const searchConfigData = await searchConfigRes.json();
+            // 检查搜索配置是否有效（包含必要的字段）
+            if (searchConfigData && (searchConfigData.mode || searchConfigData.externalSources || searchConfigData.selectedSource)) {
+                setSearchMode(searchConfigData.mode || 'external');
+                setExternalSearchSources(searchConfigData.externalSources || []);
+                // 加载已保存的选中搜索源
+                if (searchConfigData.selectedSource) {
+                    setSelectedSearchSource(searchConfigData.selectedSource);
                 }
+                localStorage.setItem(SEARCH_CONFIG_KEY, JSON.stringify(searchConfigData));
+                hasLoadedSearchConfig = true;
             }
-            
-            // 获取网站配置（包括密码过期时间设置）
-            const websiteConfigRes = await fetch('/api/storage?getConfig=website');
-            if (websiteConfigRes.ok) {
-                const websiteConfigData = await websiteConfigRes.json();
-                if (websiteConfigData) {
-                    setSiteSettings(prev => {
-                        const next = {
-                            ...prev,
-                            title: websiteConfigData.title || prev.title,
-                            navTitle: websiteConfigData.navTitle || prev.navTitle,
-                            favicon: websiteConfigData.favicon || prev.favicon,
-                            cardStyle: websiteConfigData.cardStyle || prev.cardStyle,
-                            passwordExpiryDays: websiteConfigData.passwordExpiryDays !== undefined ? websiteConfigData.passwordExpiryDays : prev.passwordExpiryDays
-                        };
-                        localStorage.setItem(SITE_SETTINGS_KEY, JSON.stringify(next));
-                        return next;
-                    });
-                }
+        }
+
+        // 获取网站配置（包括密码过期时间设置）
+        if (websiteConfigRes?.ok) {
+            const websiteConfigData = await websiteConfigRes.json();
+            if (websiteConfigData) {
+                setSiteSettings(prev => {
+                    const next = {
+                        ...prev,
+                        title: websiteConfigData.title || prev.title,
+                        navTitle: websiteConfigData.navTitle || prev.navTitle,
+                        favicon: websiteConfigData.favicon || prev.favicon,
+                        cardStyle: websiteConfigData.cardStyle || prev.cardStyle,
+                        passwordExpiryDays: websiteConfigData.passwordExpiryDays !== undefined ? websiteConfigData.passwordExpiryDays : prev.passwordExpiryDays
+                    };
+                    localStorage.setItem(SITE_SETTINGS_KEY, JSON.stringify(next));
+                    return next;
+                });
             }
-        } catch (e) {
-            console.warn("Failed to fetch configs from KV.", e);
         }
         
         if (!hasLoadedSearchConfig) {
@@ -858,6 +1004,38 @@ function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      void flushPendingSync();
+    };
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [authToken]);
+
+  useEffect(() => {
+    if (authToken && isOnline) void flushPendingSync();
+  }, [authToken, isOnline]);
+
+  // 仅在用户开始搜索时加载拼音库，避免首屏为中文搜索能力支付额外体积。
+  useEffect(() => {
+    if (!searchQuery.trim() || pinyinReady) return;
+    let active = true;
+    preloadPinyin()
+      .then(() => {
+        if (active) setPinyinReady(true);
+      })
+      .catch(() => {
+        // 原始标题、网址和标签搜索不依赖拼音库，加载失败时保持基础搜索可用。
+      });
+    return () => { active = false; };
+  }, [searchQuery, pinyinReady]);
+
   const toggleTheme = () => {
     const newMode = !darkMode;
     setDarkMode(newMode);
@@ -904,7 +1082,7 @@ function App() {
     }
     
     if (confirm(`确定要删除选中的 ${selectedLinks.size} 个链接吗？`)) {
-      const newLinks = links.filter(link => !selectedLinks.has(link.id));
+      const newLinks = softDeleteLinks(links, [...selectedLinks]);
       updateData(newLinks, categories);
       setSelectedLinks(new Set());
       setIsBatchEditMode(false);
@@ -925,6 +1103,20 @@ function App() {
     updateData(newLinks, categories);
     setSelectedLinks(new Set());
     setIsBatchEditMode(false);
+  };
+
+  const handleBatchAction = (action: Parameters<typeof applyBulkAction>[2]) => {
+    if (!authToken) { setIsAuthOpen(true); return; }
+    if (selectedLinks.size === 0) { alert('请先选择要操作的链接'); return; }
+    updateData(applyBulkAction(links, [...selectedLinks], action), categories);
+    setSelectedLinks(new Set());
+    setIsBatchEditMode(false);
+  };
+
+  const handleBatchAddTags = () => {
+    const value = prompt('输入要添加的标签，多个标签用逗号分隔');
+    const tags = value?.split(',').map(tag => tag.trim()).filter(Boolean) || [];
+    if (tags.length > 0) handleBatchAction({ type: 'addTags', tags });
   };
 
   const handleSelectAll = () => {
@@ -1023,6 +1215,17 @@ function App() {
                 }
             } catch (e) {
                 console.warn("Failed to fetch AI config after login.", e);
+            }
+
+            try {
+                const dashboardConfigRes = await fetch('/api/storage?getConfig=dashboard');
+                if (dashboardConfigRes.ok) {
+                    const remoteConfig = normalizeDashboardConfig(await dashboardConfigRes.json());
+                    setDashboardConfig(remoteConfig);
+                    localStorage.setItem(DASHBOARD_CONFIG_KEY, JSON.stringify(remoteConfig));
+                }
+            } catch (e) {
+                console.warn("Failed to fetch dashboard config after login.", e);
             }
 
             return true;
@@ -1340,7 +1543,7 @@ function App() {
   const handleDeleteLink = (id: string) => {
     if (!authToken) { setIsAuthOpen(true); return; }
     if (confirm('确定删除此链接吗?')) {
-      updateData(links.filter(l => l.id !== id), categories);
+      updateData(softDeleteLinks(links, [id]), categories);
     }
   };
 
@@ -1487,13 +1690,12 @@ function App() {
           return;
       }
       
-      setSelectedCategory(cat.id);
-      setSidebarOpen(false);
+      openLinksView(cat.id);
   };
 
   const handleUnlockCategory = (catId: string) => {
       setUnlockedCategoryIds(prev => new Set(prev).add(catId));
-      setSelectedCategory(catId);
+      openLinksView(catId);
   };
 
   const handleUpdateCategories = (newCats: Category[]) => {
@@ -1758,8 +1960,10 @@ function App() {
       }
   };
 
-  const handleRestoreBackup = (restoredLinks: LinkItem[], restoredCategories: Category[]) => {
+  const handleRestoreBackup = (restoredLinks: LinkItem[], restoredCategories: Category[], version?: number, restoredWorkbenchTools?: WorkbenchToolsState) => {
+      if (typeof version === 'number') cloudVersionRef.current = version;
       updateData(restoredLinks, restoredCategories);
+      if (restoredWorkbenchTools) updateWorkbenchTools(restoredWorkbenchTools);
       setIsBackupModalOpen(false);
   };
 
@@ -1787,7 +1991,7 @@ function App() {
 
   const pinnedLinks = useMemo(() => {
       // Don't show pinned links if they belong to a locked category
-      const filteredPinnedLinks = links.filter(l => l.pinned && !isCategoryLocked(l.categoryId));
+       const filteredPinnedLinks = links.filter(l => l.pinned && !l.deletedAt && !isCategoryLocked(l.categoryId));
       // 按照pinnedOrder字段排序，如果没有pinnedOrder字段则按创建时间排序
       return filteredPinnedLinks.sort((a, b) => {
         // 如果有pinnedOrder字段，则使用pinnedOrder排序
@@ -1802,13 +2006,15 @@ function App() {
       });
   }, [links, categories, unlockedCategoryIds]);
 
-  const inboxLinks = useMemo(() => links.filter(l => l.categoryId === INBOX_ID && !isCategoryLocked(l.categoryId)), [links, categories, unlockedCategoryIds]);
+  const inboxLinks = useMemo(() => links.filter(l => l.categoryId === INBOX_ID && !l.deletedAt && !isCategoryLocked(l.categoryId)), [links, categories, unlockedCategoryIds]);
 
   const advancedFilterActive = useMemo(() => Object.values(advancedFilters).some(value => value !== undefined && value !== '' && value !== false), [advancedFilters]);
 
   const allTags = useMemo(() => {
     return Array.from(new Set(links.flatMap(link => link.tags || []))).sort((a, b) => a.localeCompare(b));
   }, [links]);
+
+  const searchIndex = useMemo(() => buildSearchIndex(links), [links]);
 
   const matchesAdvancedFilters = (link: LinkItem) => {
     if (advancedFilters.status && link.status !== advancedFilters.status) return false;
@@ -1831,7 +2037,7 @@ function App() {
     let result = links.filter(l => !isCategoryLocked(l.categoryId) && !l.deletedAt);
 
     if (hasSearch) {
-      result = result.filter(l => matchesFilters(l, parsedQuery, categories) && matchesQuery(l, parsedQuery.text));
+       result = result.filter(l => matchesFilters(l, parsedQuery, categories) && matchesQuery(l, parsedQuery.text, searchIndex.get(l.id)?.text));
     }
 
     if (advancedFilterActive) {
@@ -1844,7 +2050,7 @@ function App() {
     }
 
     return hasSearch ? sortByRelevance(result, parsedQuery.text || searchQuery) : sortByManualOrder(result);
-  }, [links, selectedCategory, searchQuery, advancedFilters, advancedFilterActive, categories, unlockedCategoryIds]);
+  }, [links, selectedCategory, searchQuery, pinyinReady, advancedFilters, advancedFilterActive, categories, unlockedCategoryIds, searchIndex]);
 
   // 计算其他目录的搜索结果
   const otherCategoryResults = useMemo<Record<string, LinkItem[]>>(() => {
@@ -1861,7 +2067,7 @@ function App() {
     const otherLinks = links.filter(link => {
       if (currentCategoryIds.has(link.categoryId)) return false;
       if (isCategoryLocked(link.categoryId) || link.deletedAt) return false;
-      if (searchQuery.trim() && (!matchesFilters(link, parsedQuery, categories) || !matchesQuery(link, parsedQuery.text))) return false;
+       if (searchQuery.trim() && (!matchesFilters(link, parsedQuery, categories) || !matchesQuery(link, parsedQuery.text, searchIndex.get(link.id)?.text))) return false;
       return !advancedFilterActive || matchesAdvancedFilters(link);
     });
 
@@ -1871,8 +2077,10 @@ function App() {
       acc[link.categoryId] = searchQuery.trim() ? sortByRelevance(acc[link.categoryId], parsedQuery.text || searchQuery) : sortByManualOrder(acc[link.categoryId]);
       return acc;
     }, {} as Record<string, LinkItem[]>);
-  }, [links, selectedCategory, searchQuery, advancedFilters, advancedFilterActive, categories, unlockedCategoryIds]);
+  }, [links, selectedCategory, searchQuery, pinyinReady, advancedFilters, advancedFilterActive, categories, unlockedCategoryIds, searchIndex]);
 
+  // “置顶网站”是独立的默认入口，不再把未置顶链接混在页面下方；搜索时仍允许跨目录查找。
+  const showMainLinksGrid = activeView === 'links' && (selectedCategory !== 'all' || Boolean(searchQuery.trim()));
 
   const handleAiOrganizeCurrent = async () => {
     const current = inboxLinks[organizeIndex];
@@ -1885,6 +2093,7 @@ function App() {
 
     setIsAiOrganizing(true);
     try {
+      const { suggestCategory } = await import('./services/geminiService');
       const availableCategories = categories
         .filter(c => c.id !== INBOX_ID && !c.password && c.id !== 'all')
         .map(c => ({ id: c.id, name: c.name }));
@@ -2106,7 +2315,8 @@ function App() {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden text-slate-900 dark:text-slate-50">
+    <React.Suspense fallback={null}>
+      <div className="flex h-screen overflow-hidden text-slate-900 dark:text-slate-50">
       {/* 认证遮罩层 - 当需要认证时显示 */}
       {requiresAuth && !authToken && (
         <div className="fixed inset-0 z-50 bg-white dark:bg-slate-900 flex items-center justify-center">
@@ -2132,99 +2342,118 @@ function App() {
         <>
           <AuthModal isOpen={isAuthOpen} onLogin={handleLogin} />
       
-      <CategoryAuthModal 
-        isOpen={!!catAuthModalData}
-        category={catAuthModalData}
-        onClose={() => setCatAuthModalData(null)}
-        onUnlock={handleUnlockCategory}
-      />
-
-      <CategoryManagerModal
-        isOpen={isCatManagerOpen}
-        onClose={() => { setIsCatManagerOpen(false); setCategoryManagerEditId(''); }}
-        categories={categories}
-        onUpdateCategories={handleUpdateCategories}
-        onDeleteCategory={handleDeleteCategory}
-        onVerifyPassword={handleCategoryActionAuth}
-        initialEditId={categoryManagerEditId}
-      />
-
-      <BackupModal
-        isOpen={isBackupModalOpen}
-        onClose={() => setIsBackupModalOpen(false)}
-        links={links}
-        categories={categories}
-        onRestore={handleRestoreBackup}
-        webDavConfig={webDavConfig}
-        onSaveWebDavConfig={handleSaveWebDavConfig}
-        searchConfig={{ mode: searchMode, externalSources: externalSearchSources }}
-        onRestoreSearchConfig={handleRestoreSearchConfig}
-        aiConfig={aiConfig}
-        onRestoreAIConfig={handleRestoreAIConfig}
-      />
-
-      <ModalErrorBoundary onClose={() => setIsImportModalOpen(false)}>
-        <ImportModal
-          isOpen={isImportModalOpen}
-          onClose={() => setIsImportModalOpen(false)}
-          existingLinks={links}
-          categories={categories}
-          onImport={handleImportConfirm}
-          onImportSearchConfig={handleRestoreSearchConfig}
-          onImportAIConfig={handleRestoreAIConfig}
+      {catAuthModalData && (
+        <CategoryAuthModal
+          isOpen={true}
+          category={catAuthModalData}
+          onClose={() => setCatAuthModalData(null)}
+          onUnlock={handleUnlockCategory}
         />
-      </ModalErrorBoundary>
+      )}
 
-      <SettingsModal
-        isOpen={isSettingsModalOpen}
-        onClose={() => { setIsSettingsModalOpen(false); setAiSettingsCategoryId(''); setAiSettingsAction(''); setSettingsInitialTab(undefined); }}
-        config={aiConfig}
-        siteSettings={siteSettings}
-        onSave={handleSaveAIConfig}
-        links={links}
-        categories={categories}
-        onUpdateLinks={(newLinks) => updateData(newLinks, categories)}
-        onUpdateCategories={(newCats) => updateData(links, newCats)}
-        onUpdateData={(nextLinks, nextCats) => updateData(nextLinks, nextCats)}
-        onEditLink={(link) => {
-          setIsSettingsModalOpen(false);
-          setSettingsInitialTab(undefined);
-          setEditingLink(link);
-          setIsModalOpen(true);
-        }}
-        authToken={authToken}
-        extensionToken={extensionToken}
-        initialAICategoryId={aiSettingsCategoryId}
-        initialAIAction={aiSettingsAction || undefined}
-        initialTab={settingsInitialTab}
-      />
+      {isCatManagerOpen && (
+        <CategoryManagerModal
+          isOpen={true}
+          onClose={() => { setIsCatManagerOpen(false); setCategoryManagerEditId(''); }}
+          categories={categories}
+          onUpdateCategories={handleUpdateCategories}
+          onDeleteCategory={handleDeleteCategory}
+          onVerifyPassword={handleCategoryActionAuth}
+          initialEditId={categoryManagerEditId}
+        />
+      )}
 
-      <SearchConfigModal
-        isOpen={isSearchConfigModalOpen}
-        onClose={() => setIsSearchConfigModalOpen(false)}
-        sources={externalSearchSources}
-        onSave={(sources) => handleSaveSearchConfig(sources, searchMode)}
-      />
+      {isBackupModalOpen && (
+        <BackupModal
+          isOpen={true}
+          onClose={() => setIsBackupModalOpen(false)}
+          links={links}
+          categories={categories}
+          onRestore={handleRestoreBackup}
+          webDavConfig={webDavConfig}
+          onSaveWebDavConfig={handleSaveWebDavConfig}
+          searchConfig={{ mode: searchMode, externalSources: externalSearchSources }}
+           onRestoreSearchConfig={handleRestoreSearchConfig}
+           aiConfig={aiConfig}
+           onRestoreAIConfig={handleRestoreAIConfig}
+           workbenchTools={workbenchTools}
+           dataVersion={cloudVersionRef.current}
+        />
+      )}
 
-      <CommandPalette
-        isOpen={isPaletteOpen}
-        onClose={() => setIsPaletteOpen(false)}
-        links={links}
-        categories={categories}
-        actions={[
+      {isImportModalOpen && (
+        <ModalErrorBoundary onClose={() => setIsImportModalOpen(false)}>
+          <ImportModal
+            isOpen={true}
+            onClose={() => setIsImportModalOpen(false)}
+            existingLinks={links}
+            categories={categories}
+            onImport={handleImportConfirm}
+            onImportSearchConfig={handleRestoreSearchConfig}
+            onImportAIConfig={handleRestoreAIConfig}
+            onImportWorkbenchTools={updateWorkbenchTools}
+          />
+        </ModalErrorBoundary>
+      )}
+
+      {isSettingsModalOpen && (
+        <SettingsModal
+          isOpen={true}
+          onClose={() => { setIsSettingsModalOpen(false); setAiSettingsCategoryId(''); setAiSettingsAction(''); setSettingsInitialTab(undefined); }}
+          config={aiConfig}
+          siteSettings={siteSettings}
+          onSave={handleSaveAIConfig}
+          links={links}
+          categories={categories}
+          onUpdateLinks={(newLinks) => updateData(newLinks, categories)}
+          onUpdateCategories={(newCats) => updateData(links, newCats)}
+          onUpdateData={(nextLinks, nextCats) => updateData(nextLinks, nextCats)}
+          onEditLink={(link) => {
+            setIsSettingsModalOpen(false);
+            setSettingsInitialTab(undefined);
+            setEditingLink(link);
+            setIsModalOpen(true);
+          }}
+          authToken={authToken}
+          extensionToken={extensionToken}
+          initialAICategoryId={aiSettingsCategoryId}
+          initialAIAction={aiSettingsAction || undefined}
+          initialTab={settingsInitialTab}
+        />
+      )}
+
+      {isSearchConfigModalOpen && (
+        <SearchConfigModal
+          isOpen={true}
+          onClose={() => setIsSearchConfigModalOpen(false)}
+          sources={externalSearchSources}
+          onSave={(sources) => handleSaveSearchConfig(sources, searchMode)}
+        />
+      )}
+
+      {isPaletteOpen && (
+        <CommandPalette
+          isOpen={true}
+          onClose={() => setIsPaletteOpen(false)}
+          links={links}
+          categories={categories}
+          actions={[
           { id: 'add-link', title: '添加链接', description: '新建一个网站卡片', keywords: ['add', 'new', '添加', '链接'], icon: <Plus size={14} />, group: 'action', run: () => { if (!authToken) setIsAuthOpen(true); else { setEditingLink(undefined); setIsModalOpen(true); } } },
           { id: 'settings', title: '打开设置', description: '网站、AI 与扩展工具设置', keywords: ['settings', '设置', 'ai'], icon: <Settings size={14} />, group: 'action', run: () => { setSettingsInitialTab(undefined); setIsSettingsModalOpen(true); } },
           { id: 'duplicates', title: '检测重复网址', description: '扫描并清理重复书签', keywords: ['duplicate', '重复', '去重', '网址'], icon: <CopyCheck size={14} />, group: 'action', run: () => { if (!authToken) setIsAuthOpen(true); else { setSettingsInitialTab('duplicates'); setIsSettingsModalOpen(true); } } },
           { id: 'health', title: '检测无法访问网站', description: '批量健康检测并清理失效链接', keywords: ['health', 'broken', '失效', '无法访问', '死链', '清理'], icon: <AlertCircle size={14} />, group: 'action', run: () => { if (!authToken) setIsAuthOpen(true); else { setSettingsInitialTab('health'); setIsSettingsModalOpen(true); } } },
+          { id: 'recycle', title: '打开回收站', description: '恢复或永久删除已移除的链接', keywords: ['recycle', 'trash', '回收站', '恢复'], icon: <Trash2 size={14} />, group: 'action', run: () => { if (!authToken) setIsAuthOpen(true); else { setSettingsInitialTab('recycle'); setIsSettingsModalOpen(true); } } },
           { id: 'backup', title: '备份与恢复', description: 'WebDAV 与本地导出', keywords: ['backup', '备份', '恢复'], icon: <Cloud size={14} />, group: 'action', run: () => setIsBackupModalOpen(true) },
           { id: 'import', title: '导入书签', description: '导入 HTML 或 JSON 备份', keywords: ['import', '导入', '书签'], icon: <Upload size={14} />, group: 'action', run: () => setIsImportModalOpen(true) },
-          { id: 'organize', title: '整理待处理链接', description: `${inboxLinks.length} 个待整理`, keywords: ['organize', 'inbox', '整理', '待整理'], icon: <CheckSquare size={14} />, group: 'action', run: () => { if (inboxLinks.length > 0) { setSelectedCategory(INBOX_ID); setOrganizeIndex(0); setIsOrganizeMode(true); } } },
+           { id: 'organize', title: '整理待处理链接', description: `${inboxLinks.length} 个待整理`, keywords: ['organize', 'inbox', '整理', '待整理'], icon: <CheckSquare size={14} />, group: 'action', run: () => { if (inboxLinks.length > 0) { openLinksView(INBOX_ID); setOrganizeIndex(0); setIsOrganizeMode(true); } } },
+           { id: 'rss', title: '打开 RSS 资讯', description: '阅读每日热点与订阅源', keywords: ['rss', 'news', '资讯', '订阅', '热点'], icon: <ExternalLink size={14} />, group: 'action', run: openRssReader },
           { id: 'theme', title: darkMode ? '切换到浅色模式' : '切换到深色模式', keywords: ['theme', 'dark', 'light', '主题'], icon: darkMode ? <Sun size={14} /> : <Moon size={14} />, group: 'action', run: toggleTheme },
         ]}
         onOpenLink={(link) => { recordVisit(link.id); window.open(link.url, '_blank'); }}
-        onSelectCategory={(categoryId) => { setSelectedCategory(categoryId); setSidebarOpen(false); }}
-        onOpenInbox={() => { setSelectedCategory(INBOX_ID); setOrganizeIndex(0); setIsOrganizeMode(true); }}
-      />
+        onSelectCategory={(categoryId) => openLinksView(categoryId)}
+          onOpenInbox={() => { openLinksView(INBOX_ID); setOrganizeIndex(0); setIsOrganizeMode(true); }}
+        />
+      )}
 
       {/* Sidebar Mobile Overlay */}
       {sidebarOpen && (
@@ -2254,17 +2483,39 @@ function App() {
           className="flex-1 overflow-y-auto py-4 space-y-1 scrollbar-hide"
           onScroll={() => setHoveredCategory(null)}
         >
-            <div className="px-4">
+            <div className="px-4 space-y-1">
               <button
-                onClick={() => { setSelectedCategory('all'); setSidebarOpen(false); }}
+                onClick={openWorkbench}
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
-                  selectedCategory === 'all' 
+                  activeView === 'workbench'
+                    ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium'
+                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'
+                }`}
+              >
+                <div className="p-1"><Icon name="Zap" size={18} /></div>
+                <span>工作台</span>
+              </button>
+              <button
+                onClick={() => openLinksView('all')}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
+                  activeView === 'links' && selectedCategory === 'all'
                     ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium' 
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'
                 }`}
               >
                 <div className="p-1"><Icon name="LayoutGrid" size={18} /></div>
                 <span>置顶网站</span>
+              </button>
+              <button
+                onClick={openRssReader}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
+                  activeView === 'rss'
+                    ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium'
+                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'
+                }`}
+              >
+                <div className="p-1"><Icon name="Rss" size={18} /></div>
+                <span>RSS资讯</span>
               </button>
             </div>
             
@@ -2385,7 +2636,7 @@ function App() {
                  {syncStatus === 'saving' && <Loader2 className="animate-spin w-3 h-3 text-blue-500" />}
                  {syncStatus === 'saved' && <CheckCircle2 className="w-3 h-3 text-green-500" />}
                  {syncStatus === 'error' && <AlertCircle className="w-3 h-3 text-red-500" />}
-                 {authToken ? <span className="text-green-600">已同步</span> : <span className="text-amber-500">离线</span>}
+                 {!isOnline ? <span className="text-amber-500">离线</span> : authToken ? <span className="text-green-600">已同步</span> : <span className="text-slate-400">本地模式</span>}
                </div>
 
                <a 
@@ -2503,6 +2754,13 @@ function App() {
                     </div>
                   </div>
                 )}
+
+                {!searchQuery.trim() && searchHistory.length > 0 && (
+                  <div className="absolute left-0 top-full mt-2 w-full bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 p-3 z-40">
+                    <div className="flex items-center justify-between mb-2"><span className="text-xs font-semibold text-slate-500">最近搜索</span><button onClick={() => { setSearchHistory([]); localStorage.removeItem(SEARCH_HISTORY_KEY); }} className="text-xs text-slate-400 hover:text-red-500">清空</button></div>
+                    <div className="flex flex-wrap gap-2">{searchHistory.map(query => <button key={query} onClick={() => { setSearchQuery(query); setActiveView('links'); }} className="max-w-full truncate rounded-full bg-slate-100 dark:bg-slate-700 px-3 py-1.5 text-xs text-slate-600 dark:text-slate-200 hover:bg-blue-100 hover:text-blue-600">{query}</button>)}</div>
+                  </div>
+                )}
                 
                 {/* 搜索图标 */}
                 <div 
@@ -2546,11 +2804,14 @@ function App() {
                         : "搜索站外内容..."
                   }
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setSearchQuery(value);
+                    if (value.trim()) setActiveView('links');
+                  }}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' && searchMode === 'external') {
-                      handleExternalSearch();
-                    }
+                    if (e.key === 'Enter' && e.currentTarget.value.trim()) saveSearchQuery(e.currentTarget.value);
+                    if (e.key === 'Enter' && searchMode === 'external') handleExternalSearch();
                   }}
                   className="w-full pl-9 pr-20 py-2 rounded-full bg-slate-100 dark:bg-slate-700/50 border-none text-sm focus:ring-2 focus:ring-blue-500 dark:text-white placeholder-slate-400 outline-none transition-all"
                   // 移动端优化：防止页面缩放
@@ -2579,14 +2840,16 @@ function App() {
                   </button>
                 )}
 
-                <AdvancedSearchBar
-                  isOpen={isAdvancedFilterOpen && searchMode === 'internal'}
-                  onClose={() => setIsAdvancedFilterOpen(false)}
-                  tags={allTags}
-                  workspaces={[]}
-                  filters={advancedFilters}
-                  onFilterChange={(next) => setAdvancedFilters(current => ({ ...current, ...next }))}
-                />
+                {isAdvancedFilterOpen && searchMode === 'internal' && (
+                  <AdvancedSearchBar
+                    isOpen={true}
+                    onClose={() => setIsAdvancedFilterOpen(false)}
+                    tags={allTags}
+                    workspaces={[]}
+                    filters={advancedFilters}
+                    onFilterChange={(next) => setAdvancedFilters(current => ({ ...current, ...next }))}
+                  />
+                )}
 
                 {searchQuery.trim() && (
                   <button
@@ -2629,7 +2892,7 @@ function App() {
             </div>
 
             {authToken && !isOrganizeMode && inboxLinks.length > 0 && (
-              <button onClick={() => { setSelectedCategory(INBOX_ID); setOrganizeIndex(0); setIsOrganizeMode(true); }}
+              <button onClick={() => { openLinksView(INBOX_ID); setOrganizeIndex(0); setIsOrganizeMode(true); }}
                 className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-300 rounded-full hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors"
               >
                 整理 {inboxLinks.length}
@@ -2669,49 +2932,62 @@ function App() {
         {/* Content Scroll Area */}
         <div className="flex-1 overflow-y-auto p-4 lg:p-8 space-y-8">
 
-            <OrganizeModeBar
-              isActive={isOrganizeMode}
-              totalCount={inboxLinks.length}
-              currentIndex={Math.min(organizeIndex, Math.max(inboxLinks.length - 1, 0))}
-              onAccept={() => {
+            {isOrganizeMode && (
+              <OrganizeModeBar
+                isActive={true}
+                totalCount={inboxLinks.length}
+                currentIndex={Math.min(organizeIndex, Math.max(inboxLinks.length - 1, 0))}
+                onAccept={() => {
                 const current = inboxLinks[organizeIndex];
                 if (!current) { setIsOrganizeMode(false); setOrganizeIndex(0); return; }
                 const nextLinks = links.map(l => l.id === current.id ? { ...l, categoryId: 'common', status: 'read' as const, updatedAt: Date.now() } : l);
                 updateData(nextLinks, categories);
                 if (organizeIndex < inboxLinks.length - 1) setOrganizeIndex(i => i + 1);
                 else { setIsOrganizeMode(false); setOrganizeIndex(0); }
-              }}
-              onDelete={() => {
+                }}
+                onDelete={() => {
                 const current = inboxLinks[organizeIndex];
                 if (!current) { setIsOrganizeMode(false); setOrganizeIndex(0); return; }
                 updateData(links.filter(l => l.id !== current.id), categories);
                 if (organizeIndex < inboxLinks.length - 1) setOrganizeIndex(i => i + 1);
                 else { setIsOrganizeMode(false); setOrganizeIndex(0); }
-              }}
-              onSkip={() => {
+                }}
+                onSkip={() => {
                 if (organizeIndex < inboxLinks.length - 1) setOrganizeIndex(i => i + 1);
                 else { setIsOrganizeMode(false); setOrganizeIndex(0); }
-              }}
-              onAiOrganize={handleAiOrganizeCurrent}
-              isAiOrganizing={isAiOrganizing}
-              onExit={() => { setIsOrganizeMode(false); setOrganizeIndex(0); }}
-            />
+                }}
+                onAiOrganize={handleAiOrganizeCurrent}
+                isAiOrganizing={isAiOrganizing}
+                onExit={() => { setIsOrganizeMode(false); setOrganizeIndex(0); }}
+              />
+            )}
 
-            {!searchQuery && selectedCategory === 'all' && (
-              <HomeDashboard
+            <SpatialViewTransition viewKey={activeView}>
+              {activeView === 'workbench' && (
+                <HomeDashboard
                 links={links}
                 categories={categories}
-                onOpenInbox={() => { setSelectedCategory(INBOX_ID); setOrganizeIndex(0); setIsOrganizeMode(true); }}
+                config={dashboardConfig}
+                 onConfigChange={updateDashboardConfig}
+                 workbenchTools={workbenchTools}
+                 onWorkbenchToolsChange={updateWorkbenchTools}
+                onOpenInbox={() => { openLinksView(INBOX_ID); setOrganizeIndex(0); setIsOrganizeMode(true); }}
                 onClickLink={(link) => { recordVisit(link.id); window.open(link.url, '_blank'); }}
                 onSelectCategory={(categoryId) => {
                   const category = categories.find(c => c.id === categoryId);
                   if (category) handleCategoryClick(category);
                 }}
-              />
-            )}
+                />
+              )}
+
+              {activeView === 'rss' && (
+                <React.Suspense fallback={<div className="flex min-h-[420px] items-center justify-center text-slate-400"><Loader2 className="mr-2 animate-spin" size={18} />正在加载资讯中心…</div>}>
+                  <RssReaderPage onSaveArticle={saveRssArticleToLinks} />
+                </React.Suspense>
+              )}
 
             {/* 1. Pinned Area (Custom Top Area) */}
-            {pinnedLinks.length > 0 && !searchQuery && (selectedCategory === 'all') && (
+            {activeView === 'links' && pinnedLinks.length > 0 && !searchQuery && selectedCategory === 'all' && (
                 <section>
                     <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center gap-2">
@@ -2785,8 +3061,17 @@ function App() {
                 </section>
             )}
 
+            {activeView === 'links' && selectedCategory === 'all' && !searchQuery.trim() && pinnedLinks.length === 0 && (
+              <section className="flex flex-col items-center justify-center py-20 text-slate-400 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-2xl">
+                <Pin size={40} className="opacity-30 mb-4" />
+                <p className="text-base font-medium text-slate-500 dark:text-slate-400">还没有置顶网站</p>
+                <p className="text-sm mt-2">在网站卡片上点击图钉，就能把它放到这里。</p>
+              </section>
+            )}
+
             {/* 2. Main Grid */}
-            <section>
+            {showMainLinksGrid && (
+              <section>
 
                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                      <div className="flex items-center flex-wrap gap-y-2">
@@ -2895,15 +3180,18 @@ function App() {
                                              <Trash2 size={14} />
                                              <span>批量删除</span>
                                          </button>
-                                         <button 
-                                             onClick={handleSelectAll}
+                                          <button
+                                              onClick={handleSelectAll}
                                              className="flex items-center gap-1 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-medium rounded-full transition-colors"
                                              title="全选/取消全选"
                                          >
                                              <CheckSquare size={14} />
-                                             <span>{selectedLinks.size === displayedLinks.length ? '取消全选' : '全选'}</span>
-                                         </button>
-                                         <div className="relative group">
+                                              <span>{selectedLinks.size === displayedLinks.length ? '取消全选' : '全选'}</span>
+                                          </button>
+                                          <button onClick={() => handleBatchAction({ type: 'setPinned', pinned: true })} className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-medium rounded-full transition-colors" title="批量置顶">批量置顶</button>
+                                          <button onClick={handleBatchAddTags} className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium rounded-full transition-colors" title="批量添加标签">加标签</button>
+                                          <button onClick={() => handleBatchAction({ type: 'archive' })} className="px-3 py-1.5 bg-slate-600 hover:bg-slate-700 text-white text-xs font-medium rounded-full transition-colors" title="批量归档">批量归档</button>
+                                          <div className="relative group">
                                               <button 
                                                   className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-full transition-colors"
                                                   title="批量移动"
@@ -3013,10 +3301,11 @@ function App() {
                         </div>
                     )
                  )}
-            </section>
+              </section>
+            )}
 
             {/* 其他目录搜索结果区域 */}
-            {searchQuery.trim() && selectedCategory !== 'all' && (
+            {activeView === 'links' && searchQuery.trim() && selectedCategory !== 'all' && (
               <section className="mt-8 pt-8 border-t-2 border-slate-200 dark:border-slate-700">
                 <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-2 mb-4">
                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-folder-search">
@@ -3067,79 +3356,104 @@ function App() {
                 )}
               </section>
             )}
+            </SpatialViewTransition>
         </div>
       </main>
 
-          <LinkModal
-            isOpen={isModalOpen}
-            onClose={() => { setIsModalOpen(false); setEditingLink(undefined); setPrefillLink(undefined); }}
-            onSave={editingLink ? handleEditLink : handleAddLink}
-            onDelete={editingLink ? handleDeleteLink : undefined}
-            categories={categories}
-            links={links}
-            initialData={editingLink || (prefillLink as LinkItem)}
-            aiConfig={aiConfig}
-            defaultCategoryId={selectedCategory !== 'all' ? selectedCategory : undefined}
-          />
+          {isModalOpen && (
+            <LinkModal
+              isOpen={true}
+              onClose={() => { setIsModalOpen(false); setEditingLink(undefined); setPrefillLink(undefined); }}
+              onSave={editingLink ? handleEditLink : handleAddLink}
+              onDelete={editingLink ? handleDeleteLink : undefined}
+              categories={categories}
+              links={links}
+              initialData={editingLink || (prefillLink as LinkItem)}
+              aiConfig={aiConfig}
+              defaultCategoryId={selectedCategory !== 'all' ? selectedCategory : undefined}
+            />
+          )}
 
           {/* 右键菜单 */}
-          <ContextMenu
-            isOpen={contextMenu.isOpen}
-            position={contextMenu.position}
-            targetType={contextMenu.type}
-            isCategoryEditable={contextMenu.category?.id !== 'common'}
-            onClose={closeContextMenu}
-            onCopyLink={copyLinkToClipboard}
-            onShowQRCode={showQRCode}
-            onEditLink={editLinkFromContextMenu}
-            onDeleteLink={deleteLinkFromContextMenu}
-            onTogglePin={togglePinFromContextMenu}
-            onOpenCategory={openCategoryFromContextMenu}
-            onEditCategory={editCategoryFromContextMenu}
-            onOrganizeCategory={organizeCategoryFromContextMenu}
-            onRenameCategory={renameCategoryFromContextMenu}
-            onStructureCategory={structureCategoryFromContextMenu}
-            onDeleteCategory={deleteCategoryFromContextMenu}
-          />
+          {contextMenu.isOpen && (
+            <ContextMenu
+              isOpen={true}
+              position={contextMenu.position}
+              targetType={contextMenu.type}
+              isCategoryEditable={contextMenu.category?.id !== 'common'}
+              onClose={closeContextMenu}
+              onCopyLink={copyLinkToClipboard}
+              onShowQRCode={showQRCode}
+              onEditLink={editLinkFromContextMenu}
+              onDeleteLink={deleteLinkFromContextMenu}
+              onTogglePin={togglePinFromContextMenu}
+              onOpenCategory={openCategoryFromContextMenu}
+              onEditCategory={editCategoryFromContextMenu}
+              onOrganizeCategory={organizeCategoryFromContextMenu}
+              onRenameCategory={renameCategoryFromContextMenu}
+              onStructureCategory={structureCategoryFromContextMenu}
+              onDeleteCategory={deleteCategoryFromContextMenu}
+            />
+          )}
 
-          <CategoryActionAuthModal
-            isOpen={categoryActionAuth.isOpen}
-            onClose={closeCategoryActionAuth}
-            onVerify={handleCategoryActionAuth}
-            onVerified={handleCategoryActionVerified}
-            actionType={categoryActionAuth.action}
-            categoryName={categoryActionAuth.categoryName}
-          />
+          {categoryActionAuth.isOpen && (
+            <CategoryActionAuthModal
+              isOpen={true}
+              onClose={closeCategoryActionAuth}
+              onVerify={handleCategoryActionAuth}
+              onVerified={handleCategoryActionVerified}
+              actionType={categoryActionAuth.action}
+              categoryName={categoryActionAuth.categoryName}
+            />
+          )}
 
           {/* 二维码模态框 */}
-          <LinkDetailsDrawer
-            link={links.find(l => l.id === selectedLinkId) || null}
-            isOpen={!!selectedLinkId}
-            onClose={() => setSelectedLinkId(null)}
-            categories={categories}
-            onUpdate={(linkId, updates) => {
-              const nextLinks = links.map(l => l.id === linkId ? { ...l, ...updates, updatedAt: Date.now() } : l);
-              updateData(nextLinks, categories);
-            }}
-          />
+          {selectedLinkId && (
+            <LinkDetailsDrawer
+              link={links.find(l => l.id === selectedLinkId) || null}
+              isOpen={true}
+              onClose={() => setSelectedLinkId(null)}
+              categories={categories}
+              onUpdate={(linkId, updates) => {
+                const nextLinks = links.map(l => l.id === linkId ? { ...l, ...updates, updatedAt: Date.now() } : l);
+                updateData(nextLinks, categories);
+              }}
+            />
+          )}
 
-          <SyncConflictModal
-            isOpen={isSyncConflict}
-            onClose={() => { setIsSyncConflict(false); setSyncConflictResolve(null); }}
-            onUseLocal={() => { syncConflictResolve?.useLocal(); setIsSyncConflict(false); setSyncConflictResolve(null); }}
-            onUseCloud={() => { syncConflictResolve?.useCloud(); setIsSyncConflict(false); setSyncConflictResolve(null); }}
-            onMerge={() => { syncConflictResolve?.merge(); setIsSyncConflict(false); setSyncConflictResolve(null); }}
-          />
+          {isSyncConflict && (
+            <SyncConflictModal
+              isOpen={true}
+               onClose={() => { setIsSyncConflict(false); setSyncConflictResolve(null); setSyncConflictPreview(null); }}
+               onUseLocal={() => { syncConflictResolve?.useLocal(); setIsSyncConflict(false); setSyncConflictResolve(null); setSyncConflictPreview(null); }}
+               onUseCloud={() => { syncConflictResolve?.useCloud(); setIsSyncConflict(false); setSyncConflictResolve(null); setSyncConflictPreview(null); }}
+               onMerge={() => { syncConflictResolve?.merge(); setIsSyncConflict(false); setSyncConflictResolve(null); setSyncConflictPreview(null); }}
+               mergePreview={syncConflictPreview}
+            />
+          )}
 
-          <QRCodeModal
-            isOpen={qrCodeModal.isOpen}
-            url={qrCodeModal.url || ''}
-            title={qrCodeModal.title || ''}
-            onClose={() => setQrCodeModal({ isOpen: false, url: '', title: '' })}
+          <MobileBottomNav
+            activeView={activeView}
+            onLinks={() => openLinksView('all')}
+            onWorkbench={openWorkbench}
+            onRss={openRssReader}
+            onAdd={() => { if (!authToken) setIsAuthOpen(true); else { setEditingLink(undefined); setIsModalOpen(true); } }}
+            onSettings={() => setIsSettingsModalOpen(true)}
           />
+          <InstallPrompt />
+
+          {qrCodeModal.isOpen && (
+            <QRCodeModal
+              isOpen={true}
+              url={qrCodeModal.url || ''}
+              title={qrCodeModal.title || ''}
+              onClose={() => setQrCodeModal({ isOpen: false, url: '', title: '' })}
+            />
+          )}
         </>
       )}
-    </div>
+      </div>
+    </React.Suspense>
   );
 }
 

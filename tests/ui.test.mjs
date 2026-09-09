@@ -243,3 +243,12 @@ test('pinned websites page owns the pinned-only boundary and empty state', () =>
   assert.match(empty, /添加置顶入口/);
   assert.match(empty, /前往分类目录/);
 });
+
+test('workbench has an explicit page boundary without duplicating the shell', () => {
+  const app = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
+  const page = readFileSync(new URL('../components/WorkbenchPage.tsx', import.meta.url), 'utf8');
+  assert.match(app, /<WorkbenchPage/);
+  assert.match(page, /data-page=["']workbench["']/);
+  assert.match(page, /data-dashboard-layout=["']command-center["']/);
+  assert.doesNotMatch(page, /DesktopSidebar|TopCommandBar/);
+});

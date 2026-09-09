@@ -29,7 +29,7 @@ import Icon from './components/Icon';
 import { useToast } from './components/Toast';
 import { AI_CONFIG_KEY, DASHBOARD_CONFIG_KEY, SEARCH_HISTORY_KEY, SITE_SETTINGS_KEY, WORKBENCH_TOOLS_KEY } from './constants/storageKeys';
 import AuthModal from './components/AuthModal';
-import HomeDashboard from './components/HomeDashboard';
+import WorkbenchPage from './components/WorkbenchPage';
 import ModalErrorBoundary from './components/ModalErrorBoundary';
 import { getDefaultSearchSources } from './services/defaultSearchSources';
 import { matchesFilters, matchesQuery, parseSearchQuery, preloadPinyin, sortByRelevance } from './services/searchService';
@@ -2970,7 +2970,7 @@ function App() {
 
             <SpatialViewTransition viewKey={activeView}>
               {activeView === 'workbench' && (
-                <HomeDashboard
+                <WorkbenchPage
                 links={links}
                 categories={categories}
                 config={dashboardConfig}

@@ -9,7 +9,7 @@ import { moveDashboardWidget } from '../services/dashboardConfig';
 import WorkbenchTools from './WorkbenchTools';
 import type { WorkbenchToolsState } from '../services/workbenchTools';
 
-interface HomeDashboardProps {
+export interface HomeDashboardProps {
   links: LinkItem[];
   categories: Category[];
   config: DashboardConfig;

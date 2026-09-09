@@ -8,7 +8,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "npm run typecheck && vite build",
     "preview": "vite preview",
-    "test": "node --experimental-strip-types --test tests/security.test.ts tests/storageData.test.ts tests/appBootstrap.test.ts tests/dashboardConfig.test.ts tests/healthSchedule.test.ts tests/historyService.test.ts tests/bulkActions.test.ts tests/backupService.test.ts tests/searchHistory.test.ts tests/recycleBin.test.ts tests/mergeService.test.ts tests/healthNotifications.test.ts tests/offlineQueue.test.ts tests/recoverySnapshots.test.ts tests/linkHealthService.test.ts tests/searchIndex.test.ts tests/workbenchTools.test.ts tests/rssParser.test.ts tests/rssService.test.ts tests/rssPage.test.ts tests/ui.test.mjs",
+    "test": "node --experimental-strip-types --test tests/security.test.ts tests/storageData.test.ts tests/appBootstrap.test.ts tests/dashboardConfig.test.ts tests/healthSchedule.test.ts tests/historyService.test.ts tests/bulkActions.test.ts tests/backupService.test.ts tests/searchHistory.test.ts tests/recycleBin.test.ts tests/mergeService.test.ts tests/healthNotifications.test.ts tests/offlineQueue.test.ts tests/recoverySnapshots.test.ts tests/linkHealthService.test.ts tests/searchIndex.test.ts tests/workbenchTools.test.ts tests/rssParser.test.ts tests/rssService.test.ts tests/rssPage.test.ts tests/uiStates.test.ts tests/ui.test.mjs",
     "test:performance": "node --test tests/performance.test.mjs"
   },
   "dependencies": {

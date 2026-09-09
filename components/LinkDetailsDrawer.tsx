@@ -4,6 +4,7 @@ import { LinkItem, Category, SiteCredential } from '../types';
 import { decryptCredentialPassword, encryptCredentialPassword } from '../services/credentialCrypto';
 import { checkLinkHealth, healthLabel, makeCorrectedOkHealth, needsHealthCorrection } from '../services/linkHealthService';
 import { getDetailsOriginClass, type DetailsOrigin } from '../services/motion';
+import StatusChip, { type StatusChipTone } from './StatusChip';
 
 interface LinkDetailsDrawerProps {
   link: LinkItem | null;
@@ -33,11 +34,11 @@ const statusLabels: Record<string, string> = {
   archived: '归档',
 };
 
-const statusColors: Record<string, string> = {
-  unread: 'text-blue-600 bg-blue-100 dark:bg-blue-900/30 dark:text-blue-300',
-  read: 'text-green-600 bg-green-100 dark:bg-green-900/30 dark:text-green-300',
-  favorite: 'text-amber-600 bg-amber-100 dark:bg-amber-900/30 dark:text-amber-300',
-  archived: 'text-slate-500 bg-slate-100 dark:bg-slate-700 dark:text-slate-400',
+const statusTones: Record<string, StatusChipTone> = {
+  unread: 'info',
+  read: 'success',
+  favorite: 'warning',
+  archived: 'neutral',
 };
 
 const healthColors: Record<string, string> = {
@@ -516,7 +517,7 @@ const LinkDetailsDrawer: React.FC<LinkDetailsDrawerProps> = ({ link, isOpen, onC
             {Object.entries(statusLabels).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
           {status && statusLabels[status] && (
-            <span className={`inline-block mt-1 px-2 py-0.5 text-xs rounded-full ${statusColors[status] || ''}`}>{statusLabels[status]}</span>
+            <StatusChip tone={statusTones[status] || 'neutral'} className="mt-1">{statusLabels[status]}</StatusChip>
           )}
         </div>
       </div>

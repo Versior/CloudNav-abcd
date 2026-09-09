@@ -1,4 +1,5 @@
 import { corsHeaders, jsonResponse, optionsResponse, requireAuth } from '../_shared/auth';
+import { assertSafeExternalUrl, fetchWithSafeRedirects } from '../_shared/urlSafety';
 
 interface Env {
   PASSWORD: string;
@@ -17,26 +18,11 @@ export const onRequestGet = async (context: { env: Env; request: Request }) => {
   const target = new URL(request.url).searchParams.get('url');
   if (!target) return jsonResponse({ error: 'url required' }, { status: 400 });
 
-  let parsed: URL;
-  try { parsed = new URL(target); } catch { return jsonResponse({ error: 'invalid url' }, { status: 400 }); }
-
-  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
-    return jsonResponse({ error: 'unsupported protocol' }, { status: 400 });
-  }
-
-  const host = parsed.hostname.toLowerCase();
-  if (
-    host === 'localhost' || host.endsWith('.local') || host === '0.0.0.0' ||
-    /^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) ||
-    /^172\.(1[6-9]|2\d|3[01])\./.test(host) || /^169\.254\./.test(host)
-  ) {
-    return jsonResponse({ error: '不支持内网 / 本地地址' }, { status: 400 });
-  }
+  try { assertSafeExternalUrl(target); } catch { return jsonResponse({ error: '不支持内网 / 本地地址' }, { status: 400 }); }
 
   try {
-    const res = await fetch(target, {
+    const res = await fetchWithSafeRedirects(target, {
       headers: { 'User-Agent': 'NaviX/1.0 (+bookmark title fetch)' },
-      redirect: 'follow',
     });
     if (!res.ok) return jsonResponse({ title: '' });
 

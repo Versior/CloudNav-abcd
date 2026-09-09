@@ -221,6 +221,7 @@ function App() {
   // Sync State
   const [syncStatus, setSyncStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [authToken, setAuthToken] = useState<boolean>(false);
+  const cloudVersionRef = useRef(0);
   const [extensionToken, setExtensionToken] = useState('');
   const [requiresAuth, setRequiresAuth] = useState<boolean | null>(null); // null表示未检查，true表示需要认证，false表示不需要
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
@@ -340,7 +341,7 @@ function App() {
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ links: newLinks, categories: newCategories })
+            body: JSON.stringify({ links: newLinks, categories: newCategories, baseVersion: cloudVersionRef.current })
         });
 
         if (response.status === 409) {
@@ -348,6 +349,7 @@ function App() {
                 const conflict = await response.json();
                 const cloudData = conflict?.data;
                 if (cloudData && Array.isArray(cloudData.links)) {
+                    cloudVersionRef.current = typeof cloudData.version === 'number' ? cloudData.version : cloudVersionRef.current;
                     const localSnapshot = { links: newLinks, categories: newCategories };
                     setSyncConflictResolve({
                         useLocal: () => syncToCloud(localSnapshot.links, localSnapshot.categories),
@@ -378,6 +380,9 @@ function App() {
         }
 
         if (!response.ok) throw new Error('Network response was not ok');
+
+        const result = await response.json().catch(() => ({}));
+        if (typeof result.version === 'number') cloudVersionRef.current = result.version;
 
         setSyncStatus('saved');
         setTimeout(() => setSyncStatus('idle'), 2000);
@@ -717,6 +722,7 @@ function App() {
             const res = await fetch('/api/storage');
             if (res.ok) {
                 const data = await res.json();
+                cloudVersionRef.current = typeof data.version === 'number' ? data.version : 0;
                 if (data.links && data.links.length > 0) {
                     const mergedLinks = mergeLocalVisitState(normalizeLinks(data.links));
                     const nextCategories = normalizeCategories(data.categories);
@@ -985,6 +991,7 @@ function App() {
                 const res = await fetch('/api/storage');
                 if (res.ok) {
                     const data = await res.json();
+                    cloudVersionRef.current = typeof data.version === 'number' ? data.version : 0;
                     if (data.links && data.links.length > 0) {
                         const mergedLinks = mergeLocalVisitState(normalizeLinks(data.links));
                         const nextCategories = normalizeCategories(data.categories);
@@ -2699,10 +2706,6 @@ function App() {
                 onSelectCategory={(categoryId) => {
                   const category = categories.find(c => c.id === categoryId);
                   if (category) handleCategoryClick(category);
-                }}
-                onOpenHealthCheck={() => {
-                  if (!authToken) setIsAuthOpen(true);
-                  else { setSettingsInitialTab('health'); setIsSettingsModalOpen(true); }
                 }}
               />
             )}

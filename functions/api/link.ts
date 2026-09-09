@@ -1,4 +1,5 @@
 import { jsonResponse, optionsResponse, requireAuth } from '../_shared/auth';
+import { assertSafeExternalUrl, fetchWithSafeRedirects, isPrivateHostname } from '../_shared/urlSafety';
 
 interface Env {
   CLOUDNAV_KV: KVNamespace;
@@ -17,15 +18,6 @@ type HealthStatus = 'ok' | 'broken' | 'redirected' | 'unknown' | 'invalid';
 
 const BROWSER_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
-
-const isPrivateHostname = (hostname: string) => {
-  const normalized = hostname.toLowerCase();
-  if (normalized === 'localhost' || normalized.endsWith('.localhost') || normalized.includes(':')) return true;
-  const ipv4 = normalized.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (!ipv4) return false;
-  const [a, b] = ipv4.slice(1).map(Number);
-  return a === 0 || a === 10 || a === 127 || a >= 224 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
-};
 
 const sameSite = (originalUrl: string, finalUrl?: string | null) => {
   if (!finalUrl) return true;
@@ -105,7 +97,7 @@ const fetchWithTimeout = async (url: string, init: RequestInit, timeoutMs = 1200
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return await fetch(url, { ...init, signal: controller.signal });
+    return await fetchWithSafeRedirects(url, { ...init, signal: controller.signal });
   } finally {
     clearTimeout(timeout);
   }
@@ -121,7 +113,6 @@ const commonHeaders = {
 const probeOnce = async (url: string, method: 'HEAD' | 'GET', extraHeaders: Record<string, string> = {}) => {
   return fetchWithTimeout(url, {
     method,
-    redirect: 'follow',
     headers: { ...commonHeaders, ...extraHeaders },
   });
 };
@@ -134,16 +125,12 @@ const handleCheckHealth = async (url: string) => {
     if (!url?.trim()) {
       return jsonResponse({ status: 'invalid', error: 'URL is required' }, { status: 400 });
     }
-    let parsed: URL;
     try {
-      parsed = new URL(url);
+      assertSafeExternalUrl(url);
     } catch {
       return jsonResponse({ status: 'invalid', error: 'Invalid URL' }, { status: 400 });
     }
-    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
-      return jsonResponse({ status: 'invalid', error: 'URL must use http or https' }, { status: 400 });
-    }
-    if (isPrivateHostname(parsed.hostname)) {
+    if (isPrivateHostname(new URL(url).hostname)) {
       return jsonResponse({ status: 'invalid', error: 'Private/internal URLs are not allowed' }, { status: 400 });
     }
 

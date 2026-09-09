@@ -92,6 +92,7 @@ export const jsonResponse = (body: unknown, init: ResponseInit = {}) => new Resp
   ...init,
   headers: {
     'Content-Type': 'application/json',
+    'Cache-Control': 'no-store',
     ...corsHeaders,
     ...(init.headers || {}),
   },
@@ -99,7 +100,7 @@ export const jsonResponse = (body: unknown, init: ResponseInit = {}) => new Resp
 
 export const optionsResponse = () => new Response(null, {
   status: 204,
-  headers: corsHeaders,
+  headers: { ...corsHeaders, 'Cache-Control': 'no-store' },
 });
 
 export const createSessionCookie = async (env: AuthEnv) => {

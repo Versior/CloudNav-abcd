@@ -1,4 +1,5 @@
 import { isAuthenticated, jsonResponse, optionsResponse, requireAuth } from '../_shared/auth';
+import { buildStoredData, isVersionConflict, normalizeStoredData } from '../_shared/storageData';
 
 interface Env {
   CLOUDNAV_KV: KVNamespace;
@@ -111,7 +112,7 @@ export const onRequestGet = async (context: { env: Env; request: Request }) => {
     }
 
     const data = await env.CLOUDNAV_KV.get('app_data');
-    return jsonResponse(data ? JSON.parse(data) : { links: [], categories: [] });
+    return jsonResponse(normalizeStoredData(data ? JSON.parse(data) : null));
   } catch {
     return jsonResponse({ error: 'Failed to fetch data' }, { status: 500 });
   }
@@ -124,6 +125,9 @@ export const onRequestPost = async (context: { request: Request; env: Env }) => 
     const body = await request.json() as any;
 
     if (body.saveConfig === 'favicon') {
+      const authError = await requireAuth(request, env);
+      if (authError) return authError;
+
       const { domain, icon } = body;
       if (!domain || !icon || !/^[a-z0-9.-]{1,253}$/i.test(domain)) {
         return jsonResponse({ error: 'Domain and icon are required' }, { status: 400 });
@@ -160,8 +164,15 @@ export const onRequestPost = async (context: { request: Request; env: Env }) => 
       return jsonResponse({ success: true });
     }
 
-    await env.CLOUDNAV_KV.put('app_data', JSON.stringify(body));
-    return jsonResponse({ success: true });
+    const currentRaw = await env.CLOUDNAV_KV.get('app_data');
+    const currentData = normalizeStoredData(currentRaw ? JSON.parse(currentRaw) : null);
+    if (isVersionConflict(body.baseVersion, currentData.version)) {
+      return jsonResponse({ error: 'Conflict', data: currentData, version: currentData.version }, { status: 409 });
+    }
+
+    const nextData = buildStoredData(body, currentData.version + 1);
+    await env.CLOUDNAV_KV.put('app_data', JSON.stringify(nextData));
+    return jsonResponse({ success: true, version: nextData.version });
   } catch {
     return jsonResponse({ error: 'Failed to save data' }, { status: 500 });
   }

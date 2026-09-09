@@ -69,7 +69,7 @@ const LinkDetailsDrawer = React.lazy(() => import('./components/LinkDetailsDrawe
 const SyncConflictModal = React.lazy(() => import('./components/SyncConflictModal'));
 const OrganizeModeBar = React.lazy(() => import('./components/OrganizeModeBar'));
 const AdvancedSearchBar = React.lazy(() => import('./components/AdvancedSearchBar'));
-const RssReaderPage = React.lazy(() => import('./components/RssReaderPage'));
+const RssPage = React.lazy(() => import('./components/RssPage'));
 
 const getSearchSourceIconUrl = (url: string) => {
   try {
@@ -2988,7 +2988,7 @@ function App() {
 
             {activeView === 'rss' && (
                 <React.Suspense fallback={<div className="flex min-h-[420px] items-center justify-center text-slate-400"><Loader2 className="mr-2 animate-spin" size={18} />正在加载资讯中心…</div>}>
-                  <RssReaderPage onSaveArticle={saveRssArticleToLinks} />
+                  <RssPage onSaveArticle={saveRssArticleToLinks} />
                 </React.Suspense>
               )}
 

@@ -185,6 +185,20 @@ export const formatRssTime = (timestamp?: number) => {
   return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
 };
 
+export type RssFeedViewState = 'loading' | 'ready' | 'empty' | 'error' | 'offline';
+
+export const getRssFeedViewState = (feed: RssFeed | undefined, articles: RssArticle[], online: boolean): RssFeedViewState => {
+  if (feed?.error) return 'error';
+  if (!online && articles.length > 0) return 'offline';
+  if (articles.length === 0) return 'empty';
+  return 'ready';
+};
+
+export const chooseInitialRssArticle = (articles: RssArticle[]): RssArticle | undefined => {
+  const ordered = [...articles].sort((left, right) => (right.publishedAt || 0) - (left.publishedAt || 0));
+  return ordered.find(article => !article.read) || ordered[0];
+};
+
 export const parseOpml = (source: string) => [...source.matchAll(/<outline\b[^>]*>/gi)]
   .map(match => match[0])
   .map(markup => {

@@ -24,11 +24,16 @@ import {
   discoverRssFeeds,
   fetchRssFeed,
   formatRssTime,
+  getRssFeedViewState,
   mergeRssArticles,
   parseOpml,
   readRssState,
   writeRssState,
 } from '../services/rssService';
+import RssSourceRail from './RssSourceRail';
+import RssArticleList from './RssArticleList';
+import RssArticleReader from './RssArticleReader';
+import RssStateView from './RssStateView';
 
 interface RssReaderPageProps {
   onSaveArticle?: (article: RssArticle) => void;
@@ -131,6 +136,8 @@ const RssReaderPage: React.FC<RssReaderPageProps> = ({ onSaveArticle }) => {
       return [article.title, article.summary, article.author, article.sourceTitle].filter(Boolean).join(' ').toLowerCase().includes(normalizedQuery);
     });
   }, [articleFilter, query, rssState.articles, selectedFeedId]);
+
+  const selectedFeedState = getRssFeedViewState(selectedFeed, visibleArticles, navigator.onLine);
 
   const refreshAll = () => {
     setNotice({ tone: 'info', text: '正在更新订阅…' });
@@ -294,23 +301,30 @@ const RssReaderPage: React.FC<RssReaderPageProps> = ({ onSaveArticle }) => {
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[260px_minmax(0,1fr)]">
-        <aside className="h-fit rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+        <RssSourceRail className="h-fit rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-800">
           <div className="mb-2 px-2 text-xs font-bold uppercase tracking-[0.18em] text-slate-400">我的订阅</div>
           <button type="button" onClick={() => setSelectedFeedId('all')} className={`mb-1 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition ${selectedFeedId === 'all' ? 'bg-blue-50 font-semibold text-blue-700 dark:bg-blue-950/40 dark:text-blue-300' : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700'}`}><Globe2 size={16} /><span className="flex-1">全部资讯</span><span className="text-xs text-slate-400">{rssState.articles.length}</span></button>
           <button type="button" onClick={() => { setSelectedFeedId('all'); setArticleFilter('starred'); }} className={`mb-2 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition ${articleFilter === 'starred' && selectedFeedId === 'all' ? 'bg-amber-50 font-semibold text-amber-700 dark:bg-amber-950/30 dark:text-amber-300' : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700'}`}><Star size={16} /><span className="flex-1">稍后阅读</span><span className="text-xs text-slate-400">{starredCount}</span></button>
           <div className="my-2 border-t border-slate-100 dark:border-slate-700" />
           <div className="space-y-1">{rssState.feeds.map(feed => <div key={feed.id} className="group flex items-center gap-1"><button type="button" onClick={() => { setSelectedFeedId(feed.id); setArticleFilter('all'); }} className={`flex min-w-0 flex-1 items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition ${selectedFeedId === feed.id ? 'bg-blue-50 font-semibold text-blue-700 dark:bg-blue-950/40 dark:text-blue-300' : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700'}`}><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500 dark:bg-slate-700"><Rss size={14} /></span><span className="min-w-0 flex-1 truncate">{feed.title}</span><span className="text-xs text-slate-400">{rssState.articles.filter(article => article.feedId === feed.id && !article.read).length || ''}</span></button><button type="button" onClick={() => removeFeed(feed)} className="rounded p-1.5 text-slate-300 opacity-0 transition hover:bg-rose-50 hover:text-rose-500 group-hover:opacity-100" title={`移除 ${feed.title}`} aria-label={`移除 ${feed.title}`}><Trash2 size={13} /></button></div>)}</div>
-        </aside>
+        </RssSourceRail>
 
-        <section className="min-w-0 rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800">
+        <RssArticleList className="min-w-0 rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4 dark:border-slate-700">
             <div><div className="flex items-center gap-2 text-base font-bold text-slate-800 dark:text-slate-100">{selectedFeedId === 'all' ? '全部资讯' : selectedFeed?.title || '资讯'}{selectedFeed && loadingFeedIds.has(selectedFeed.id) && <Loader2 size={15} className="animate-spin text-blue-500" />}</div><div className="mt-1 text-xs text-slate-400">{selectedFeed?.error ? `更新失败：${selectedFeed.error}` : selectedFeed?.lastFetchedAt ? `上次更新 ${formatRssTime(selectedFeed.lastFetchedAt)}` : '打开页面自动更新'}</div></div>
             <div className="flex items-center gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-900"><button type="button" onClick={() => setArticleFilter('all')} className={`rounded-lg px-3 py-1.5 text-xs font-medium ${articleFilter === 'all' ? 'bg-white text-blue-600 shadow-sm dark:bg-slate-700 dark:text-blue-300' : 'text-slate-500'}`}>全部</button><button type="button" onClick={() => setArticleFilter('unread')} className={`rounded-lg px-3 py-1.5 text-xs font-medium ${articleFilter === 'unread' ? 'bg-white text-blue-600 shadow-sm dark:bg-slate-700 dark:text-blue-300' : 'text-slate-500'}`}>未读</button><button type="button" onClick={() => setArticleFilter('starred')} className={`rounded-lg px-3 py-1.5 text-xs font-medium ${articleFilter === 'starred' ? 'bg-white text-amber-600 shadow-sm dark:bg-slate-700 dark:text-amber-300' : 'text-slate-500'}`}>收藏</button></div>
           </div>
+          <RssArticleReader>
           {visibleArticles.length > 0 ? <div className="divide-y divide-slate-100 dark:divide-slate-700">{visibleArticles.map(article => <article key={article.id} data-spatial-id={`rss-article-${article.id}`} className={`cloudnav-spatial-card group px-5 py-4 hover:bg-slate-50/80 dark:hover:bg-slate-700/30 ${article.read ? 'opacity-75' : ''}`}>
             <div className="flex gap-3"><div className={`mt-1 h-2 w-2 shrink-0 rounded-full ${article.read ? 'bg-slate-200 dark:bg-slate-600' : 'bg-blue-500'}`} /><div className="min-w-0 flex-1"><button type="button" onClick={() => openArticle(article)} className="text-left text-sm font-semibold leading-6 text-slate-800 hover:text-blue-600 dark:text-slate-100 dark:hover:text-blue-300">{article.title}</button><div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-400"><span>{article.sourceTitle || rssState.feeds.find(feed => feed.id === article.feedId)?.title || '未知来源'}</span><span>·</span><span>{formatRssTime(article.publishedAt)}</span>{article.author && <><span>·</span><span>{article.author}</span></>}</div>{article.summary && <p className="mt-2 line-clamp-2 text-sm leading-6 text-slate-500 dark:text-slate-400">{article.summary}</p>}<div className="mt-3 flex items-center gap-1 opacity-100 sm:opacity-0 sm:transition sm:group-hover:opacity-100"><button type="button" onClick={() => openArticle(article)} className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs text-slate-500 hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-950/30"><ExternalLink size={13} />打开</button><button type="button" onClick={() => patchArticle(article.id, { read: !article.read })} className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs text-slate-500 hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-950/30">{article.read ? <Radio size={13} /> : <Check size={13} />}{article.read ? '标为未读' : '标为已读'}</button><button type="button" onClick={() => patchArticle(article.id, { starred: !article.starred })} className={`inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs ${article.starred ? 'text-amber-500' : 'text-slate-500'} hover:bg-amber-50 hover:text-amber-600 dark:hover:bg-amber-950/30`}><Star size={13} className={article.starred ? 'fill-current' : ''} />{article.starred ? '已收藏' : '收藏'}</button>{onSaveArticle && <button type="button" onClick={() => onSaveArticle(article)} className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs text-slate-500 hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-950/30"><Bookmark size={13} />保存到网站</button>}</div></div><button type="button" onClick={() => patchArticle(article.id, { starred: !article.starred })} className={`hidden h-8 w-8 shrink-0 items-center justify-center rounded-lg sm:flex ${article.starred ? 'text-amber-500' : 'text-slate-300'} hover:bg-amber-50 hover:text-amber-500`} aria-label={article.starred ? '取消收藏' : '收藏'}><Star size={16} className={article.starred ? 'fill-current' : ''} /></button></div>
-          </article>)}</div> : <div className="flex flex-col items-center justify-center px-6 py-20 text-center"><div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-blue-500 dark:bg-blue-950/30"><Rss size={25} /></div><h3 className="text-base font-semibold text-slate-700 dark:text-slate-200">{rssState.articles.length ? '没有符合条件的文章' : '正在等待资讯'}</h3><p className="mt-2 max-w-md text-sm leading-6 text-slate-400">{rssState.articles.length ? '换个关键词或切换筛选条件。' : '默认已经准备好每日热点、中文 AI 和 GitHub 热门项目，稍等片刻即可看到最新内容。'}</p></div>}
-        </section>
+          </article>)}</div> : <RssStateView
+            state={selectedFeedState === 'ready' ? 'empty' : selectedFeedState}
+            title={rssState.articles.length ? '没有符合条件的文章' : selectedFeedState === 'error' ? '订阅源暂时无法访问' : selectedFeedState === 'offline' ? '当前正在使用缓存' : '正在等待资讯'}
+            description={rssState.articles.length ? '换个关键词或切换筛选条件。' : selectedFeedState === 'error' ? (selectedFeed?.error || '请稍后重试这个订阅源。') : selectedFeedState === 'offline' ? '网络恢复后可以刷新来源，已缓存的内容仍然可以阅读。' : '默认已经准备好每日热点、中文 AI 和 GitHub 热门项目，稍等片刻即可看到最新内容。'}
+            onRetry={selectedFeed ? () => { void refreshFeed(selectedFeed); } : refreshAll}
+          />}
+          </RssArticleReader>
+        </RssArticleList>
       </div>
     </section>
   );

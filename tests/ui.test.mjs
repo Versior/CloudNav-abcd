@@ -59,7 +59,7 @@ test('RSS reader is a first-class view with safe discovery and daily feeds', () 
   const service = readFileSync(new URL('../services/rssService.ts', import.meta.url), 'utf8');
   assert.match(app, /['"]rss['"]/);
   assert.match(app, /RSS资讯|资讯订阅/);
-  assert.match(app, /RssReaderPage/);
+  assert.match(app, /RssPage|RssReaderPage/);
   assert.match(reader, /正在等待资讯|没有符合条件的文章/);
   assert.match(reader, /OPML/);
   assert.match(reader, /自动发现/);
@@ -251,4 +251,16 @@ test('workbench has an explicit page boundary without duplicating the shell', ()
   assert.match(page, /data-page=["']workbench["']/);
   assert.match(page, /data-dashboard-layout=["']command-center["']/);
   assert.doesNotMatch(page, /DesktopSidebar|TopCommandBar/);
+});
+
+test('RSS page is split into source, list, reader, and state regions', () => {
+  const app = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
+  const page = readFileSync(new URL('../components/RssPage.tsx', import.meta.url), 'utf8');
+  for (const file of ['RssSourceRail.tsx', 'RssArticleList.tsx', 'RssArticleReader.tsx', 'RssStateView.tsx']) {
+    const source = readFileSync(new URL(`../components/${file}`, import.meta.url), 'utf8');
+    assert.match(source, /data-rss-region/);
+  }
+  assert.match(app, /<RssPage/);
+  assert.match(page, /data-page=["']rss["']/);
+  assert.match(page, /RssReaderPage/);
 });

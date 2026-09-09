@@ -98,6 +98,13 @@ const LinkDetailsDrawer: React.FC<LinkDetailsDrawerProps> = ({ link, isOpen, onC
 
   const category = categories.find(c => c.id === link.categoryId);
   const health = link.health;
+  const isBottomSheet = origin === 'bottom';
+  const panelPositionClass = isBottomSheet
+    ? 'inset-x-0 bottom-0 top-auto h-[min(86vh,720px)] w-full max-w-none rounded-t-[24px] border-l-0 border-t'
+    : 'inset-y-0 right-0 w-96 max-w-[calc(100%-1rem)] border-l';
+  const panelTransformClass = isBottomSheet
+    ? (isOpen ? 'translate-y-0' : 'translate-y-full')
+    : (isOpen ? 'translate-x-0' : 'translate-x-full');
   const timeAgo = (ts?: number) => {
     if (!ts) return '从未';
     const mins = Math.floor((Date.now() - ts) / 60000);
@@ -312,7 +319,7 @@ const LinkDetailsDrawer: React.FC<LinkDetailsDrawerProps> = ({ link, isOpen, onC
   };
 
   return (
-    <div data-spatial-origin={origin} className={`fixed inset-y-0 right-0 z-40 w-96 max-w-[calc(100%-1rem)] bg-white dark:bg-slate-800 shadow-2xl border-l border-slate-200 dark:border-slate-700 transform transition-[transform,opacity] duration-300 ${getDetailsOriginClass(origin)} ${isOpen ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0'}`}>
+    <div data-spatial-origin={origin} className={`fixed z-40 bg-white shadow-2xl dark:bg-slate-800 border-slate-200 dark:border-slate-700 transform transition-[transform,opacity] duration-300 ${panelPositionClass} ${getDetailsOriginClass(origin)} ${panelTransformClass} ${isOpen ? 'opacity-100' : 'opacity-0'}`}>
       <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-700">
         <h3 className="font-semibold text-sm truncate dark:text-white">链接详情</h3>
         <button onClick={onClose} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded"><X size={16} /></button>

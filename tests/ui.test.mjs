@@ -197,3 +197,10 @@ test('primary surfaces expose stable spatial identities', () => {
   assert.match(rss, /rss-article-/);
   assert.match(mobile, /mobile-nav-/);
 });
+
+test('mobile details drawer uses a bottom-sheet spatial exit path', () => {
+  const drawer = readFileSync(new URL('../components/LinkDetailsDrawer.tsx', import.meta.url), 'utf8');
+  assert.match(drawer, /translate-y-full/);
+  assert.match(drawer, /bottom-0/);
+  assert.match(drawer, /rounded-t/);
+});

@@ -89,6 +89,7 @@ const RssReaderPage: React.FC<RssReaderPageProps> = ({ onSaveArticle }) => {
       setRssState(previous => ({
         feeds: previous.feeds.map(item => item.id === feed.id ? {
           ...item,
+          url: item.preset ? item.url : (response.feed.url || item.url),
           title: item.preset ? item.title : response.feed.title || item.title,
           siteUrl: response.feed.siteUrl || item.siteUrl,
           icon: response.feed.icon || item.icon,

@@ -295,3 +295,11 @@ test('desktop command-desk skin is a visible visual system, not a wrapper-only r
   assert.match(css, /#111a33|#10182f/);
   assert.match(css, /command-desk-nav-item/);
 });
+
+test('local development serves the RSS API instead of falling through to the SPA shell', () => {
+  const vite = readFileSync(new URL('../vite.config.ts', import.meta.url), 'utf8');
+
+  assert.match(vite, /local-rss-api/);
+  assert.match(vite, /\/api\/rss/);
+  assert.match(vite, /onRequestGet/);
+});

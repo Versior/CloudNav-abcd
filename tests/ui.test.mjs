@@ -188,3 +188,12 @@ test('details drawer exposes a trigger-aware spatial origin', () => {
   assert.match(drawer, /getDetailsOriginClass/);
   assert.match(app, /detailsOrigin/);
 });
+
+test('primary surfaces expose stable spatial identities', () => {
+  const dashboard = readFileSync(new URL('../components/HomeDashboard.tsx', import.meta.url), 'utf8');
+  const rss = readFileSync(new URL('../components/RssReaderPage.tsx', import.meta.url), 'utf8');
+  const mobile = readFileSync(new URL('../components/MobileBottomNav.tsx', import.meta.url), 'utf8');
+  assert.match(dashboard, /data-spatial-id/);
+  assert.match(rss, /rss-article-/);
+  assert.match(mobile, /mobile-nav-/);
+});

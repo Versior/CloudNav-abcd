@@ -61,11 +61,27 @@ body {
 .cloudnav-details-from-right { transform-origin: right center; }
 .cloudnav-details-from-bottom { transform-origin: center bottom; }
 
+.cloudnav-spatial-card {
+  transition: transform 220ms cubic-bezier(.22, 1, .36, 1), border-color 180ms ease, box-shadow 220ms ease;
+}
+
+.cloudnav-spatial-card:hover {
+  transform: translateY(-2px);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .cloudnav-spatial-forward,
   .cloudnav-spatial-backward,
   .cloudnav-spatial-same {
     animation: none;
+  }
+
+  .cloudnav-spatial-card {
+    transition: none;
+  }
+
+  .cloudnav-spatial-card:hover {
+    transform: none;
   }
 }
 

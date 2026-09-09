@@ -193,6 +193,7 @@ function App() {
   const { showToast } = useToast();
   const [isPaletteOpen, setIsPaletteOpen] = useState(false);
   const [selectedLinkId, setSelectedLinkId] = useState<string | null>(null);
+  const [detailsOrigin, setDetailsOrigin] = useState<'right' | 'bottom'>('right');
   const [isOrganizeMode, setIsOrganizeMode] = useState(false);
   const [isAiOrganizing, setIsAiOrganizing] = useState(false);
   const [organizeIndex, setOrganizeIndex] = useState(0);
@@ -2291,7 +2292,7 @@ function App() {
             isDetailedView ? 'top-3 right-3' : 'top-1/2 -translate-y-1/2 right-2'
           }`}>
               <button
-                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setSelectedLinkId(link.id); }}
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setDetailsOrigin(window.matchMedia('(max-width: 1023px)').matches ? 'bottom' : 'right'); setSelectedLinkId(link.id); }}
                   className="p-1 text-slate-400 hover:text-blue-500 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-md"
                   title="详情"
               >
@@ -3412,6 +3413,7 @@ function App() {
             <LinkDetailsDrawer
               link={links.find(l => l.id === selectedLinkId) || null}
               isOpen={true}
+              origin={detailsOrigin}
               onClose={() => setSelectedLinkId(null)}
               categories={categories}
               onUpdate={(linkId, updates) => {

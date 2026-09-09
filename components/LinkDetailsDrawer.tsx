@@ -3,6 +3,7 @@ import { X, ExternalLink, Clock, Eye, EyeOff, Activity, Tag, FileText, Bookmark,
 import { LinkItem, Category, SiteCredential } from '../types';
 import { decryptCredentialPassword, encryptCredentialPassword } from '../services/credentialCrypto';
 import { checkLinkHealth, healthLabel, makeCorrectedOkHealth, needsHealthCorrection } from '../services/linkHealthService';
+import { getDetailsOriginClass, type DetailsOrigin } from '../services/motion';
 
 interface LinkDetailsDrawerProps {
   link: LinkItem | null;
@@ -10,6 +11,7 @@ interface LinkDetailsDrawerProps {
   onClose: () => void;
   categories: Category[];
   onUpdate: (linkId: string, updates: Partial<LinkItem>) => void;
+  origin?: DetailsOrigin;
 }
 
 interface CredentialDraft {
@@ -67,7 +69,7 @@ const toDraft = (credential: SiteCredential): CredentialDraft => ({
 
 const cleanText = (value: string) => value.trim() || undefined;
 
-const LinkDetailsDrawer: React.FC<LinkDetailsDrawerProps> = ({ link, isOpen, onClose, categories, onUpdate }) => {
+const LinkDetailsDrawer: React.FC<LinkDetailsDrawerProps> = ({ link, isOpen, onClose, categories, onUpdate, origin = 'right' }) => {
   const [note, setNote] = useState('');
   const [tagsInput, setTagsInput] = useState('');
   const [status, setStatus] = useState<string>('');
@@ -310,7 +312,7 @@ const LinkDetailsDrawer: React.FC<LinkDetailsDrawerProps> = ({ link, isOpen, onC
   };
 
   return (
-    <div className={`fixed inset-y-0 right-0 z-40 w-96 max-w-[calc(100%-1rem)] bg-white dark:bg-slate-800 shadow-2xl border-l border-slate-200 dark:border-slate-700 transform transition-transform duration-300 ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+    <div data-spatial-origin={origin} className={`fixed inset-y-0 right-0 z-40 w-96 max-w-[calc(100%-1rem)] bg-white dark:bg-slate-800 shadow-2xl border-l border-slate-200 dark:border-slate-700 transform transition-[transform,opacity] duration-300 ${getDetailsOriginClass(origin)} ${isOpen ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0'}`}>
       <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-700">
         <h3 className="font-semibold text-sm truncate dark:text-white">链接详情</h3>
         <button onClick={onClose} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded"><X size={16} /></button>

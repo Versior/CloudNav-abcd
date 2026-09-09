@@ -180,3 +180,11 @@ test('motion styles include reduced-motion fallback', () => {
   assert.match(source, /prefers-reduced-motion/);
   assert.match(source, /cloudnav-spatial-forward/);
 });
+
+test('details drawer exposes a trigger-aware spatial origin', () => {
+  const drawer = readFileSync(new URL('../components/LinkDetailsDrawer.tsx', import.meta.url), 'utf8');
+  const app = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
+  assert.match(drawer, /origin\?/);
+  assert.match(drawer, /getDetailsOriginClass/);
+  assert.match(app, /detailsOrigin/);
+});

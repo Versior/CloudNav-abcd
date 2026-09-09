@@ -204,3 +204,13 @@ test('mobile details drawer uses a bottom-sheet spatial exit path', () => {
   assert.match(drawer, /bottom-0/);
   assert.match(drawer, /rounded-t/);
 });
+
+test('desktop shell has a visible continuity frame beyond motion-only changes', () => {
+  const app = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('../index.css', import.meta.url), 'utf8');
+  assert.match(app, /cloudnav-desktop-sidebar/);
+  assert.match(app, /cloudnav-desktop-context/);
+  assert.match(app, /cloudnav-desktop-frame/);
+  assert.match(css, /\.cloudnav-desktop-frame/);
+  assert.match(css, /\.cloudnav-desktop-active/);
+});

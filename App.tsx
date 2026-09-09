@@ -2317,7 +2317,7 @@ function App() {
 
   return (
     <React.Suspense fallback={null}>
-      <div className="flex h-screen overflow-hidden text-slate-900 dark:text-slate-50">
+      <div className="cloudnav-desktop-frame flex h-screen overflow-hidden text-slate-900 dark:text-slate-50">
       {/* 认证遮罩层 - 当需要认证时显示 */}
       {requiresAuth && !authToken && (
         <div className="fixed inset-0 z-50 bg-white dark:bg-slate-900 flex items-center justify-center">
@@ -2467,7 +2467,7 @@ function App() {
       {/* Sidebar */}
       <aside 
         className={`
-          fixed lg:static inset-y-0 left-0 z-50 w-64 transform transition-transform duration-300 ease-in-out
+          cloudnav-desktop-sidebar fixed lg:static inset-y-0 left-0 z-50 w-64 transform transition-transform duration-300 ease-in-out
           bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 flex flex-col
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
         `}
@@ -2489,7 +2489,7 @@ function App() {
                 onClick={openWorkbench}
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
                   activeView === 'workbench'
-                    ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium'
+                    ? 'cloudnav-desktop-active bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium'
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'
                 }`}
               >
@@ -2500,7 +2500,7 @@ function App() {
                 onClick={() => openLinksView('all')}
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
                   activeView === 'links' && selectedCategory === 'all'
-                    ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium' 
+                    ? 'cloudnav-desktop-active bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium'
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'
                 }`}
               >
@@ -2511,7 +2511,7 @@ function App() {
                 onClick={openRssReader}
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
                   activeView === 'rss'
-                    ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium'
+                    ? 'cloudnav-desktop-active bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium'
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'
                 }`}
               >
@@ -2655,10 +2655,10 @@ function App() {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col h-full bg-slate-50 dark:bg-slate-900 overflow-hidden relative">
+      <main className="cloudnav-desktop-main flex-1 flex flex-col h-full bg-slate-50 dark:bg-slate-900 overflow-hidden relative">
         
         {/* Header */}
-        <header className="h-16 px-4 lg:px-8 flex items-center justify-between bg-white/80 dark:bg-slate-800/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-700 sticky top-0 z-10 shrink-0">
+        <header className="cloudnav-desktop-header h-16 px-4 lg:px-8 flex items-center justify-between bg-white/80 dark:bg-slate-800/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-700 sticky top-0 z-10 shrink-0">
           <div className="flex items-center gap-4 flex-1">
             <button onClick={() => setSidebarOpen(true)} className="lg:hidden p-2 -ml-2 text-slate-600 dark:text-slate-300">
               <Menu size={24} />
@@ -2930,8 +2930,23 @@ function App() {
           </div>
         </header>
 
+        <div className="cloudnav-desktop-context hidden lg:flex items-center justify-between gap-6 px-10 py-3 xl:px-12">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.18em] text-blue-500 dark:text-blue-300">
+              <span>{siteSettings.navTitle || 'CloudNav'}</span>
+              <span className="text-slate-300 dark:text-slate-600">/</span>
+              <span>{activeView === 'links' ? '置顶网站' : activeView === 'workbench' ? '工作台' : 'RSS资讯'}</span>
+            </div>
+            <p className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">连续空间已就绪，常用入口和工作内容保持在同一条路径上。</p>
+          </div>
+          <div className="flex shrink-0 items-center gap-2 text-[11px]">
+            <span className="cloudnav-desktop-context-chip"><span className="cloudnav-desktop-status-dot" />{isOnline ? '在线同步' : '离线模式'}</span>
+            <span className="cloudnav-desktop-context-chip">{links.length} 个链接</span>
+          </div>
+        </div>
+
         {/* Content Scroll Area */}
-        <div className="flex-1 overflow-y-auto p-4 lg:p-8 space-y-8">
+        <div className="cloudnav-desktop-content flex-1 overflow-y-auto p-4 lg:px-10 lg:pb-12 lg:pt-3 xl:px-12 space-y-8">
 
             {isOrganizeMode && (
               <OrganizeModeBar

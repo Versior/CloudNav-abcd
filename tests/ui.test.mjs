@@ -222,3 +222,24 @@ test('app uses cache-first bootstrap without a full-screen remote loading gate',
   assert.match(bootstrap, /readBootstrapSnapshot/);
   assert.doesNotMatch(app, /isCheckingAuth && \(/);
 });
+
+test('application shell is split into focused desktop components', () => {
+  const app = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
+  const shell = readFileSync(new URL('../components/AppShell.tsx', import.meta.url), 'utf8');
+  assert.match(app, /AppShell/);
+  assert.match(shell, /DesktopSidebar/);
+  assert.match(shell, /TopCommandBar/);
+  assert.match(shell, /PageContainer/);
+});
+
+test('pinned websites page owns the pinned-only boundary and empty state', () => {
+  const app = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
+  const page = readFileSync(new URL('../components/PinnedSitesPage.tsx', import.meta.url), 'utf8');
+  const empty = readFileSync(new URL('../components/PinnedSitesEmptyState.tsx', import.meta.url), 'utf8');
+  const card = readFileSync(new URL('../components/PinnedSiteCard.tsx', import.meta.url), 'utf8');
+  assert.match(app, /<PinnedSitesPage/);
+  assert.match(page, /data-pinned-only/);
+  assert.match(card, /cloudnav-pinned-site-card/);
+  assert.match(empty, /添加置顶入口/);
+  assert.match(empty, /前往分类目录/);
+});

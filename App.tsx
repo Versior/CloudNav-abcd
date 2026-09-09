@@ -48,6 +48,10 @@ import { RECOVERY_SNAPSHOTS_KEY } from './constants/storageKeys';
 import { normalizeWorkbenchTools, type WorkbenchToolsState } from './services/workbenchTools';
 import SpatialViewTransition from './components/SpatialViewTransition';
 import { useAppBootstrap } from './hooks/useAppBootstrap';
+import AppShell from './components/AppShell';
+import PinnedSiteCard from './components/PinnedSiteCard';
+import PinnedSitesPage from './components/PinnedSitesPage';
+import PinnedSitesEmptyState from './components/PinnedSitesEmptyState';
 
 // 非首屏模块按需加载，避免首页把所有弹窗、备份工具和二维码库一次性打进首包。
 const CommandPalette = React.lazy(() => import('./components/CommandPalette'));
@@ -2184,7 +2188,7 @@ function App() {
     const isDetailedView = siteSettings.cardStyle === 'detailed';
     
     return (
-      <div
+      <PinnedSiteCard
         key={link.id}
         className={`group relative transition-all duration-200 hover:shadow-lg hover:shadow-blue-100/50 dark:hover:shadow-blue-900/20 ${
           isSelected 
@@ -2296,12 +2300,13 @@ function App() {
               </button>
           </div>
         )}
-      </div>
+      </PinnedSiteCard>
     );
   };
 
   return (
     <React.Suspense fallback={null}>
+      <AppShell>
       <div className="cloudnav-desktop-frame flex h-screen overflow-hidden text-slate-900 dark:text-slate-50">
       {/* 认证遮罩层 - 当需要认证时显示 */}
       {requiresAuth && !authToken && (
@@ -2981,12 +2986,23 @@ function App() {
                 />
               )}
 
-              {activeView === 'rss' && (
+            {activeView === 'rss' && (
                 <React.Suspense fallback={<div className="flex min-h-[420px] items-center justify-center text-slate-400"><Loader2 className="mr-2 animate-spin" size={18} />正在加载资讯中心…</div>}>
                   <RssReaderPage onSaveArticle={saveRssArticleToLinks} />
                 </React.Suspense>
               )}
 
+            {activeView === 'links' && (
+              <PinnedSitesPage
+                isDefaultView={!searchQuery.trim() && selectedCategory === 'all'}
+                pinnedCount={pinnedLinks.length}
+              >
+            {!searchQuery.trim() && selectedCategory === 'all' && pinnedLinks.length === 0 && (
+              <PinnedSitesEmptyState
+                onAdd={() => { if (!authToken) setIsAuthOpen(true); else { setEditingLink(undefined); setIsModalOpen(true); } }}
+                onBrowse={() => openLinksView(categories[0]?.id || 'all')}
+              />
+            )}
             {/* 1. Pinned Area (Custom Top Area) */}
             {activeView === 'links' && pinnedLinks.length > 0 && !searchQuery && selectedCategory === 'all' && (
                 <section>
@@ -3357,6 +3373,8 @@ function App() {
                 )}
               </section>
             )}
+              </PinnedSitesPage>
+            )}
             </SpatialViewTransition>
         </div>
       </main>
@@ -3455,6 +3473,7 @@ function App() {
         </>
       )}
       </div>
+      </AppShell>
     </React.Suspense>
   );
 }

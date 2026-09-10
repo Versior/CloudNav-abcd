@@ -52,13 +52,30 @@ test('desktop reading workspace keeps the reader visible while the queue and art
   assert.match(redesign, /\.cloudnav-reading-reader \{[\s\S]*?height: 100% !important;[\s\S]*?overflow-y: auto !important;/);
 });
 
-test('desktop RSS, inbox, and reading surfaces expose the same selectable source rail', () => {
+test('reading workspace v2 removes the horizontal source rail and exposes a focused reader', () => {
+  const page = read('components/ReadingWorkspacePage.tsx');
+  const css = read('styles/cloudnav-redesign.css');
+  assert.match(page, /data-layout-version=["']reading-workspace-v2["']/);
+  assert.match(page, /data-reading-region=["']queue["']/);
+  assert.match(page, /data-reading-region=["']reader["']/);
+  assert.match(page, /打开来源|来源/);
+  assert.match(page, /沉浸阅读|显示队列/);
+  assert.match(css, /cloudnav-reading-grid-v2/);
+  assert.match(css, /cloudnav-reading-source-popover/);
+  assert.doesNotMatch(page, /cloudnav-reading-source-rail/);
+});
+
+test('desktop RSS, inbox, and reading surfaces expose selectable source controls', () => {
   const rss = read('components/RssReaderPage.tsx');
   const inbox = read('components/InboxPage.tsx');
   const reader = read('components/ReadingWorkspacePage.tsx');
-  for (const page of [rss, inbox, reader]) {
+  for (const page of [rss, inbox]) {
     assert.match(page, /buildRssSourceSummary/);
     assert.match(page, /data-[^>]*sources/);
     assert.match(page, /sourceFilter/);
   }
+  assert.match(reader, /buildRssSourceSummary/);
+  assert.match(reader, /cloudnav-reading-source-trigger/);
+  assert.match(reader, /cloudnav-reading-source-popover/);
+  assert.match(reader, /sourceFilter/);
 });

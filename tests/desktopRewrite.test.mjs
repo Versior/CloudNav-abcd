@@ -183,6 +183,19 @@ test('layout-v5 gives the workbench a persistent floating todo surface', () => {
   assert.match(css, /cloudnav-floating-todo/);
 });
 
+test('floating todo supports draggable positioning, filtering, and bounded internal scrolling', () => {
+  const todo = read('components/FloatingTodo.tsx');
+  const css = read('index.css');
+  assert.match(todo, /data-todo-drag-handle/);
+  assert.match(todo, /data-todo-filter/);
+  assert.match(todo, /清除已完成/);
+  assert.match(todo, /cloudnav-floating-todo-ui/);
+  assert.match(css, /touch-action:\s*none/);
+  assert.match(css, /cloudnav-floating-todo-list[^{]*\{[\s\S]*?max-height/);
+  assert.match(css, /cloudnav-floating-todo-list[^{]*\{[\s\S]*?overflow-y:\s*auto/);
+  assert.match(css, /prefers-reduced-motion/);
+});
+
 test('workbench removes the retired quick note and markdown modules', () => {
   const dashboard = read('components/HomeDashboard.tsx');
   const tools = read('components/WorkbenchTools.tsx');

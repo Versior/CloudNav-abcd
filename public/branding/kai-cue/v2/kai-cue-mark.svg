@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" role="img" aria-label="KAI.CUE mark">
+  <g fill="none" stroke="#111316" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M200 80a80 80 0 1 0 0 80" stroke-width="9"/>
+    <path d="M104 98v84M104 140l48-32M104 140l48 32" stroke-width="7"/>
+  </g>
+  <circle cx="200" cy="80" r="7" fill="#D2FF6A"/>
+</svg>

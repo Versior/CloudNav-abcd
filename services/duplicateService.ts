@@ -1,4 +1,4 @@
-import { LinkItem } from '../types';
+import type { LinkItem } from '../types.ts';
 
 const TRACKING_PARAMS = new Set([
   'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
@@ -135,3 +135,15 @@ export const summarizeDuplicateScan = (groups: DuplicateGroup[]) => {
     removable,
   };
 };
+
+export const mergeDuplicateMetadata = (keeper: LinkItem, duplicate: LinkItem): LinkItem => ({
+  ...keeper,
+  description: keeper.description?.trim() ? keeper.description : duplicate.description,
+  note: keeper.note?.trim() ? keeper.note : duplicate.note,
+  tags: Array.from(new Set([...(keeper.tags || []), ...(duplicate.tags || [])])),
+  aliases: Array.from(new Set([...(keeper.aliases || []), ...(duplicate.aliases || [])])),
+  credentials: Array.from(new Map([...(keeper.credentials || []), ...(duplicate.credentials || [])].map(item => [item.id, item])).values()),
+  visitCount: Math.max(keeper.visitCount || 0, duplicate.visitCount || 0),
+  lastVisitedAt: Math.max(keeper.lastVisitedAt || 0, duplicate.lastVisitedAt || 0) || undefined,
+  updatedAt: Math.max(keeper.updatedAt || 0, duplicate.updatedAt || 0, Date.now()),
+});

@@ -57,6 +57,7 @@ chrome.action.onClicked.addListener(async (tab) => {
 function buildMenus() {
   chrome.contextMenus.removeAll(() => {
     chrome.contextMenus.create({ id: 'cloudnav_root', title: '\\u26a1 保存到 NaviX', contexts: ['page', 'link', 'action'] });
+    chrome.contextMenus.create({ id: 'save_to_reading', parentId: 'cloudnav_root', title: '保存到阅读 Inbox', contexts: ['page', 'link', 'action'] });
     (categoryCache.filter(c => !c.parentId)).forEach(cat => {
       const subCats = categoryCache.filter(sc => sc.parentId === cat.id);
       if (subCats.length > 0) {
@@ -73,6 +74,15 @@ function buildMenus() {
 }
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  if (info.menuItemId === 'save_to_reading') {
+    const url = info.linkUrl || tab?.url || '';
+    if (url && /^https?:/i.test(url)) {
+      const title = tab?.title || url;
+      const target = CONFIG.apiBase + '/?url=' + encodeURIComponent(url) + '&title=' + encodeURIComponent(title);
+      try { await chrome.tabs.create({ url: target }); } catch(e) {}
+    }
+    return;
+  }
   if (String(info.menuItemId).startsWith('save_to_')) {
     const catId = String(info.menuItemId).replace('save_to_', '');
     const title = tab?.title || '';

@@ -129,12 +129,69 @@ export interface RssArticle {
   title: string;
   url: string;
   summary?: string;
+  content?: string;
   author?: string;
   sourceTitle?: string;
   publishedAt?: number;
   imageUrl?: string;
   read?: boolean;
   starred?: boolean;
+  aiSummary?: string;
+  aiBullets?: string[];
+  aiFacts?: string[];
+  aiActions?: string[];
+  aiEvidence?: string[];
+  aiTags?: string[];
+  aiUpdatedAt?: number;
+}
+
+export type ReadingDocumentStatus = 'inbox' | 'later' | 'archive';
+export type ReadingDocumentType = 'article' | 'rss' | 'website' | 'note' | 'pdf' | 'video' | 'github';
+
+export interface ReadingHighlight {
+  id: string;
+  quote: string;
+  note?: string;
+  tags: string[];
+  start?: number;
+  end?: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ReadingDocument {
+  id: string;
+  title: string;
+  url: string;
+  type: ReadingDocumentType;
+  status: ReadingDocumentStatus;
+  unread: boolean;
+  starred: boolean;
+  tags: string[];
+  content?: string;
+  summary?: string;
+  author?: string;
+  source?: string;
+  imageUrl?: string;
+  feedId?: string;
+  note?: string;
+  highlights: ReadingHighlight[];
+  progress: number;
+  readingPosition: number;
+  createdAt: number;
+  updatedAt: number;
+  deletedAt?: number;
+  publishedAt?: number;
+  aiSummary?: string;
+}
+
+export interface ReadingView {
+  id: string;
+  name: string;
+  query: string;
+  pinned: boolean;
+  createdAt: number;
+  updatedAt: number;
 }
 
 export interface RssState {
@@ -142,11 +199,83 @@ export interface RssState {
   articles: RssArticle[];
 }
 
+export interface WorkspaceSyncData {
+  rssState?: RssState;
+  inspirations?: Inspiration[];
+  readLater?: ReadLaterItem[];
+  githubWatch?: GithubWatchItem[];
+  readingDocuments?: ReadingDocument[];
+  workbenchTools?: import('./services/workbenchTools').WorkbenchToolsState;
+}
+
+export type InspirationType = 'idea' | 'note' | 'quote' | 'bookmark';
+export type InspirationStatus = 'active' | 'archived';
+
+export interface Inspiration {
+  id: string;
+  title: string;
+  content: string;
+  type: InspirationType;
+  tags: string[];
+  sourceUrl?: string;
+  sourceTitle?: string;
+  status: InspirationStatus;
+  createdAt: number;
+  updatedAt: number;
+  archivedAt?: number;
+  aiSummary?: string;
+}
+
+export type ReadLaterKind = 'rss' | 'website' | 'github' | 'inspiration';
+export type ReadLaterStatus = 'unread' | 'read' | 'archived';
+
+export interface ReadLaterItem {
+  id: string;
+  kind: ReadLaterKind;
+  title: string;
+  url: string;
+  source?: string;
+  summary?: string;
+  status: ReadLaterStatus;
+  addedAt: number;
+  updatedAt: number;
+}
+
+export interface GithubWatchItem {
+  id: string;
+  owner: string;
+  repo: string;
+  url: string;
+  description?: string;
+  stars?: number;
+  language?: string;
+  lastRelease?: string;
+  readme?: string;
+  lastFetchedAt?: number;
+  processedAt?: number;
+  error?: string;
+}
+
+export type InboxItemKind = 'rss' | 'website' | 'github' | 'inspiration' | 'read-later';
+
+export interface UnifiedInboxItem {
+  id: string;
+  kind: InboxItemKind;
+  title: string;
+  summary?: string;
+  url?: string;
+  source?: string;
+  updatedAt: number;
+  read: boolean;
+  starred: boolean;
+}
+
 export interface AppBootstrapSnapshot {
   links: LinkItem[];
   categories: Category[];
   dashboardConfig: DashboardConfig;
   workbenchTools: import('./services/workbenchTools').WorkbenchToolsState;
+  workspace: WorkspaceSyncData;
 }
 
 export type AppBootstrapStatus = 'local' | 'hydrating' | 'ready' | 'error';

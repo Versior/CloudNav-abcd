@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 240" role="img" aria-labelledby="title desc">
+  <title id="title">KAI.CUE</title>
+  <desc id="desc">A refined open-lens monogram with a cue dot.</desc>
+  <g transform="translate(42 40)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M160 40a80 80 0 1 0 0 80" stroke="#111316" stroke-width="9"/>
+    <path d="M64 58v84M64 100l48-32M64 100l48 32" stroke="#111316" stroke-width="7"/>
+    <circle cx="160" cy="40" r="7" fill="#D2FF6A" stroke="none"/>
+  </g>
+  <text x="280" y="144" fill="#111316" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="86" font-weight="600" letter-spacing="10">KAI<tspan fill="#9FCB35">.</tspan>CUE</text>
+</svg>

@@ -8,27 +8,50 @@ test('home dashboard does not render the obsolete broken-link alert', () => {
   assert.equal(source.includes('onOpenHealthCheck'), false);
 });
 
-test('workbench is a separate view and pinned websites remain the default view', () => {
+test('workbench is a separate view and desktop library remains the default view', () => {
   const source = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
-  assert.match(source, /useState<['"]links['"] \| ['"]workbench['"] \| ['"]rss['"]>\(['"]links['"]\)/);
+  assert.match(source, /useState<[^>]*['"]links['"][^>]*>\(['"]links['"]\)/);
   assert.match(source, /工作台/);
   assert.match(source, /activeView === ['"]workbench['"]/);
-  assert.match(source, /activeView === ['"]links['"] && pinnedLinks\.length/);
+  assert.match(source, /activeView === ['"]links['"]|<DesktopLibraryPage/);
+  assert.match(source, /pinnedLinks/);
   assert.match(source, /readLocalData|readLocalCache/);
 });
 
-test('pinned websites view does not render the all-links grid', () => {
+test('desktop library view replaces the old all-links grid with a directory and row list', () => {
   const source = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
-  assert.match(source, /showMainLinksGrid/);
-  assert.match(source, /selectedCategory !== ['"]all['"]/);
-  assert.match(source, /showMainLinksGrid && \(/);
+  const page = readFileSync(new URL('../components/DesktopLibraryPage.tsx', import.meta.url), 'utf8');
+  assert.match(source, /<DesktopLibraryPage/);
+  assert.match(page, /data-layout=["']desktop-library["']/);
+  assert.match(page, /data-library-view=["']rows["']/);
+  assert.doesNotMatch(page, /grid-cols-/);
+});
+
+test('desktop library opens an external link only once', () => {
+  const page = readFileSync(new URL('../components/DesktopLibraryPage.tsx', import.meta.url), 'utf8');
+  assert.match(page, /onClick=\{\(\) => onOpen\(link\)\}/);
+  assert.doesNotMatch(page, /target=["']_blank["'][^>]*onClick/);
+});
+
+test('unified search keeps the exact result id for deep-link routing', () => {
+  const app = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
+  assert.match(app, /setUnifiedSearchTarget\(result\)/);
+  assert.doesNotMatch(app, /if \(value\.trim\(\)\) setActiveView\(['"]links['"]\)/);
+});
+
+test('workbench uses the canonical inbox id', () => {
+  const dashboard = readFileSync(new URL('../components/HomeDashboard.tsx', import.meta.url), 'utf8');
+  assert.match(dashboard, /getNormalLinks/);
+  assert.match(dashboard, /getInboxLinks/);
+  assert.doesNotMatch(dashboard, /categoryId !== ['"]inbox['"]/);
 });
 
 test('workbench supports persisted module visibility and ordering', () => {
   const dashboard = readFileSync(new URL('../components/HomeDashboard.tsx', import.meta.url), 'utf8');
   const app = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
   const storage = readFileSync(new URL('../functions/api/storage.ts', import.meta.url), 'utf8');
-  assert.match(dashboard, /自定义模块/);
+  assert.match(dashboard, /toggleWidget/);
+  assert.match(dashboard, /config\.hidden/);
   assert.match(dashboard, /moveDashboardWidget/);
   assert.match(app, /DASHBOARD_CONFIG_KEY/);
   assert.match(app, /saveConfig: ['"]dashboard['"]/);
@@ -36,13 +59,22 @@ test('workbench supports persisted module visibility and ordering', () => {
   assert.match(storage, /saveConfig === ['"]dashboard['"]/);
 });
 
-test('workbench uses a command center layout with explicit content zones', () => {
+test('workbench uses a desktop command surface with explicit content zones', () => {
   const source = readFileSync(new URL('../components/HomeDashboard.tsx', import.meta.url), 'utf8');
+  const weather = readFileSync(new URL('../components/TopWeather.tsx', import.meta.url), 'utf8');
   assert.match(source, /data-dashboard-layout=["']command-center["']/);
-  for (const zone of ['hero', 'metrics', 'entries', 'recent', 'focus', 'tools']) {
+  for (const zone of ['activity', 'folders', 'ai']) {
     assert.match(source, new RegExp(`data-dashboard-zone=["']${zone}["']`));
   }
-  assert.match(source, /bg-gradient-to-br[\s\S]*from-\[#1b2a55\]/);
+  assert.match(weather, /data-top-weather/);
+  assert.match(source, /data-workbench-layout=["']desktop-command-surface["']/);
+});
+
+test('workbench uses the shared inbox id for its counts and filters', () => {
+  const page = readFileSync(new URL('../components/HomeDashboard.tsx', import.meta.url), 'utf8');
+  assert.match(page, /INBOX_ID/);
+  assert.doesNotMatch(page, /categoryId === ['"]inbox['"]/);
+  assert.doesNotMatch(page, /categoryId !== ['"]inbox['"]/);
 });
 
 test('workbench and pinned websites share the same navigation chrome', () => {
@@ -55,6 +87,7 @@ test('workbench and pinned websites share the same navigation chrome', () => {
 test('RSS reader is a first-class view with safe discovery and daily feeds', () => {
   const app = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
   const reader = readFileSync(new URL('../components/RssReaderPage.tsx', import.meta.url), 'utf8');
+  const articleReader = readFileSync(new URL('../components/RssArticleReader.tsx', import.meta.url), 'utf8');
   const api = readFileSync(new URL('../functions/api/rss.ts', import.meta.url), 'utf8');
   const service = readFileSync(new URL('../services/rssService.ts', import.meta.url), 'utf8');
   assert.match(app, /['"]rss['"]/);
@@ -63,7 +96,10 @@ test('RSS reader is a first-class view with safe discovery and daily feeds', () 
   assert.match(reader, /正在等待资讯|没有符合条件的文章/);
   assert.match(reader, /OPML/);
   assert.match(reader, /自动发现/);
-  assert.match(service, /cdn\.jsdelivr\.net\/gh\/Hyraze\/trending-collection/);
+  assert.match(reader, /RssArticleReader/);
+  assert.match(articleReader, /明确事实/);
+  assert.match(articleReader, /原文依据/);
+  assert.match(service, /cdn\.jsdelivr\.net\/gh\/Hyraze\/trending-collection@main\/api\/daily\/all\.json/);
   assert.match(service, /qbitai\.com/);
   assert.match(service, /jiqizhixin\.xml|geekpark\.net\/rss|ithome\.com\/rss/);
   assert.doesNotMatch(service, /36kr\.com\/feed|rsshub\.app\/juejin\/trending/);
@@ -209,10 +245,19 @@ test('desktop shell has a visible continuity frame beyond motion-only changes', 
   const app = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
   const css = readFileSync(new URL('../index.css', import.meta.url), 'utf8');
   assert.match(app, /cloudnav-desktop-sidebar/);
-  assert.match(app, /cloudnav-desktop-context/);
   assert.match(app, /cloudnav-desktop-frame/);
   assert.match(css, /\.cloudnav-desktop-frame/);
   assert.match(css, /\.cloudnav-desktop-active/);
+});
+
+test('desktop pages avoid redundant shell banners and editorial header chrome', () => {
+  const app = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
+  const library = readFileSync(new URL('../components/DesktopLibraryPage.tsx', import.meta.url), 'utf8');
+  const reader = readFileSync(new URL('../components/RssReaderPage.tsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(app, /cloudnav-desktop-context/);
+  assert.doesNotMatch(library, /DESKTOP LIBRARY/);
+  assert.match(reader, /READING DESK/);
+  assert.doesNotMatch(reader, /cloudnav-rss-metrics/);
 });
 
 test('app uses cache-first bootstrap without a full-screen remote loading gate', () => {
@@ -232,12 +277,12 @@ test('application shell is split into focused desktop components', () => {
   assert.match(shell, /PageContainer/);
 });
 
-test('pinned websites page owns the pinned-only boundary and empty state', () => {
+test('desktop library owns the pinned-only default boundary', () => {
   const app = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
   const page = readFileSync(new URL('../components/PinnedSitesPage.tsx', import.meta.url), 'utf8');
   const empty = readFileSync(new URL('../components/PinnedSitesEmptyState.tsx', import.meta.url), 'utf8');
   const card = readFileSync(new URL('../components/PinnedSiteCard.tsx', import.meta.url), 'utf8');
-  assert.match(app, /<PinnedSitesPage/);
+  assert.match(app, /<DesktopLibraryPage/);
   assert.match(page, /data-pinned-only/);
   assert.match(card, /cloudnav-pinned-site-card/);
   assert.match(empty, /添加置顶入口/);
@@ -275,7 +320,7 @@ test('full rebuild keeps the application entry focused on orchestration boundari
   ].join('\n');
 
   assert.match(app, /AppShell/);
-  assert.match(app, /PinnedSitesPage/);
+  assert.match(app, /DesktopLibraryPage/);
   assert.match(app, /WorkbenchPage/);
   assert.match(app, /const RssPage = React\.lazy/);
   assert.match(shell, /DesktopSidebar/);
@@ -292,7 +337,8 @@ test('desktop command-desk skin is a visible visual system, not a wrapper-only r
   assert.match(app, /cloudnav-command-desk/);
   assert.match(css, /cloudnav-command-desk/);
   assert.match(css, /cloudnav-command-desk.*cloudnav-desktop-sidebar/s);
-  assert.match(css, /#111a33|#10182f/);
+  assert.match(css, /--cloud-sidebar:\s*#222a2f/);
+  assert.match(css, /--cloud-accent:\s*#2f6b67/);
   assert.match(css, /command-desk-nav-item/);
 });
 
@@ -302,4 +348,14 @@ test('local development serves the RSS API instead of falling through to the SPA
   assert.match(vite, /local-rss-api/);
   assert.match(vite, /\/api\/rss/);
   assert.match(vite, /onRequestGet/);
+});
+
+test('Vite local API imports use explicit TypeScript extensions for production config loading', () => {
+  const vite = readFileSync(new URL('../vite.config.ts', import.meta.url), 'utf8');
+  const packageJson = readFileSync(new URL('../package.json', import.meta.url), 'utf8');
+  for (const endpoint of ['rss', 'weather', 'github', 'content']) {
+    assert.match(vite, new RegExp(`\\./functions/api/${endpoint}\\.ts`));
+  }
+  assert.match(vite, /fileURLToPath\(import\.meta\.url\)/);
+  assert.match(packageJson, /vite build --configLoader runner/);
 });

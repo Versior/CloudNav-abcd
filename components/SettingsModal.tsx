@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useModalA11y } from './useModalA11y';
-import { X, Save, Bot, Wrench, LayoutTemplate, CopyCheck, Activity } from 'lucide-react';
+import { X, Save, Bot, Wrench, LayoutTemplate, CopyCheck, Activity, Trash2 } from 'lucide-react';
 import { AIConfig, LinkItem, Category, SiteSettings } from '../types';
 import SiteSettingsTab from './SiteSettingsTab';
 import AISettingsTab from './AISettingsTab';
 import ExtensionToolsTab from './ExtensionToolsTab';
 import DuplicateLinksPanel from './DuplicateLinksPanel';
 import LinkHealthPanel from './LinkHealthPanel';
+import HealthSchedulePanel from './HealthSchedulePanel';
+import RecycleBinPanel from './RecycleBinPanel';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -24,7 +26,7 @@ interface SettingsModalProps {
   extensionToken: string;
   initialAICategoryId?: string;
   initialAIAction?: 'organize' | 'rename' | 'structure';
-  initialTab?: 'site' | 'ai' | 'tools' | 'duplicates' | 'health';
+  initialTab?: 'site' | 'ai' | 'tools' | 'duplicates' | 'health' | 'recycle';
 }
 
 const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -33,7 +35,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   const modalRef = useRef<HTMLDivElement>(null);
   useModalA11y(isOpen, onClose, modalRef);
 
-  const [activeTab, setActiveTab] = useState<'site' | 'ai' | 'tools' | 'duplicates' | 'health'>('site');
+  const [activeTab, setActiveTab] = useState<'site' | 'ai' | 'tools' | 'duplicates' | 'health' | 'recycle'>('site');
   const [localConfig, setLocalConfig] = useState<AIConfig>(config);
   const [localSiteSettings, setLocalSiteSettings] = useState<SiteSettings>(() => ({
       title: siteSettings?.title || 'NaviX - 我的导航',
@@ -110,6 +112,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     { id: 'ai', label: 'AI 设置', icon: Bot },
     { id: 'duplicates', label: '重复检测', icon: CopyCheck },
     { id: 'health', label: '健康检测', icon: Activity },
+    { id: 'recycle', label: '回收站', icon: Trash2 },
     { id: 'tools', label: '扩展工具', icon: Wrench },
   ];
 
@@ -168,12 +171,18 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     />
                 )}
                 {activeTab === 'health' && (
-                    <LinkHealthPanel
-                      links={links}
-                      categories={categories}
-                      onUpdateLinks={onUpdateLinks}
-                      onEditLink={onEditLink}
-                    />
+                    <div className="space-y-5">
+                      <HealthSchedulePanel categories={categories} />
+                      <LinkHealthPanel
+                        links={links}
+                        categories={categories}
+                        onUpdateLinks={onUpdateLinks}
+                        onEditLink={onEditLink}
+                      />
+                    </div>
+                )}
+                {activeTab === 'recycle' && (
+                  <RecycleBinPanel links={links} categories={categories} onUpdateLinks={onUpdateLinks} authToken={authToken} onEditLink={onEditLink} />
                 )}
                 {activeTab === 'tools' && (
                     <ExtensionToolsTab authToken={authToken} extensionToken={extensionToken} favicon={localSiteSettings.favicon} navTitle={localSiteSettings.navTitle} />

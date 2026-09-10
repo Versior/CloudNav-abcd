@@ -1,0 +1,92 @@
+<style>
+  .motion-compare { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  .motion-intro { margin: 0 0 18px; }
+  .motion-intro h2 { margin: 0 0 6px; }
+  .motion-intro p { max-width: 760px; }
+  .motion-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+  .motion-option { cursor: pointer; padding: 12px; border: 1px solid rgba(148,163,184,.25); border-radius: 18px; background: rgba(255,255,255,.78); transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease; }
+  .motion-option:hover { transform: translateY(-3px); border-color: #6d7aff; box-shadow: 0 16px 34px rgba(50,65,110,.15); }
+  .motion-option.selected { border-color: #5b67f1; box-shadow: 0 0 0 3px rgba(91,103,241,.16), 0 18px 42px rgba(50,65,110,.18); }
+  .motion-option h3 { margin: 12px 4px 4px; font-size: 15px; }
+  .motion-option p { margin: 0 4px; color: #667085; font-size: 12px; line-height: 1.55; }
+  .stage { position: relative; overflow: hidden; min-height: 236px; padding: 15px; border-radius: 14px; border: 1px solid #e2e8f2; background: #f7f9fc; }
+  .stage-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; color: #6b7890; font-size: 10px; }
+  .stage-head b { color: #1d2d4c; font-size: 12px; }
+  .stage-row { display: grid; grid-template-columns: 1.1fr .9fr; gap: 9px; }
+  .stage-card { height: 72px; padding: 10px; border: 1px solid #e5eaf2; border-radius: 11px; background: rgba(255,255,255,.9); box-shadow: 0 5px 14px rgba(45,58,91,.06); }
+  .stage-card.tall { height: 114px; }
+  .stage-line { width: 70%; height: 7px; margin-bottom: 8px; border-radius: 99px; background: #273a62; }
+  .stage-line.small { width: 44%; height: 5px; background: #b8c2d3; }
+  .stage-pill { display: inline-flex; width: 28px; height: 8px; margin-top: 10px; border-radius: 99px; background: #dbe4ff; }
+
+  .space .stage-card { animation: space-in 3.6s cubic-bezier(.22,1,.36,1) infinite; }
+  .space .stage-card:nth-child(2) { animation-delay: .15s; }
+  .space .stage-row + .stage-row .stage-card:first-child { animation-delay: .3s; }
+  @keyframes space-in { 0%, 100% { transform: translate3d(0,0,0); opacity: .92; } 15% { transform: translate3d(7px,-4px,0); opacity: 1; } 30% { transform: translate3d(0,0,0); } }
+  .space .orbit { position: absolute; right: -28px; top: 54px; width: 100px; height: 100px; border: 1px solid rgba(91,103,241,.22); border-radius: 50%; animation: orbit 7s linear infinite; }
+  .space .orbit::after { content: ""; position: absolute; left: 16px; top: 11px; width: 7px; height: 7px; border-radius: 50%; background: #7082ff; box-shadow: 0 0 0 6px rgba(112,130,255,.12); }
+  @keyframes orbit { to { transform: rotate(360deg); } }
+
+  .fluid .stage { background: radial-gradient(circle at 82% 18%, rgba(120,139,255,.2), transparent 34%), #f5f7ff; }
+  .fluid .magnet { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; margin-bottom: 10px; border-radius: 12px; background: #263b83; color: #fff; box-shadow: 0 9px 18px rgba(52,73,162,.23); transition: transform .45s cubic-bezier(.22,1,.36,1), box-shadow .45s ease; }
+  .fluid .magnet:hover { transform: translate3d(4px,-3px) scale(1.02); box-shadow: 0 14px 26px rgba(52,73,162,.31); }
+  .fluid .magnet span:last-child { width: 22px; height: 22px; border-radius: 8px; background: rgba(255,255,255,.18); }
+  .fluid .blob { position: absolute; right: 24px; bottom: 18px; width: 62px; height: 62px; border-radius: 43% 57% 62% 38% / 42% 38% 62% 58%; background: linear-gradient(135deg,#b8c5ff,#6d7aff); filter: blur(.2px); animation: blob 5.2s ease-in-out infinite; }
+  @keyframes blob { 0%,100% { border-radius: 43% 57% 62% 38% / 42% 38% 62% 58%; transform: rotate(0) scale(1); } 50% { border-radius: 58% 42% 34% 66% / 59% 56% 44% 41%; transform: rotate(18deg) scale(1.08); } }
+
+  .micro .stage-card { transition: transform .22s ease, border-color .22s ease, box-shadow .22s ease; }
+  .micro .stage-card:hover { transform: translateY(-4px); border-color: #94a7ff; box-shadow: 0 13px 24px rgba(64,82,145,.14); }
+  .micro .tabbar { display: flex; gap: 6px; margin-bottom: 10px; }
+  .micro .tab { padding: 6px 9px; border-radius: 8px; color: #8a96a9; font-size: 10px; }
+  .micro .tab.active { color: #3159da; background: #e8edff; }
+  .micro .signal { height: 3px; margin: 15px 0 0; border-radius: 99px; background: linear-gradient(90deg,#6d7aff 0 64%, #dfe5f1 64%); transform-origin: left; animation: signal 3.2s ease-in-out infinite; }
+  @keyframes signal { 0%,100% { transform: scaleX(.74); opacity: .65; } 50% { transform: scaleX(1); opacity: 1; } }
+  .motion-foot { margin-top: 16px; padding: 11px 13px; border-radius: 12px; background: rgba(91,103,241,.08); color: #5260c7; font-size: 12px; }
+  @media (prefers-reduced-motion: reduce) { .space *, .fluid *, .micro * { animation: none !important; transition: none !important; } }
+  @media (max-width: 900px) { .motion-grid { grid-template-columns: 1fr; } .motion-option { display: grid; grid-template-columns: minmax(220px, 42%) 1fr; gap: 12px; align-items: center; } .motion-option h3, .motion-option p { margin-left: 0; } }
+  @media (max-width: 560px) { .motion-option { display: block; } }
+</style>
+
+<div class="motion-compare">
+  <div class="motion-intro">
+    <h2>高级动效方向</h2>
+    <p class="subtitle">这次不复用之前的普通淡入和卡片浮动。下面三种都保持克制，但会有更明显的空间感和产品质感。</p>
+  </div>
+
+  <div class="motion-grid">
+    <div class="motion-option space" data-choice="space" onclick="toggleSelect(this)">
+      <div class="stage">
+        <div class="stage-head"><b>空间连续</b><span>shared element</span></div>
+        <div class="stage-row"><div class="stage-card tall"><div class="stage-line"></div><div class="stage-line small"></div><span class="stage-pill"></span></div><div class="stage-card"><div class="stage-line"></div><div class="stage-line small"></div></div></div>
+        <div class="stage-row" style="margin-top:9px"><div class="stage-card"><div class="stage-line"></div><div class="stage-line small"></div></div><div class="stage-card"><div class="stage-line"></div><div class="stage-line small"></div></div></div>
+        <div class="orbit"></div>
+      </div>
+      <h3>空间连续</h3>
+      <p>页面切换像同一张画布在展开。用共享元素、方向和深度连接工作台、RSS 与详情页。</p>
+    </div>
+
+    <div class="motion-option fluid" data-choice="fluid" onclick="toggleSelect(this)">
+      <div class="stage">
+        <div class="stage-head"><b>流体磁吸</b><span>soft spring</span></div>
+        <div class="magnet"><span>快速定位入口</span><span></span></div>
+        <div class="stage-row"><div class="stage-card tall"><div class="stage-line"></div><div class="stage-line small"></div><span class="stage-pill"></span></div><div class="stage-card"><div class="stage-line"></div><div class="stage-line small"></div></div></div>
+        <div class="blob"></div>
+      </div>
+      <h3>流体磁吸</h3>
+      <p>按钮、搜索框和卡片对指针有柔和回应。不是弹跳，而是有重量的磁吸、回弹和连续变形。</p>
+    </div>
+
+    <div class="motion-option micro" data-choice="micro" onclick="toggleSelect(this)">
+      <div class="stage">
+        <div class="stage-head"><b>精密微交互</b><span>quiet luxury</span></div>
+        <div class="tabbar"><span class="tab active">概览</span><span class="tab">最近访问</span><span class="tab">待处理</span></div>
+        <div class="stage-row"><div class="stage-card tall"><div class="stage-line"></div><div class="stage-line small"></div><span class="stage-pill"></span></div><div class="stage-card"><div class="stage-line"></div><div class="stage-line small"></div></div></div>
+        <div class="signal"></div>
+      </div>
+      <h3>精密微交互</h3>
+      <p>不靠大幅移动抢注意力。重点放在状态、层级、焦点、加载和完成反馈，整体更像成熟桌面产品。</p>
+    </div>
+  </div>
+
+  <div class="motion-foot">建议：选一个主方向，再把另外两种拆成少量局部效果，避免全站动效互相抢戏。</div>
+</div>

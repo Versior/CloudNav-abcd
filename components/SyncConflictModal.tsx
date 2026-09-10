@@ -7,9 +7,10 @@ interface SyncConflictModalProps {
   onUseLocal: () => void;
   onUseCloud: () => void;
   onMerge: () => void;
+  mergePreview?: { links: number; categories: number } | null;
 }
 
-const SyncConflictModal: React.FC<SyncConflictModalProps> = ({ isOpen, onClose, onUseLocal, onUseCloud, onMerge }) => {
+const SyncConflictModal: React.FC<SyncConflictModalProps> = ({ isOpen, onClose, onUseLocal, onUseCloud, onMerge, mergePreview }) => {
   if (!isOpen) return null;
 
   return (
@@ -22,7 +23,7 @@ const SyncConflictModal: React.FC<SyncConflictModalProps> = ({ isOpen, onClose, 
           <div className="min-w-0">
             <h3 className="font-bold text-lg dark:text-white">同步冲突</h3>
             <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-              本地和云端数据都发生了修改，无法自动合并。请选择处理方式：
+              本地和云端数据都发生了修改。三方合并会保留双方独立修改，并按更新时间处理同字段冲突。
             </p>
           </div>
           <button onClick={onClose} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded ml-auto"><X size={16} /></button>
@@ -39,7 +40,7 @@ const SyncConflictModal: React.FC<SyncConflictModalProps> = ({ isOpen, onClose, 
           </button>
           <button onClick={onMerge} className="w-full flex items-center gap-3 p-4 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-all text-left">
             <div className="w-8 h-8 rounded-lg bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center"><Cloud size={16} className="text-purple-600 dark:text-purple-400" /></div>
-            <div><div className="font-medium text-sm dark:text-white">自动合并</div><div className="text-xs text-slate-500">尝试合并两端数据（按 ID 去重）</div></div>
+            <div><div className="font-medium text-sm dark:text-white">三方合并</div><div className="text-xs text-slate-500">按最近云端快照合并字段{mergePreview ? ` · 检测到 ${mergePreview.links + mergePreview.categories} 个冲突` : ''}</div></div>
           </button>
         </div>
       </div>

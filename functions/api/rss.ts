@@ -3,10 +3,12 @@ import { assertSafeExternalUrl, fetchWithSafeRedirects } from '../_shared/urlSaf
 import { discoverFeedUrls, parseRssFeedText } from '../../services/rssParser.ts';
 
 const MAX_BODY_BYTES = 1_500_000;
+const MAX_MIRROR_BODY_BYTES = 6_000_000;
 const REQUEST_TIMEOUT_MS = 12_000;
 const BROWSER_UA = 'Mozilla/5.0 (compatible; CloudNav RSS Reader/1.0; +https://nav.006680.xyz/)';
+const LINUX_DO_MIRROR_BASE = 'https://linuxdorss.longpink.com';
 
-const fetchText = async (url: string, accept: string) => {
+const fetchText = async (url: string, accept: string, maxBodyBytes = MAX_BODY_BYTES) => {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
@@ -20,12 +22,31 @@ const fetchText = async (url: string, accept: string) => {
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const declaredLength = Number(response.headers.get('Content-Length') || 0);
-    if (declaredLength > MAX_BODY_BYTES) throw new Error('Feed is too large');
+    if (declaredLength > maxBodyBytes) throw new Error('Feed is too large');
     const text = await response.text();
-    if (new TextEncoder().encode(text).byteLength > MAX_BODY_BYTES) throw new Error('Feed is too large');
+    if (new TextEncoder().encode(text).byteLength > maxBodyBytes) throw new Error('Feed is too large');
     return { response, text };
   } finally {
     clearTimeout(timeout);
+  }
+};
+
+const getLinuxDoMirrorUrl = (sourceUrl: URL) => {
+  const hostname = sourceUrl.hostname.toLowerCase();
+  if (hostname !== 'linux.do' && hostname !== 'www.linux.do') return '';
+  if (sourceUrl.pathname === '/latest.rss') return `${LINUX_DO_MIRROR_BASE}/latest.xml`;
+  if (sourceUrl.pathname === '/top.rss') return `${LINUX_DO_MIRROR_BASE}/top.xml`;
+  return '';
+};
+
+const fetchRssTextWithFallback = async (sourceUrl: URL, accept: string) => {
+  try {
+    const result = await fetchText(sourceUrl.toString(), accept);
+    return { ...result, sourceUrl: result.response.url || sourceUrl.toString(), usedMirror: false };
+  } catch (error) {
+    const mirrorUrl = getLinuxDoMirrorUrl(sourceUrl);
+    if (!mirrorUrl) throw error;
+    return { ...(await fetchText(mirrorUrl, accept, MAX_MIRROR_BODY_BYTES)), sourceUrl: sourceUrl.toString(), mirrorUrl, usedMirror: true };
   }
 };
 
@@ -59,6 +80,12 @@ export const onRequestGet = async (context: { request: Request }) => {
   try {
     if (discoverUrl) {
       const page = assertSafeExternalUrl(discoverUrl);
+      const linuxMirror = getLinuxDoMirrorUrl(new URL(`${page.origin}/latest.rss`));
+      if (linuxMirror) {
+        return jsonResponse({ feeds: [`${LINUX_DO_MIRROR_BASE}/latest.xml`, `${LINUX_DO_MIRROR_BASE}/top.xml`] }, {
+          headers: { 'Cache-Control': 'public, max-age=600' },
+        });
+      }
       const result = await fetchText(page.toString(), 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.5');
       return jsonResponse({ feeds: discoverFeedUrls(result.text, result.response.url || page.toString()) }, {
         headers: { 'Cache-Control': 'public, max-age=600' },
@@ -67,9 +94,11 @@ export const onRequestGet = async (context: { request: Request }) => {
 
     if (!feedUrl) return jsonResponse({ error: 'RSS URL is required' }, { status: 400 });
     const parsedUrl = assertSafeExternalUrl(feedUrl);
-    const result = await fetchText(parsedUrl.toString(), 'application/rss+xml,application/atom+xml,application/feed+json,application/json,text/xml;q=0.9,*/*;q=0.5');
-    const normalizedUrl = result.response.url || parsedUrl.toString();
-    const parsed = parseRssFeedText(result.text, normalizedUrl);
+    const result = await fetchRssTextWithFallback(parsedUrl, 'application/rss+xml,application/atom+xml,application/feed+json,application/json,text/xml;q=0.9,*/*;q=0.5');
+    const normalizedUrl = result.sourceUrl;
+    const parsedSourceUrl = result.response.url || normalizedUrl;
+    const parsed = parseRssFeedText(result.text, parsedSourceUrl);
+    const feed = { ...parsed.feed, id: normalizedUrl, url: normalizedUrl };
     if (isHtmlDocument(result.text, result.response.headers.get('content-type'))) {
       const discovered = await findWorkingDiscoveredFeed(normalizedUrl, result.text);
       if (!discovered) throw new Error('No working RSS feed was found');
@@ -77,7 +106,7 @@ export const onRequestGet = async (context: { request: Request }) => {
         headers: { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=600' },
       });
     }
-    return jsonResponse({ ...parsed, fetchedAt: Date.now(), sourceUrl: normalizedUrl }, {
+    return jsonResponse({ ...parsed, feed: result.usedMirror ? feed : parsed.feed, fetchedAt: Date.now(), sourceUrl: normalizedUrl }, {
       headers: { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=600' },
     });
   } catch (error) {

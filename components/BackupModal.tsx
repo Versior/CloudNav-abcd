@@ -2,15 +2,26 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useModalA11y } from './useModalA11y';
 import { X, Cloud, Download, Upload, CheckCircle2, AlertCircle, RefreshCw, Save } from 'lucide-react';
 import { Category, LinkItem, WebDavConfig, SearchConfig, AIConfig } from '../types';
+import { RECOVERY_SNAPSHOTS_KEY } from '../constants/storageKeys';
+import { GITHUB_WATCH_KEY, INSPIRATIONS_KEY, READ_LATER_KEY, READING_DOCUMENTS_KEY, RSS_STATE_KEY } from '../constants/storageKeys';
+import { normalizeInspirations } from '../services/inspirationService';
+import { normalizeReadLater } from '../services/readLaterService';
+import { normalizeGithubWatch } from '../services/githubService';
+import { normalizeRecoverySnapshots, type RecoverySnapshot } from '../services/recoverySnapshots';
 import { checkWebDavConnection, uploadBackup, uploadBackupWithTimestamp, downloadBackup, listBackups } from '../services/webDavService';
 import { generateBookmarkHtml, downloadHtmlFile } from '../services/exportService';
+import HistoryPanel from './HistoryPanel';
+import { createBackupEnvelope } from '../services/backupService';
+import { readReadingDocuments } from '../services/readingStorage';
+import { readRssState } from '../services/rssService';
+import type { WorkbenchToolsState } from '../services/workbenchTools';
 
 interface BackupModalProps {
   isOpen: boolean;
   onClose: () => void;
   links: LinkItem[];
   categories: Category[];
-  onRestore: (links: LinkItem[], categories: Category[]) => void;
+  onRestore: (links: LinkItem[], categories: Category[], version?: number, workbenchTools?: WorkbenchToolsState) => void;
   webDavConfig: WebDavConfig;
   onSaveWebDavConfig: (config: WebDavConfig) => void | Promise<void>;
   searchConfig: SearchConfig;
@@ -18,11 +29,24 @@ interface BackupModalProps {
   authToken?: boolean;
   aiConfig: AIConfig;
   onRestoreAIConfig: (aiConfig: AIConfig) => void;
+  workbenchTools: WorkbenchToolsState;
+  dataVersion?: number;
 }
 
 const BackupModal: React.FC<BackupModalProps> = ({
-  isOpen, onClose, links, categories, onRestore, webDavConfig, onSaveWebDavConfig, searchConfig, onRestoreSearchConfig, authToken, aiConfig, onRestoreAIConfig
+  isOpen, onClose, links, categories, onRestore, webDavConfig, onSaveWebDavConfig, searchConfig, onRestoreSearchConfig, authToken, aiConfig, onRestoreAIConfig, workbenchTools, dataVersion
 }) => {
+  const readWorkspacePayload = () => {
+    try {
+      return {
+        inspirations: normalizeInspirations(JSON.parse(localStorage.getItem(INSPIRATIONS_KEY) || '[]')),
+        readLater: normalizeReadLater(JSON.parse(localStorage.getItem(READ_LATER_KEY) || '[]')),
+        githubWatch: normalizeGithubWatch(JSON.parse(localStorage.getItem(GITHUB_WATCH_KEY) || '[]')),
+        readingDocuments: readReadingDocuments(),
+        rssState: readRssState(),
+      };
+    } catch { return { inspirations: [], readLater: [], githubWatch: [] }; }
+  };
   const containerRef = useRef<HTMLDivElement>(null);
   useModalA11y(isOpen, onClose, containerRef);
   const [config, setConfig] = useState<WebDavConfig>(webDavConfig);
@@ -32,12 +56,14 @@ const BackupModal: React.FC<BackupModalProps> = ({
   const [testResult, setTestResult] = useState<'success' | 'fail' | null>(null);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'uploading' | 'downloading' | 'success' | 'error'>('idle');
   const [statusMsg, setStatusMsg] = useState('');
+  const [recoverySnapshots, setRecoverySnapshots] = useState<RecoverySnapshot[]>([]);
 
   useEffect(() => {
     if(isOpen) {
         setConfig(webDavConfig);
         setTestResult(null);
         setSyncStatus('idle');
+        try { setRecoverySnapshots(normalizeRecoverySnapshots(JSON.parse(localStorage.getItem(RECOVERY_SNAPSHOTS_KEY) || '[]'))); } catch { setRecoverySnapshots([]); }
     }
   }, [isOpen, webDavConfig]);
 
@@ -59,7 +85,7 @@ const BackupModal: React.FC<BackupModalProps> = ({
   const handleBackupToCloud = async () => {
     setSyncStatus('uploading');
     setStatusMsg('正在上传...');
-    const success = await uploadBackup(config, { links, categories, searchConfig });
+    const success = await uploadBackup(config, { links, categories, searchConfig, workbenchTools, ...readWorkspacePayload() });
     if (success) {
         setSyncStatus('success');
         setStatusMsg('备份成功！');
@@ -72,7 +98,7 @@ const BackupModal: React.FC<BackupModalProps> = ({
   const handleBackupToCloudWithTimestamp = async () => {
     setSyncStatus('uploading');
     setStatusMsg('正在上传...');
-    const result = await uploadBackupWithTimestamp(config, { links, categories, searchConfig });
+    const result = await uploadBackupWithTimestamp(config, { links, categories, searchConfig, workbenchTools, ...readWorkspacePayload() });
     if (result.success) {
         setSyncStatus('success');
         setStatusMsg(`备份成功！文件名: ${result.filename}`);
@@ -90,7 +116,13 @@ const BackupModal: React.FC<BackupModalProps> = ({
     const data = await downloadBackup(config, filename);
     
     if (data) {
-        onRestore(data.links, data.categories);
+        onRestore(data.links, data.categories, undefined, data.workbenchTools);
+        if (data.inspirations) localStorage.setItem(INSPIRATIONS_KEY, JSON.stringify(data.inspirations));
+        if (data.readLater) localStorage.setItem(READ_LATER_KEY, JSON.stringify(data.readLater));
+        if (data.githubWatch) localStorage.setItem(GITHUB_WATCH_KEY, JSON.stringify(data.githubWatch));
+        if (data.readingDocuments) localStorage.setItem(READING_DOCUMENTS_KEY, JSON.stringify(data.readingDocuments));
+        if (data.rssState) localStorage.setItem(RSS_STATE_KEY, JSON.stringify(data.rssState));
+        window.dispatchEvent(new Event('cloudnav-workspace-data-changed'));
         // 恢复搜索配置（如果存在）
         if (data.searchConfig) {
             onRestoreSearchConfig(data.searchConfig);
@@ -135,15 +167,7 @@ const BackupModal: React.FC<BackupModalProps> = ({
   }));
 
   const handleExportJson = () => {
-    const safeAIConfig = aiConfig
-      ? {
-          provider: aiConfig.provider,
-          baseUrl: aiConfig.baseUrl,
-          model: aiConfig.model,
-        }
-      : undefined;
-
-    const data = { links: sanitizeLinksForBackup(links), categories, searchConfig, aiConfig: safeAIConfig };
+    const data = createBackupEnvelope({ links, categories, searchConfig, aiConfig, workbenchTools, ...readWorkspacePayload() }, dataVersion);
     const json = JSON.stringify(data, null, 2);
     const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -251,6 +275,15 @@ const BackupModal: React.FC<BackupModalProps> = ({
 
             <hr className="border-slate-200 dark:border-slate-700" />
 
+             <HistoryPanel onRestore={onRestore} />
+
+             <section className="space-y-3">
+               <div className="flex items-center justify-between gap-3"><div><h4 className="font-medium text-slate-800 dark:text-slate-200">本地恢复</h4><p className="text-xs text-slate-500 mt-1">每次本地修改前自动保留最近 5 个快照。</p></div><span className="text-xs text-slate-400">{recoverySnapshots.length}/5</span></div>
+               {recoverySnapshots.length === 0 ? <div className="rounded-xl bg-slate-50 dark:bg-slate-700/30 p-3 text-xs text-slate-500">暂无本地恢复快照</div> : <div className="max-h-48 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-700 rounded-xl border border-slate-200 dark:border-slate-700">{recoverySnapshots.map(snapshot => <div key={snapshot.id} className="flex items-center justify-between gap-3 px-3 py-2.5 text-xs"><div><div className="font-medium text-slate-700 dark:text-slate-200">{new Date(snapshot.createdAt).toLocaleString('zh-CN', { hour12: false })}</div><div className="text-slate-400">{snapshot.linkCount} 个链接 · {snapshot.categoryCount} 个文件夹</div></div><button onClick={() => { if (confirm('确定恢复这份本地快照吗？')) onRestore(snapshot.links as LinkItem[], snapshot.categories as Category[]); }} className="rounded-lg bg-blue-100 px-2.5 py-1.5 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-300">恢复</button></div>)}</div>}
+             </section>
+
+             <hr className="border-slate-200 dark:border-slate-700" />
+
             {/* Section 2: Sync Actions */}
             <section className="space-y-4">
                 <h4 className="font-medium text-slate-800 dark:text-slate-200">云端同步操作</h4>
@@ -340,7 +373,7 @@ const BackupModal: React.FC<BackupModalProps> = ({
                                 if (!res.ok) { alert('获取上一版本失败'); return; }
                                 const data = await res.json();
                                 if (!data || !data.links) { alert('没有可恢复的上一版本'); return; }
-                                onRestore(data.links, data.categories || []);
+                                onRestore(data.links, data.categories || [], undefined, data.workbenchTools);
                                 alert('已恢复到上一版本');
                             } catch { alert('恢复失败'); }
                         }}

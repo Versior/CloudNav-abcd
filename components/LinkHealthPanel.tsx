@@ -1,6 +1,7 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { Activity, AlertTriangle, Check, CheckCircle2, ExternalLink, PauseCircle, RefreshCw, Trash2 } from 'lucide-react';
 import { Category, LinkItem } from '../types';
+import { softDeleteLinks } from '../services/recycleBin';
 import {
   checkLinkHealth,
   healthLabel,
@@ -182,11 +183,11 @@ const LinkHealthPanel: React.FC<LinkHealthPanelProps> = ({
       return;
     }
     const count = selectedIds.size;
-    const next = localLinks.filter(l => !selectedIds.has(l.id));
+    const next = softDeleteLinks(localLinks, [...selectedIds], Date.now());
     setLocalLinks(next);
     onUpdateLinks(next);
     setSelectedIds(new Set());
-    alert(`已删除 ${count} 个链接`);
+    alert(`已移入回收站 ${count} 个链接`);
   };
 
   const correctLinksToOk = (ids: string[], silent = false) => {

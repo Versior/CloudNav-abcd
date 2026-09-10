@@ -2,6 +2,7 @@ export interface StoredAppData {
   links: unknown[];
   categories: unknown[];
   version: number;
+  workspace?: Record<string, unknown>;
 }
 
 const asRecord = (value: unknown): Record<string, unknown> => (
@@ -14,20 +15,24 @@ const normalizeVersion = (value: unknown) => (
 
 export const normalizeStoredData = (value: unknown): StoredAppData => {
   const record = asRecord(value);
-  return {
+  const normalized: StoredAppData = {
     links: Array.isArray(record.links) ? record.links : [],
     categories: Array.isArray(record.categories) ? record.categories : [],
     version: normalizeVersion(record.version),
   };
+  if (record.workspace && typeof record.workspace === 'object') normalized.workspace = record.workspace as Record<string, unknown>;
+  return normalized;
 };
 
 export const buildStoredData = (value: unknown, version: number): StoredAppData => {
   const record = normalizeStoredData(value);
-  return {
+  const normalized: StoredAppData = {
     links: record.links,
     categories: record.categories,
     version: normalizeVersion(version),
   };
+  if (record.workspace) normalized.workspace = record.workspace;
+  return normalized;
 };
 
 export const isVersionConflict = (baseVersion: unknown, currentVersion: number) => (

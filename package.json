@@ -4,11 +4,11 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --configLoader runner",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "build": "npm run typecheck && vite build",
+    "build": "npm run typecheck && vite build --configLoader runner",
     "preview": "vite preview",
-    "test": "node --experimental-strip-types --test tests/security.test.ts tests/storageData.test.ts tests/appBootstrap.test.ts tests/dashboardConfig.test.ts tests/healthSchedule.test.ts tests/historyService.test.ts tests/bulkActions.test.ts tests/backupService.test.ts tests/searchHistory.test.ts tests/recycleBin.test.ts tests/mergeService.test.ts tests/healthNotifications.test.ts tests/offlineQueue.test.ts tests/recoverySnapshots.test.ts tests/linkHealthService.test.ts tests/searchIndex.test.ts tests/workbenchTools.test.ts tests/rssParser.test.ts tests/rssService.test.ts tests/rssApi.test.ts tests/rssPage.test.ts tests/uiStates.test.ts tests/ui.test.mjs",
+    "test": "node --experimental-strip-types --test tests/security.test.ts tests/storageData.test.ts tests/appBootstrap.test.ts tests/dashboardConfig.test.ts tests/healthSchedule.test.ts tests/historyService.test.ts tests/bulkActions.test.ts tests/backupService.test.ts tests/searchHistory.test.ts tests/recycleBin.test.ts tests/mergeService.test.ts tests/healthNotifications.test.ts tests/offlineQueue.test.ts tests/recoverySnapshots.test.ts tests/linkHealthService.test.ts tests/searchIndex.test.ts tests/workbenchTools.test.ts tests/workbenchSelectors.test.ts tests/personalWorkspace.test.ts tests/readingWorkspace.test.ts tests/contentParser.test.ts tests/contentApi.test.ts tests/rssParser.test.ts tests/rssService.test.ts tests/rssApi.test.ts tests/rssPage.test.ts tests/rssAiSummary.test.ts tests/aiPrompts.test.ts tests/linkOrdering.test.ts tests/weatherApi.test.ts tests/inboxService.test.ts tests/uiStates.test.ts tests/ui.test.mjs tests/desktopRewrite.test.mjs tests/buttonAudit.test.mjs tests/personalWorkspaceUi.test.mjs",
     "test:performance": "node --test tests/performance.test.mjs"
   },
   "dependencies": {

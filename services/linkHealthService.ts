@@ -1,4 +1,4 @@
-import { LinkItem } from '../types';
+import type { LinkItem } from '../types.ts';
 
 export type HealthStatus = NonNullable<LinkItem['health']>['status'];
 
@@ -74,11 +74,11 @@ export const needsHealthCorrection = (health?: LinkItem['health'] | null) =>
   Boolean(health && health.status && health.status !== 'ok');
 
 export const checkLinkHealth = async (url: string): Promise<HealthCheckResult> => {
-  const response = await fetch('/api/link', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'checkHealth', url }),
-  });
+  const response = await fetchWithRetry(() => fetch('/api/link', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'checkHealth', url }),
+    }), 2, 250);
 
   const raw = await response.text().catch(() => '');
   let data: any = {};
@@ -101,4 +101,18 @@ export const checkLinkHealth = async (url: string): Promise<HealthCheckResult> =
     error: typeof data.error === 'string' ? data.error : undefined,
     reason: typeof data.reason === 'string' ? data.reason : undefined,
   };
+};
+
+export const fetchWithRetry = async <T>(operation: () => Promise<T>, maxRetries = 2, baseDelayMs = 250): Promise<T> => {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (attempt === maxRetries) break;
+      await new Promise(resolve => setTimeout(resolve, baseDelayMs * 2 ** attempt));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error('request_failed');
 };

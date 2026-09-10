@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 380" role="img" aria-labelledby="title">
+  <title id="title">开镜 KAI.CUE</title>
+  <g transform="translate(48 62)">
+    <path d="M24 18h56c25 0 44 18 44 43v94c0 25-19 43-44 43H24l38-43V61z" fill="#F5F2EA"/>
+    <path d="M216 18h-56c-25 0-44 18-44 43v94c0 25 19 43 44 43h56l-38-43V61z" fill="#F5F2EA"/>
+    <path d="M120 0c-10 64-10 152 0 216 10-64 10-152 0-216z" fill="#FF806C"/>
+  </g>
+  <text x="360" y="190" fill="#F5F2EA" font-family="Microsoft YaHei, Segoe UI, Arial, sans-serif" font-size="116" font-weight="700" letter-spacing="18">开镜</text>
+  <text x="368" y="254" fill="#FF806C" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="30" font-weight="600" letter-spacing="13">KAI.CUE</text>
+</svg>

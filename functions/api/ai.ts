@@ -1,5 +1,6 @@
 import { jsonResponse, optionsResponse, requireAuth } from '../_shared/auth';
-import { normalizeOpenAIEndpoint } from '../../services/openaiEndpoint';
+import { normalizeOpenAIEndpoint } from '../../services/openaiEndpoint.ts';
+import { buildContentSummaryPrompt, type ContentSummaryKind } from '../../services/aiPrompts.ts';
 
 interface Env {
   CLOUDNAV_KV: KVNamespace;
@@ -15,14 +16,14 @@ interface AIConfig {
   model?: string;
 }
 
-type AITask = 'description' | 'category' | 'test' | 'folder_rename' | 'folder_structure';
+type AITask = 'description' | 'category' | 'test' | 'folder_rename' | 'folder_structure' | 'rss_summary';
 
 const readAiConfig = async (env: Env, requestConfig: AIConfig = {}) => {
   const value = await env.CLOUDNAV_KV.get('ai_config');
   const config = value ? JSON.parse(value) as AIConfig : {};
   return {
     provider: requestConfig.provider || config.provider || 'gemini',
-    apiKey: requestConfig.apiKey || config.apiKey || env.GEMINI_API_KEY || '',
+    apiKey: config.apiKey || env.GEMINI_API_KEY || '',
     baseUrl: requestConfig.baseUrl !== undefined ? requestConfig.baseUrl : config.baseUrl || '',
     model: requestConfig.model || config.model || 'gemini-2.5-flash',
   };
@@ -94,6 +95,15 @@ const formatProviderError = (provider: string, response: Response, detail: strin
 };
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+const providerFetch = async (input: RequestInfo | URL, init: RequestInit, timeoutMs = 15000) => {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+};
 
 const parseRetryAfterMs = (response: Response, rawText: string) => {
   const header = response.headers.get('retry-after');
@@ -120,7 +130,7 @@ const callOpenAICompatible = async (config: AIConfig, systemPrompt: string, user
   let lastError: Error | null = null;
 
   for (let attempt = 1; attempt <= 3; attempt++) {
-    const response = await fetch(baseUrl, {
+    const response = await providerFetch(baseUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -159,7 +169,7 @@ const callGemini = async (config: AIConfig, prompt: string) => {
   let lastError: Error | null = null;
 
   for (let attempt = 1; attempt <= 3; attempt++) {
-    const response = await fetch(`${endpoint}?key=${encodeURIComponent(config.apiKey)}`, {
+    const response = await providerFetch(`${endpoint}?key=${encodeURIComponent(config.apiKey)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -201,11 +211,14 @@ export const onRequestPost = async (context: { request: Request; env: Env }) => 
       samples?: string[];
       links?: Array<{ id: string; title: string; url: string; description?: string }>;
       existingNames?: string[];
+      summary?: string;
+      sourceTitle?: string;
+      summaryKind?: 'rss' | 'website' | 'workbench';
       config?: AIConfig;
     };
 
     const task = body.task || '';
-    const allowed: AITask[] = ['description', 'category', 'test', 'folder_rename', 'folder_structure'];
+    const allowed: AITask[] = ['description', 'category', 'test', 'folder_rename', 'folder_structure', 'rss_summary'];
     if (!allowed.includes(task as AITask)) {
       return jsonResponse({ error: 'Invalid request' }, { status: 400 });
     }
@@ -215,6 +228,9 @@ export const onRequestPost = async (context: { request: Request; env: Env }) => 
       return jsonResponse({ error: 'Invalid request' }, { status: 400 });
     }
     if ((task === 'folder_rename' || task === 'folder_structure') && !body.folderName && !body.title) {
+      return jsonResponse({ error: 'Invalid request' }, { status: 400 });
+    }
+    if (task === 'rss_summary' && !body.title) {
       return jsonResponse({ error: 'Invalid request' }, { status: 400 });
     }
 
@@ -229,12 +245,27 @@ export const onRequestPost = async (context: { request: Request; env: Env }) => 
     }
 
     if (task === 'description') {
-      const prompt = `Title: ${body.title}\nURL: ${body.url}\nPlease write a very short description (max 15 words) in Chinese (Simplified) that explains what this website is for. Return ONLY the description text. No quotes.`;
+      const prompt = `网站标题：${body.title}\n网站网址：${body.url}\n请用简体中文写一条准确、具体、适合列表展示的网站描述。优先说明网站类型、主要用途和适合谁使用；不确定的内容不要补写；不超过 40 个汉字。`;
       const text = config.provider === 'gemini'
-        ? await callGemini(config, `I have a website bookmark. ${prompt}`)
-        : await callOpenAICompatible(config, 'You are a helpful assistant that summarizes website bookmarks.', prompt, 0.4);
+        ? await callGemini(config, `你是中文网站资料编辑。只依据标题和网址生成书签描述，不要臆测网站未提供的功能、价格、安全性或服务承诺。只返回描述文本。\n${prompt}`)
+        : await callOpenAICompatible(config, '你是中文网站资料编辑。只依据标题和网址生成书签描述，不要臆测网站未提供的功能、价格、安全性或服务承诺。只返回描述文本。', prompt, 0.3);
 
       if (!text) throw new Error('AI 未返回描述内容');
+      return jsonResponse({ text });
+    }
+
+    if (task === 'rss_summary') {
+      const kind: ContentSummaryKind = body.summaryKind === 'website' || body.summaryKind === 'workbench' ? body.summaryKind : 'rss';
+      const prompt = buildContentSummaryPrompt(kind, {
+        title: body.title,
+        url: body.url,
+        sourceTitle: body.sourceTitle,
+        summary: body.summary,
+      });
+      const text = config.provider === 'gemini'
+        ? await callGemini(config, prompt.system + '\n' + prompt.user)
+        : await callOpenAICompatible(config, prompt.system, prompt.user, 0.2);
+      if (!text) throw new Error('AI 未返回内容摘要');
       return jsonResponse({ text });
     }
 

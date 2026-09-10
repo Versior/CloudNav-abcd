@@ -3,6 +3,7 @@ import { DEFAULT_CATEGORIES, DEFAULT_DASHBOARD_CONFIG, INITIAL_LINKS } from '../
 import type { AppBootstrapSnapshot, Category, LinkItem } from '../types.ts';
 import { normalizeDashboardConfig } from './dashboardConfig.ts';
 import { normalizeWorkbenchTools } from './workbenchTools.ts';
+import { mergeWorkspaceSnapshot, normalizeWorkspaceSnapshot, readWorkspaceSnapshot, writeWorkspaceSnapshot } from './workspaceSnapshot.ts';
 
 export interface BootstrapLinkData {
   links: LinkItem[];
@@ -11,6 +12,7 @@ export interface BootstrapLinkData {
 
 export interface BootstrapRemoteData extends BootstrapLinkData {
   version?: number;
+  workspace?: Record<string, unknown>;
 }
 
 export interface AppBootstrapRefreshResult {
@@ -19,6 +21,16 @@ export interface AppBootstrapRefreshResult {
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object';
+
+const fetchWithTimeout = async (input: RequestInfo | URL, timeoutMs = 12000): Promise<Response> => {
+  const controller = new AbortController();
+  const timeout = globalThis.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { signal: controller.signal });
+  } finally {
+    globalThis.clearTimeout(timeout);
+  }
+};
 
 const readJson = (key: string): unknown => {
   try {
@@ -77,34 +89,39 @@ export const readBootstrapSnapshot = (): AppBootstrapSnapshot => {
   const linkData = normalizeLinkData(cachedData);
   const dashboardConfig = normalizeDashboardConfig(readJson(DASHBOARD_CONFIG_KEY) || DEFAULT_DASHBOARD_CONFIG);
   const workbenchTools = normalizeWorkbenchTools(readJson(WORKBENCH_TOOLS_KEY));
-  return { ...linkData, dashboardConfig, workbenchTools };
+  return { ...linkData, dashboardConfig, workbenchTools, workspace: readWorkspaceSnapshot() };
 };
 
 export const writeBootstrapSnapshot = (snapshot: AppBootstrapSnapshot): void => {
   localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ links: snapshot.links, categories: snapshot.categories }));
   localStorage.setItem(DASHBOARD_CONFIG_KEY, JSON.stringify(snapshot.dashboardConfig));
   localStorage.setItem(WORKBENCH_TOOLS_KEY, JSON.stringify(snapshot.workbenchTools));
+  writeWorkspaceSnapshot(snapshot.workspace, false);
 };
 
 export const fetchBootstrap = async (localSnapshot: AppBootstrapSnapshot): Promise<AppBootstrapRefreshResult> => {
   const [storageRes, dashboardRes] = await Promise.all([
-    fetch('/api/storage'),
-    fetch('/api/storage?getConfig=dashboard'),
+    fetchWithTimeout('/api/storage').catch(() => null),
+    fetchWithTimeout('/api/storage?getConfig=dashboard').catch(() => null),
   ]);
 
-  if (storageRes.status === 401) {
+  if (storageRes?.status === 401) {
     throw new Error('AUTH_REQUIRED');
   }
 
-  const storagePayload = storageRes.ok ? await storageRes.json().catch(() => null) : null;
+  const storagePayload = storageRes?.ok ? await storageRes.json().catch(() => null) : null;
   const remoteData = storagePayload && Array.isArray(storagePayload.links)
-    ? { ...normalizeLinkData(storagePayload), version: typeof storagePayload.version === 'number' ? storagePayload.version : undefined }
+    ? { ...normalizeLinkData(storagePayload), version: typeof storagePayload.version === 'number' ? storagePayload.version : undefined, workspace: storagePayload.workspace && typeof storagePayload.workspace === 'object' ? storagePayload.workspace as Record<string, unknown> : undefined }
     : null;
   const mergedData = mergeBootstrapData(localSnapshot, remoteData);
-  const dashboardPayload = dashboardRes.ok ? await dashboardRes.json().catch(() => null) : null;
-  const dashboardConfig = dashboardRes.ok ? normalizeDashboardConfig(dashboardPayload) : localSnapshot.dashboardConfig;
-  const snapshot = { ...mergedData, dashboardConfig, workbenchTools: localSnapshot.workbenchTools };
+  const dashboardPayload = dashboardRes?.ok ? await dashboardRes.json().catch(() => null) : null;
+  const dashboardConfig = dashboardRes?.ok ? normalizeDashboardConfig(dashboardPayload) : localSnapshot.dashboardConfig;
+  const workspace = mergeWorkspaceSnapshot(localSnapshot.workspace, remoteData?.workspace);
+  const snapshot = { ...mergedData, dashboardConfig, workbenchTools: workspace.workbenchTools || localSnapshot.workbenchTools, workspace };
 
-  if (remoteData || dashboardRes.ok) writeBootstrapSnapshot(snapshot);
+  if (remoteData || dashboardRes?.ok) {
+    writeBootstrapSnapshot(snapshot);
+    if (remoteData?.workspace) writeWorkspaceSnapshot(normalizeWorkspaceSnapshot(remoteData.workspace), false);
+  }
   return { snapshot, remoteData };
 };

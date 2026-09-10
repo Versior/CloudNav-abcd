@@ -4,6 +4,8 @@ import App from './App';
 import AppErrorBoundary from './components/AppErrorBoundary';
 import { ToastProvider } from './components/Toast';
 import './index.css';
+import './styles/cloudnav-redesign.css';
+import './styles/cloudnav-redesign.css';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {

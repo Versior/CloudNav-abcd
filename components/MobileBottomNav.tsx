@@ -2,7 +2,7 @@ import React from 'react';
 import { Grid2X2, Plus, Radio, Settings, Zap } from 'lucide-react';
 
 interface MobileBottomNavProps {
-  activeView: 'links' | 'workbench' | 'rss';
+  activeView: 'links' | 'workbench' | 'rss' | 'inspiration' | 'read-later' | 'github' | 'inbox' | 'reading';
   onLinks: () => void;
   onWorkbench: () => void;
   onRss: () => void;

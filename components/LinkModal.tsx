@@ -32,6 +32,7 @@ const LinkModal: React.FC<LinkModalProps> = ({ isOpen, onClose, onSave, onDelete
   const [batchMode, setBatchMode] = useState(false);
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
   const [tagsInput, setTagsInput] = useState('');
+  const [aliasesInput, setAliasesInput] = useState('');
 
   const duplicateHits = useMemo(
     () => (url.trim() ? findDuplicatesOfUrl(url, links, initialData?.id) : []),
@@ -66,10 +67,12 @@ const LinkModal: React.FC<LinkModalProps> = ({ isOpen, onClose, onSave, onDelete
         setPinned(initialData.pinned || false);
         setIcon(initialData.icon || '');
         setTagsInput(initialData.tags?.join(', ') || '');
+        setAliasesInput(initialData.aliases?.join(', ') || '');
       } else {
         setTitle('');
         setUrl('');
         setDescription('');
+        setAliasesInput('');
         // 如果有默认分类ID且该分类存在，则使用默认分类，否则使用第一个分类
         const defaultCategory = defaultCategoryId && categories.find(cat => cat.id === defaultCategoryId);
         setCategoryId(defaultCategory ? defaultCategoryId : (categories[0]?.id || 'common'));
@@ -152,7 +155,8 @@ const LinkModal: React.FC<LinkModalProps> = ({ isOpen, onClose, onSave, onDelete
     }
 
     // 计算标签
-    const tags = tagsInput.split(',').map(t => t.trim()).filter(Boolean);
+      const tags = tagsInput.split(',').map(t => t.trim()).filter(Boolean);
+      const aliases = aliasesInput.split(',').map(t => t.trim()).filter(Boolean);
 
     // 保存链接数据
     onSave({
@@ -162,7 +166,8 @@ const LinkModal: React.FC<LinkModalProps> = ({ isOpen, onClose, onSave, onDelete
       description,
       categoryId,
       pinned,
-      tags
+       tags,
+       aliases
     });
     
     // 如果有自定义图标URL，缓存到KV空间
@@ -178,7 +183,8 @@ const LinkModal: React.FC<LinkModalProps> = ({ isOpen, onClose, onSave, onDelete
       setUrl('');
       setIcon('');
       setDescription('');
-      setTagsInput('');
+       setTagsInput('');
+       setAliasesInput('');
       setPinned(false);
       // 如果开启自动获取图标，尝试获取新图标
       if (autoFetchIcon && finalUrl) {
@@ -452,6 +458,8 @@ const LinkModal: React.FC<LinkModalProps> = ({ isOpen, onClose, onSave, onDelete
               className="w-full p-2 rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
               placeholder="AI, 开发, 工具"
             />
+            <label className="block text-sm font-medium mb-1 mt-3 dark:text-slate-300">搜索别名 (逗号分隔)</label>
+            <input type="text" value={aliasesInput} onChange={(e) => setAliasesInput(e.target.value)} className="w-full p-2 rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white outline-none" placeholder="官网, 官方网站, docs" />
           </div>
 
           <div>

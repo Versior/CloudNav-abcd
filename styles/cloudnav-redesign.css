@@ -1,0 +1,840 @@
+/* CloudNav redesign layer
+ * Generated from design-system/cloudnav/MASTER.md and applied after legacy UI rules.
+ * The layer is intentionally flat, desktop-first, high-contrast, and low-motion.
+ * The .cloudnav-command-desk shell is the single visual system for every page.
+ * Page contracts: [data-page="inspiration"], [data-page="read-later"], [data-page="github"], [data-page="inbox"], [data-page="reading-workspace"].
+ */
+
+:root {
+  --cn-bg: #f2f4f1;
+  --cn-surface: #fffefa;
+  --cn-surface-soft: #f7f8f5;
+  --cn-ink: #17211f;
+  --cn-ink-strong: #10201e;
+  --cn-muted: #536864;
+  --cn-faint: #71847f;
+  --cn-line: #d7e0dc;
+  --cn-line-strong: #c2d0ca;
+  --cn-primary: #087f78;
+  --cn-primary-dark: #075f5a;
+  --cn-primary-soft: #e1f1ee;
+  --cn-accent: #c85a12;
+  --cn-accent-soft: #fff0e2;
+  --cn-danger: #b3262e;
+  --cn-danger-soft: #fff0f0;
+  --cn-sidebar: #162725;
+  --cn-sidebar-ink: #f1f7f4;
+  --cn-sidebar-muted: #a4b8b2;
+  --cn-radius: 8px;
+  --cn-radius-sm: 5px;
+  --cn-focus: 0 0 0 3px rgba(8, 127, 120, .2);
+  --cn-float-shadow: 0 14px 34px rgba(18, 37, 33, .16);
+  --cn-motion: 160ms ease;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+  background: var(--cn-bg);
+}
+
+body {
+  color: var(--cn-ink);
+  font-family: Inter, "Noto Sans SC", "Microsoft YaHei", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.cloudnav-redesign-root,
+.cloudnav-redesign-root * {
+  box-sizing: border-box;
+}
+
+.cloudnav-redesign-root {
+  --cloud-shell: var(--cn-bg);
+  --cloud-main: var(--cn-bg);
+  --cloud-accent: var(--cn-primary);
+  --cloud-accent-deep: var(--cn-primary-dark);
+  --cloud-accent-soft: var(--cn-primary-soft);
+  --cloud-line: var(--cn-line);
+  --cloud-sidebar: var(--cn-sidebar);
+  --cloud-sidebar-soft: #1d312e;
+  --cloud-sidebar-raised: #29413d;
+  --cloud-sidebar-text: var(--cn-sidebar-muted);
+  display: flex;
+  min-height: 100vh;
+  background: var(--cn-bg) !important;
+  color: var(--cn-ink) !important;
+}
+
+.cloudnav-redesign-root .cloudnav-desktop-sidebar {
+  position: relative !important;
+  inset: auto !important;
+  z-index: 20 !important;
+  display: flex !important;
+  width: 248px !important;
+  min-width: 248px !important;
+  height: 100vh !important;
+  flex: 0 0 248px !important;
+  transform: none !important;
+  overflow: hidden !important;
+  border: 0 !important;
+  border-right: 1px solid #2d4742 !important;
+  border-radius: 0 !important;
+  background: var(--cn-sidebar) !important;
+  color: var(--cn-sidebar-ink) !important;
+}
+
+.cloudnav-redesign-root .cloudnav-desktop-sidebar > div:first-child {
+  height: 72px !important;
+  flex: 0 0 72px !important;
+  border-bottom: 1px solid #2d4742 !important;
+  padding: 0 25px !important;
+}
+
+.cloudnav-redesign-root .cloudnav-desktop-sidebar > div:first-child span {
+  color: #eef7f3 !important;
+  font-size: 18px !important;
+  font-weight: 800 !important;
+  letter-spacing: -.03em !important;
+  background: none !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.cloudnav-redesign-root .cloudnav-desktop-sidebar > div:nth-child(2) {
+  min-height: 0 !important;
+  padding: 20px 14px !important;
+  background: transparent !important;
+}
+
+.cloudnav-redesign-root .cloudnav-desktop-sidebar button {
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.cloudnav-redesign-root .cloudnav-desktop-sidebar .command-desk-nav-item {
+  min-height: 42px !important;
+  margin: 2px 0 !important;
+  border: 0 !important;
+  border-radius: var(--cn-radius) !important;
+  background: transparent !important;
+  color: var(--cn-sidebar-muted) !important;
+  font-size: 14px !important;
+  font-weight: 650 !important;
+  transition: background var(--cn-motion), color var(--cn-motion) !important;
+}
+
+.cloudnav-redesign-root .cloudnav-desktop-sidebar .command-desk-nav-item:hover {
+  background: var(--cloud-sidebar-soft) !important;
+  color: #fff !important;
+}
+
+.cloudnav-redesign-root .cloudnav-desktop-sidebar .command-desk-nav-item.cloudnav-desktop-active,
+.cloudnav-redesign-root .cloudnav-desktop-sidebar .command-desk-nav-item[aria-current="page"] {
+  background: var(--cn-primary) !important;
+  color: #fff !important;
+}
+
+.cloudnav-redesign-root .cloudnav-desktop-sidebar .command-desk-nav-item:focus-visible,
+.cloudnav-redesign-root .cloudnav-desktop-sidebar button:focus-visible {
+  outline: 2px solid #80d8cb !important;
+  outline-offset: 2px !important;
+}
+
+.cloudnav-redesign-root .cloudnav-desktop-sidebar .command-desk-nav-item > div,
+.cloudnav-redesign-root .cloudnav-desktop-sidebar [class*="rounded-lg"] {
+  background: transparent !important;
+  color: currentColor !important;
+}
+
+.cloudnav-redesign-root .cloudnav-desktop-sidebar .text-slate-400,
+.cloudnav-redesign-root .cloudnav-desktop-sidebar .text-slate-500,
+.cloudnav-redesign-root .cloudnav-desktop-sidebar .text-slate-600,
+.cloudnav-redesign-root .cloudnav-desktop-sidebar .text-slate-700 {
+  color: var(--cn-sidebar-muted) !important;
+}
+
+.cloudnav-redesign-root .cloudnav-desktop-sidebar .hover\:bg-slate-50:hover,
+.cloudnav-redesign-root .cloudnav-desktop-sidebar .hover\:bg-slate-100:hover {
+  background: var(--cloud-sidebar-soft) !important;
+}
+
+.cloudnav-redesign-root .cloudnav-desktop-main {
+  min-width: 0 !important;
+  background: var(--cn-bg) !important;
+}
+
+.cloudnav-redesign-root .cloudnav-desktop-header {
+  position: relative !important;
+  z-index: 10 !important;
+  height: 72px !important;
+  min-height: 72px !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--cn-line) !important;
+  background: rgba(255, 254, 250, .97) !important;
+  padding: 0 32px !important;
+}
+
+.cloudnav-redesign-root .cloudnav-desktop-header input {
+  font-family: inherit;
+}
+
+.cloudnav-redesign-root .cloudnav-desktop-header .bg-slate-100,
+.cloudnav-redesign-root .cloudnav-desktop-header .bg-slate-700,
+.cloudnav-redesign-root .cloudnav-desktop-header .bg-slate-700\/50 {
+  background: var(--cn-surface-soft) !important;
+}
+
+.cloudnav-redesign-root .cloudnav-desktop-header input.rounded-full {
+  height: 42px !important;
+  border: 1px solid var(--cn-line-strong) !important;
+  border-radius: var(--cn-radius) !important;
+  background: var(--cn-surface) !important;
+  color: var(--cn-ink) !important;
+  font-size: 14px !important;
+}
+
+.cloudnav-redesign-root .cloudnav-desktop-header input.rounded-full:focus {
+  border-color: var(--cn-primary) !important;
+  box-shadow: var(--cn-focus) !important;
+}
+
+.cloudnav-redesign-root .cloudnav-desktop-header .rounded-full {
+  border-radius: var(--cn-radius) !important;
+}
+
+.cloudnav-redesign-root .cloudnav-desktop-header button {
+  min-height: 38px;
+  cursor: pointer;
+  transition: background var(--cn-motion), border-color var(--cn-motion), color var(--cn-motion), opacity var(--cn-motion) !important;
+}
+
+.cloudnav-redesign-root .cloudnav-desktop-header button:focus-visible,
+.cloudnav-redesign-root button:focus-visible,
+.cloudnav-redesign-root input:focus-visible,
+.cloudnav-redesign-root textarea:focus-visible,
+.cloudnav-redesign-root select:focus-visible {
+  outline: 2px solid var(--cn-primary) !important;
+  outline-offset: 2px !important;
+  box-shadow: var(--cn-focus) !important;
+}
+
+.cloudnav-redesign-root .cloudnav-desktop-header .bg-blue-600,
+.cloudnav-redesign-root .cloudnav-desktop-header .bg-blue-500 {
+  border: 1px solid var(--cn-primary-dark) !important;
+  background: var(--cn-primary) !important;
+  box-shadow: none !important;
+  color: #fff !important;
+}
+
+.cloudnav-redesign-root .cloudnav-desktop-header .bg-blue-600:hover,
+.cloudnav-redesign-root .cloudnav-desktop-header .bg-blue-500:hover {
+  background: var(--cn-primary-dark) !important;
+}
+
+.cloudnav-redesign-root .cloudnav-desktop-content {
+  min-width: 0 !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  padding: 28px 42px 72px !important;
+  background: var(--cn-bg) !important;
+  scroll-padding-top: 92px;
+}
+
+.cloudnav-redesign-root .cloudnav-desktop-content > * {
+  width: min(100%, 1540px);
+  margin-right: auto;
+  margin-left: auto;
+}
+
+.cloudnav-redesign-root .cloudnav-desktop-content > .cloudnav-floating-todo {
+  width: auto;
+  margin: 0;
+}
+
+.cloudnav-redesign-root .cloudnav-eyebrow,
+.cloudnav-redesign-root .cloudnav-page-header .cloudnav-eyebrow,
+.cloudnav-redesign-root .cloudnav-rss-v5-kicker {
+  color: var(--cn-primary) !important;
+  font-size: 11px !important;
+  font-weight: 800 !important;
+  letter-spacing: .16em !important;
+  line-height: 1.3 !important;
+}
+
+.cloudnav-redesign-root .cloudnav-button-primary,
+.cloudnav-redesign-root .cloudnav-primary-button {
+  min-height: 40px !important;
+  border: 1px solid var(--cn-primary-dark) !important;
+  border-radius: var(--cn-radius) !important;
+  background: var(--cn-primary) !important;
+  box-shadow: none !important;
+  color: #fff !important;
+  font-weight: 750 !important;
+}
+
+.cloudnav-redesign-root .cloudnav-button-primary:hover,
+.cloudnav-redesign-root .cloudnav-primary-button:hover {
+  background: var(--cn-primary-dark) !important;
+}
+
+.cloudnav-redesign-root .cloudnav-button-secondary,
+.cloudnav-redesign-root .cloudnav-quiet-button,
+.cloudnav-redesign-root .cloudnav-button-danger {
+  min-height: 40px !important;
+  border: 1px solid var(--cn-line-strong) !important;
+  border-radius: var(--cn-radius) !important;
+  background: var(--cn-surface) !important;
+  box-shadow: none !important;
+  color: var(--cn-ink) !important;
+  font-weight: 700 !important;
+}
+
+.cloudnav-redesign-root .cloudnav-button-secondary:hover,
+.cloudnav-redesign-root .cloudnav-quiet-button:hover {
+  border-color: var(--cn-primary) !important;
+  background: var(--cn-primary-soft) !important;
+  color: var(--cn-primary-dark) !important;
+}
+
+.cloudnav-redesign-root .cloudnav-button-danger {
+  border-color: #e3b8b8 !important;
+  background: var(--cn-danger-soft) !important;
+  color: var(--cn-danger) !important;
+}
+
+.cloudnav-redesign-root .cloudnav-text-button {
+  color: var(--cn-primary-dark) !important;
+  font-weight: 750 !important;
+}
+
+.cloudnav-redesign-root .cloudnav-workspace-page,
+.cloudnav-redesign-root .cloudnav-reading-workspace,
+.cloudnav-redesign-root .cloudnav-library-page,
+.cloudnav-redesign-root .cloudnav-rss-reader {
+  min-height: auto !important;
+  padding: 0 0 48px !important;
+  background: transparent !important;
+  color: var(--cn-ink) !important;
+}
+
+.cloudnav-redesign-root .cloudnav-page-header,
+.cloudnav-redesign-root .cloudnav-reading-header,
+.cloudnav-redesign-root .cloudnav-library-header,
+.cloudnav-redesign-root .cloudnav-rss-v5-header,
+.cloudnav-redesign-root .cloudnav-workbench-header {
+  align-items: flex-end !important;
+  gap: 24px !important;
+  margin-bottom: 0 !important;
+  border-bottom: 1px solid var(--cn-line) !important;
+  padding: 0 0 22px !important;
+}
+
+.cloudnav-redesign-root .cloudnav-page-header h1,
+.cloudnav-redesign-root .cloudnav-reading-header h1,
+.cloudnav-redesign-root .cloudnav-library-header h1,
+.cloudnav-redesign-root .cloudnav-rss-v5-header h1,
+.cloudnav-redesign-root .cloudnav-workbench-header h1 {
+  margin: 8px 0 0 !important;
+  color: var(--cn-ink-strong) !important;
+  font-size: clamp(30px, 3vw, 46px) !important;
+  font-weight: 800 !important;
+  letter-spacing: -.055em !important;
+  line-height: 1.04 !important;
+}
+
+.cloudnav-redesign-root .cloudnav-page-header p,
+.cloudnav-redesign-root .cloudnav-reading-header p,
+.cloudnav-redesign-root .cloudnav-library-header p,
+.cloudnav-redesign-root .cloudnav-rss-v5-header p,
+.cloudnav-redesign-root .cloudnav-workbench-header p {
+  max-width: 720px;
+  margin: 10px 0 0 !important;
+  color: var(--cn-muted) !important;
+  font-size: 14px !important;
+  line-height: 1.65 !important;
+}
+
+.cloudnav-redesign-root .cloudnav-workspace-toolbar,
+.cloudnav-redesign-root .cloudnav-reading-toolbar,
+.cloudnav-redesign-root .cloudnav-library-commandline,
+.cloudnav-redesign-root .cloudnav-rss-v5-toolbar,
+.cloudnav-redesign-root .cloudnav-workbench-command {
+  align-items: center !important;
+  min-height: 62px !important;
+  gap: 12px !important;
+  margin: 0 !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--cn-line) !important;
+  padding: 12px 0 !important;
+  background: transparent !important;
+}
+
+.cloudnav-redesign-root .cloudnav-search-field,
+.cloudnav-redesign-root .cloudnav-library-search,
+.cloudnav-redesign-root .cloudnav-rss-v5-search,
+.cloudnav-redesign-root .cloudnav-workbench-command label {
+  min-height: 40px !important;
+  border: 1px solid var(--cn-line-strong) !important;
+  border-radius: var(--cn-radius) !important;
+  background: var(--cn-surface) !important;
+  color: var(--cn-muted) !important;
+  padding: 0 12px !important;
+}
+
+.cloudnav-redesign-root .cloudnav-search-field:focus-within,
+.cloudnav-redesign-root .cloudnav-library-search:focus-within,
+.cloudnav-redesign-root .cloudnav-rss-v5-search:focus-within,
+.cloudnav-redesign-root .cloudnav-workbench-command label:focus-within {
+  border-color: var(--cn-primary) !important;
+  box-shadow: var(--cn-focus) !important;
+}
+
+.cloudnav-redesign-root .cloudnav-search-field input,
+.cloudnav-redesign-root .cloudnav-library-search input,
+.cloudnav-redesign-root .cloudnav-rss-v5-search input,
+.cloudnav-redesign-root .cloudnav-workbench-command input {
+  min-width: 0;
+  color: var(--cn-ink) !important;
+  font-size: 14px !important;
+}
+
+.cloudnav-redesign-root .cloudnav-search-field input::placeholder,
+.cloudnav-redesign-root .cloudnav-library-search input::placeholder,
+.cloudnav-redesign-root .cloudnav-rss-v5-search input::placeholder,
+.cloudnav-redesign-root .cloudnav-workbench-command input::placeholder {
+  color: var(--cn-faint) !important;
+  opacity: 1;
+}
+
+.cloudnav-redesign-root .cloudnav-segmented,
+.cloudnav-redesign-root .cloudnav-rss-v5-filters {
+  border: 1px solid var(--cn-line) !important;
+  border-radius: var(--cn-radius) !important;
+  background: var(--cn-surface-soft) !important;
+  padding: 3px !important;
+}
+
+.cloudnav-redesign-root .cloudnav-segmented button,
+.cloudnav-redesign-root .cloudnav-rss-v5-filters button {
+  min-height: 32px !important;
+  border: 0 !important;
+  border-radius: var(--cn-radius-sm) !important;
+  background: transparent !important;
+  color: var(--cn-muted) !important;
+  font-size: 12px !important;
+  font-weight: 750 !important;
+}
+
+.cloudnav-redesign-root .cloudnav-segmented button.is-active,
+.cloudnav-redesign-root .cloudnav-rss-v5-filters button.is-active {
+  background: var(--cn-surface) !important;
+  color: var(--cn-primary-dark) !important;
+  box-shadow: none !important;
+}
+
+.cloudnav-redesign-root .cloudnav-count,
+.cloudnav-redesign-root .cloudnav-library-total,
+.cloudnav-redesign-root .cloudnav-reading-stat,
+.cloudnav-redesign-root .cloudnav-rss-v5-result-count {
+  color: var(--cn-muted) !important;
+  font-size: 13px !important;
+}
+
+.cloudnav-redesign-root .cloudnav-reading-stat strong {
+  color: var(--cn-primary-dark) !important;
+  font-size: 32px !important;
+}
+
+/* Workbench: one continuous editing surface, not a grid of decorative cards. */
+.cloudnav-redesign-root .cloudnav-workbench {
+  min-height: 0 !important;
+  padding: 0 0 48px !important;
+}
+
+.cloudnav-redesign-root .cloudnav-workbench-stats {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  border-bottom: 1px solid var(--cn-line) !important;
+  background: transparent !important;
+}
+
+.cloudnav-redesign-root .cloudnav-workbench-stats > div {
+  display: grid !important;
+  grid-template-columns: 28px 1fr !important;
+  grid-template-rows: auto auto !important;
+  column-gap: 10px !important;
+  align-items: center !important;
+  min-height: 84px !important;
+  border-right: 1px solid var(--cn-line) !important;
+  padding: 16px 18px !important;
+}
+
+.cloudnav-redesign-root .cloudnav-workbench-stats > div:first-child { border-left: 1px solid var(--cn-line); }
+.cloudnav-redesign-root .cloudnav-workbench-stats > div:last-child { border-right: 0; }
+.cloudnav-redesign-root .cloudnav-workbench-stats svg { grid-row: 1 / span 2; color: var(--cn-primary) !important; }
+.cloudnav-redesign-root .cloudnav-workbench-stats strong { color: var(--cn-ink-strong) !important; font-size: 24px !important; line-height: 1 !important; }
+.cloudnav-redesign-root .cloudnav-workbench-stats span { color: var(--cn-muted) !important; font-size: 12px !important; }
+.cloudnav-redesign-root .cloudnav-workbench-stats .is-warning strong,
+.cloudnav-redesign-root .cloudnav-workbench-stats .is-warning svg { color: var(--cn-accent) !important; }
+
+.cloudnav-redesign-root .cloudnav-workbench-folders,
+.cloudnav-redesign-root .cloudnav-workbench-search-results,
+.cloudnav-redesign-root .cloudnav-workbench-activity,
+.cloudnav-redesign-root .cloudnav-workbench-side > *,
+.cloudnav-redesign-root .cloudnav-workbench-tools {
+  border: 0 !important;
+  border-bottom: 1px solid var(--cn-line) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.cloudnav-redesign-root .cloudnav-workbench-folders { padding: 20px 0 18px !important; }
+.cloudnav-redesign-root .cloudnav-workbench-directory-list { display: flex !important; flex-wrap: wrap !important; gap: 8px !important; }
+.cloudnav-redesign-root .cloudnav-workbench-directory-list button {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  min-height: 34px !important;
+  border: 1px solid var(--cn-line) !important;
+  border-radius: var(--cn-radius-sm) !important;
+  background: var(--cn-surface) !important;
+  padding: 0 11px !important;
+  color: var(--cn-ink) !important;
+  font-size: 12px !important;
+}
+.cloudnav-redesign-root .cloudnav-workbench-directory-list button:hover { border-color: var(--cn-primary) !important; color: var(--cn-primary-dark) !important; }
+.cloudnav-redesign-root .cloudnav-workbench-directory-list button em { color: var(--cn-faint) !important; font-size: 11px !important; font-style: normal; }
+
+.cloudnav-redesign-root .cloudnav-workbench-main { display: grid !important; grid-template-columns: minmax(0, 1fr) 320px !important; gap: 32px !important; margin-top: 24px !important; }
+.cloudnav-redesign-root .cloudnav-workbench-activity { min-width: 0; padding: 0 0 18px !important; }
+.cloudnav-redesign-root .cloudnav-workbench-side { display: grid !important; align-content: start !important; gap: 20px !important; }
+.cloudnav-redesign-root .cloudnav-section-head { display: flex !important; align-items: flex-start !important; justify-content: space-between !important; gap: 16px !important; margin-bottom: 14px !important; }
+.cloudnav-redesign-root .cloudnav-section-head h2 { margin: 5px 0 0 !important; color: var(--cn-ink-strong) !important; font-size: 18px !important; letter-spacing: -.025em !important; }
+.cloudnav-redesign-root .cloudnav-section-head > span { color: var(--cn-faint) !important; font-size: 12px !important; }
+.cloudnav-redesign-root .cloudnav-workbench-timeline { border-top: 1px solid var(--cn-line) !important; }
+.cloudnav-redesign-root .cloudnav-workbench-timeline-row { display: grid !important; grid-template-columns: 16px 76px minmax(0, 1fr) 18px !important; gap: 12px !important; align-items: center !important; width: 100% !important; min-height: 70px !important; border: 0 !important; border-bottom: 1px solid var(--cn-line) !important; background: transparent !important; padding: 12px 0 !important; color: var(--cn-ink) !important; text-align: left !important; }
+.cloudnav-redesign-root .cloudnav-workbench-timeline-row:hover { background: var(--cn-surface-soft) !important; }
+.cloudnav-redesign-root .cloudnav-workbench-timeline-dot { width: 8px !important; height: 8px !important; margin-left: 4px !important; border: 2px solid var(--cn-primary) !important; border-radius: 50% !important; background: var(--cn-bg) !important; }
+.cloudnav-redesign-root .cloudnav-workbench-timeline-time { color: var(--cn-faint) !important; font-size: 11px !important; }
+.cloudnav-redesign-root .cloudnav-workbench-timeline-title strong { display: block !important; overflow: hidden !important; color: var(--cn-ink-strong) !important; font-size: 14px !important; text-overflow: ellipsis !important; white-space: nowrap !important; }
+.cloudnav-redesign-root .cloudnav-workbench-timeline-title small { display: block !important; overflow: hidden !important; margin-top: 4px !important; color: var(--cn-muted) !important; font-size: 12px !important; text-overflow: ellipsis !important; white-space: nowrap !important; }
+.cloudnav-redesign-root .cloudnav-workbench-timeline-row > svg { color: var(--cn-faint) !important; }
+.cloudnav-redesign-root .cloudnav-focus-action { display: flex !important; align-items: center !important; gap: 10px !important; width: 100% !important; min-height: 52px !important; margin-bottom: 8px !important; border: 1px solid var(--cn-line) !important; border-radius: var(--cn-radius) !important; padding: 9px 11px !important; background: var(--cn-surface) !important; color: var(--cn-ink) !important; text-align: left !important; }
+.cloudnav-redesign-root .cloudnav-focus-action:hover { border-color: var(--cn-primary) !important; }
+.cloudnav-redesign-root .cloudnav-focus-action > span { display: grid !important; gap: 2px !important; }
+.cloudnav-redesign-root .cloudnav-focus-action strong { color: var(--cn-ink-strong) !important; font-size: 12px !important; }
+.cloudnav-redesign-root .cloudnav-focus-action small { color: var(--cn-muted) !important; font-size: 11px !important; }
+.cloudnav-redesign-root .cloudnav-focus-action.is-amber svg { color: var(--cn-accent) !important; }
+.cloudnav-redesign-root .cloudnav-focus-action.is-green svg { color: var(--cn-primary) !important; }
+.cloudnav-redesign-root .cloudnav-focus-action.is-blue svg { color: #3d6fc2 !important; }
+.cloudnav-redesign-root .cloudnav-workbench-rank { padding-bottom: 16px !important; }
+.cloudnav-redesign-root .cloudnav-workbench-rank > button { display: grid !important; grid-template-columns: 30px minmax(0, 1fr) auto !important; gap: 8px !important; align-items: center !important; width: 100% !important; min-height: 42px !important; border: 0 !important; border-bottom: 1px solid var(--cn-line) !important; background: transparent !important; color: var(--cn-ink) !important; text-align: left !important; }
+.cloudnav-redesign-root .cloudnav-workbench-rank > button:hover { background: var(--cn-surface-soft) !important; }
+.cloudnav-redesign-root .cloudnav-workbench-rank > button b { color: var(--cn-faint) !important; font-size: 11px !important; }
+.cloudnav-redesign-root .cloudnav-workbench-rank > button span { overflow: hidden !important; color: var(--cn-ink) !important; font-size: 12px !important; text-overflow: ellipsis !important; white-space: nowrap !important; }
+.cloudnav-redesign-root .cloudnav-workbench-rank > button em { color: var(--cn-primary-dark) !important; font-size: 11px !important; font-style: normal !important; }
+.cloudnav-redesign-root .cloudnav-workbench-search-results { margin-top: 24px !important; padding-top: 20px !important; }
+.cloudnav-redesign-root .cloudnav-workbench-entry-list { display: grid !important; grid-template-columns: repeat(3, minmax(0, 1fr)) !important; border-top: 1px solid var(--cn-line) !important; }
+.cloudnav-redesign-root .cloudnav-workbench-entry-list > button { display: grid !important; grid-template-columns: 30px minmax(0, 1fr) 18px !important; gap: 9px !important; align-items: center !important; min-height: 56px !important; border: 0 !important; border-bottom: 1px solid var(--cn-line) !important; background: transparent !important; color: var(--cn-ink) !important; text-align: left !important; }
+.cloudnav-redesign-root .cloudnav-workbench-entry-list > button:hover { background: var(--cn-surface-soft) !important; }
+.cloudnav-redesign-root .cloudnav-workbench-entry-list > button > span { display: grid !important; width: 28px !important; height: 28px !important; place-items: center !important; border: 1px solid var(--cn-line) !important; border-radius: 6px !important; background: var(--cn-surface) !important; color: var(--cn-primary) !important; }
+.cloudnav-redesign-root .cloudnav-workbench-entry-list img { width: 20px !important; height: 20px !important; border-radius: 4px !important; }
+.cloudnav-redesign-root .cloudnav-workbench-entry-list strong { overflow: hidden !important; color: var(--cn-ink-strong) !important; font-size: 12px !important; text-overflow: ellipsis !important; white-space: nowrap !important; }
+.cloudnav-redesign-root .cloudnav-workbench-entry-list small { overflow: hidden !important; color: var(--cn-muted) !important; font-size: 11px !important; text-overflow: ellipsis !important; white-space: nowrap !important; }
+
+/* Website library: row-oriented collection instead of another card grid. */
+.cloudnav-redesign-root .cloudnav-library-workspace { display: block !important; }
+.cloudnav-redesign-root .cloudnav-library-results { min-width: 0 !important; }
+.cloudnav-redesign-root .cloudnav-library-results-head { display: flex !important; align-items: flex-end !important; justify-content: space-between !important; gap: 16px !important; padding: 22px 0 14px !important; }
+.cloudnav-redesign-root .cloudnav-library-results-head h2 { margin: 5px 0 0 !important; color: var(--cn-ink-strong) !important; font-size: 22px !important; letter-spacing: -.035em !important; }
+.cloudnav-redesign-root .cloudnav-library-results-head > span { color: var(--cn-muted) !important; font-size: 12px !important; }
+.cloudnav-redesign-root .cloudnav-library-row-head,
+.cloudnav-redesign-root .cloudnav-library-row { display: grid !important; grid-template-columns: 36px minmax(260px, 1.8fr) minmax(140px, .85fr) 120px 216px !important; align-items: center !important; column-gap: 14px !important; }
+.cloudnav-redesign-root .cloudnav-library-row-head { min-height: 34px !important; border-top: 1px solid var(--cn-line) !important; border-bottom: 1px solid var(--cn-line) !important; color: var(--cn-faint) !important; font-size: 11px !important; font-weight: 800 !important; letter-spacing: .06em !important; text-transform: uppercase !important; }
+.cloudnav-redesign-root .cloudnav-library-row-head span:first-child { grid-column: 2; }
+.cloudnav-redesign-root .cloudnav-library-row { min-height: 78px !important; border: 0 !important; border-bottom: 1px solid var(--cn-line) !important; background: transparent !important; padding: 10px 0 !important; }
+.cloudnav-redesign-root .cloudnav-library-row:hover,
+.cloudnav-redesign-root .cloudnav-library-row.is-selected { background: var(--cn-surface-soft) !important; }
+.cloudnav-redesign-root .cloudnav-library-index { display: grid !important; width: 30px !important; height: 30px !important; place-items: center !important; border: 1px solid var(--cn-line) !important; border-radius: 6px !important; background: var(--cn-surface) !important; color: var(--cn-primary) !important; font-weight: 800 !important; }
+.cloudnav-redesign-root .cloudnav-library-index img { width: 22px !important; height: 22px !important; border-radius: 4px !important; }
+.cloudnav-redesign-root .cloudnav-library-primary { display: block !important; min-width: 0 !important; border: 0 !important; background: transparent !important; padding: 0 !important; text-align: left !important; }
+.cloudnav-redesign-root .cloudnav-library-primary strong { display: block !important; overflow: hidden !important; color: var(--cn-ink-strong) !important; font-size: 14px !important; text-overflow: ellipsis !important; white-space: nowrap !important; }
+.cloudnav-redesign-root .cloudnav-library-primary small { display: block !important; overflow: hidden !important; margin-top: 4px !important; color: var(--cn-muted) !important; font-size: 12px !important; line-height: 1.45 !important; text-overflow: ellipsis !important; white-space: nowrap !important; }
+.cloudnav-redesign-root .cloudnav-library-source,
+.cloudnav-redesign-root .cloudnav-library-visit { overflow: hidden !important; color: var(--cn-muted) !important; font-size: 12px !important; text-overflow: ellipsis !important; white-space: nowrap !important; }
+.cloudnav-redesign-root .cloudnav-library-health { border: 1px solid #e3b8b8 !important; border-radius: 999px !important; background: var(--cn-danger-soft) !important; padding: 3px 7px !important; color: var(--cn-danger) !important; font-size: 11px !important; }
+.cloudnav-redesign-root .cloudnav-library-actions { display: flex !important; align-items: center !important; justify-content: flex-end !important; gap: 5px !important; }
+.cloudnav-redesign-root .cloudnav-library-actions button,
+.cloudnav-redesign-root .cloudnav-reading-actions button,
+.cloudnav-redesign-root .cloudnav-github-actions button,
+.cloudnav-redesign-root .cloudnav-inbox-actions button { display: grid !important; width: 34px !important; height: 34px !important; place-items: center !important; border: 1px solid var(--cn-line) !important; border-radius: 6px !important; background: var(--cn-surface) !important; color: var(--cn-muted) !important; }
+.cloudnav-redesign-root .cloudnav-library-actions button:hover,
+.cloudnav-redesign-root .cloudnav-reading-actions button:hover,
+.cloudnav-redesign-root .cloudnav-github-actions button:hover,
+.cloudnav-redesign-root .cloudnav-inbox-actions button:hover { border-color: var(--cn-primary) !important; color: var(--cn-primary-dark) !important; }
+.cloudnav-redesign-root .cloudnav-library-empty,
+.cloudnav-redesign-root .cloudnav-empty-state,
+.cloudnav-redesign-root .cloudnav-empty-detail { min-height: 220px !important; border-bottom: 1px solid var(--cn-line) !important; color: var(--cn-faint) !important; }
+.cloudnav-redesign-root .cloudnav-library-empty strong,
+.cloudnav-redesign-root .cloudnav-empty-state strong { color: var(--cn-ink-strong) !important; font-size: 16px !important; }
+.cloudnav-redesign-root .cloudnav-library-summary,
+.cloudnav-redesign-root .cloudnav-workbench-brief,
+.cloudnav-redesign-root .cloudnav-rss-digest { border: 1px solid #b8d9d2 !important; border-left: 4px solid var(--cn-primary) !important; border-radius: var(--cn-radius) !important; background: var(--cn-primary-soft) !important; color: var(--cn-primary-dark) !important; box-shadow: none !important; }
+
+/* RSS: sources, article stream and reader share one rail system. */
+.cloudnav-redesign-root .cloudnav-rss-v5-stats { display: flex !important; align-items: center !important; gap: 0 !important; border-bottom: 1px solid var(--cn-line) !important; padding: 0 !important; }
+.cloudnav-redesign-root .cloudnav-rss-v5-stats > span { display: grid !important; gap: 3px !important; min-width: 112px !important; border-right: 1px solid var(--cn-line) !important; padding: 15px 18px !important; }
+.cloudnav-redesign-root .cloudnav-rss-v5-stats strong { color: var(--cn-ink-strong) !important; font-size: 22px !important; }
+.cloudnav-redesign-root .cloudnav-rss-v5-stats small { color: var(--cn-muted) !important; font-size: 11px !important; }
+.cloudnav-redesign-root .cloudnav-rss-v5-stats-note { margin-left: auto !important; border-right: 0 !important; color: var(--cn-muted) !important; font-size: 12px !important; text-align: right !important; }
+.cloudnav-redesign-root .cloudnav-rss-v5-toolbar { justify-content: space-between !important; }
+.cloudnav-redesign-root .cloudnav-rss-v5-toolbar-main { display: flex !important; min-width: 0 !important; flex: 1 !important; align-items: center !important; gap: 12px !important; }
+.cloudnav-redesign-root .cloudnav-rss-v5-toolbar-actions { display: flex !important; align-items: center !important; gap: 6px !important; }
+.cloudnav-redesign-root .cloudnav-rss-v5-toolbar-actions button { min-height: 36px !important; border: 1px solid var(--cn-line) !important; border-radius: var(--cn-radius-sm) !important; background: var(--cn-surface) !important; padding: 0 10px !important; color: var(--cn-muted) !important; font-size: 12px !important; font-weight: 700 !important; }
+.cloudnav-redesign-root .cloudnav-rss-v5-toolbar-actions button:hover { border-color: var(--cn-primary) !important; color: var(--cn-primary-dark) !important; }
+.cloudnav-redesign-root .cloudnav-rss-v5-stream { min-width: 0 !important; border-top: 0 !important; }
+.cloudnav-redesign-root .cloudnav-rss-v5-stream-head { display: flex !important; align-items: flex-end !important; justify-content: space-between !important; gap: 16px !important; border-bottom: 1px solid var(--cn-line) !important; padding: 24px 0 14px !important; }
+.cloudnav-redesign-root .cloudnav-rss-v5-stream-head h2 { margin: 6px 0 0 !important; color: var(--cn-ink-strong) !important; font-size: 23px !important; letter-spacing: -.035em !important; }
+.cloudnav-redesign-root .cloudnav-rss-v5-stream-head p { margin: 6px 0 0 !important; color: var(--cn-muted) !important; font-size: 12px !important; }
+.cloudnav-redesign-root .cloudnav-rss-v5-rows { border-bottom: 1px solid var(--cn-line) !important; }
+.cloudnav-redesign-root .cloudnav-rss-v5-row { display: grid !important; grid-template-columns: 22px minmax(0, 1fr) 34px !important; gap: 14px !important; align-items: start !important; width: 100% !important; min-height: 108px !important; border: 0 !important; border-bottom: 1px solid var(--cn-line) !important; background: transparent !important; padding: 19px 0 !important; color: var(--cn-ink) !important; text-align: left !important; }
+.cloudnav-redesign-root .cloudnav-rss-v5-row:hover { background: var(--cn-surface-soft) !important; }
+.cloudnav-redesign-root .cloudnav-rss-v5-row.is-selected { border-left: 4px solid var(--cn-primary) !important; background: var(--cn-primary-soft) !important; padding-left: 12px !important; }
+.cloudnav-redesign-root .cloudnav-rss-v5-row-index { padding-top: 3px !important; color: var(--cn-primary) !important; }
+.cloudnav-redesign-root .cloudnav-rss-v5-row.is-read .cloudnav-rss-v5-row-index { color: var(--cn-line-strong) !important; }
+.cloudnav-redesign-root .cloudnav-rss-v5-row-copy strong { display: block !important; color: var(--cn-ink-strong) !important; font-size: 16px !important; font-weight: 800 !important; line-height: 1.4 !important; }
+.cloudnav-redesign-root .cloudnav-rss-v5-row.is-read .cloudnav-rss-v5-row-copy strong { color: var(--cn-muted) !important; font-weight: 650 !important; }
+.cloudnav-redesign-root .cloudnav-rss-v5-row-copy span { display: block !important; margin-top: 7px !important; color: var(--cn-primary-dark) !important; font-size: 12px !important; }
+.cloudnav-redesign-root .cloudnav-rss-v5-row-copy small { display: -webkit-box !important; overflow: hidden !important; margin-top: 7px !important; color: var(--cn-muted) !important; font-size: 13px !important; line-height: 1.6 !important; -webkit-box-orient: vertical !important; -webkit-line-clamp: 2 !important; }
+.cloudnav-redesign-root .cloudnav-rss-v5-row-status { display: flex !important; justify-content: flex-end !important; gap: 7px !important; padding-top: 4px !important; color: var(--cn-faint) !important; }
+.cloudnav-redesign-root .cloudnav-rss-v5-row-status .is-starred { color: var(--cn-accent) !important; }
+.cloudnav-redesign-root .cloudnav-rss-intake { border: 0 !important; border-bottom: 1px solid var(--cn-line) !important; border-radius: 0 !important; background: transparent !important; padding: 16px 0 20px !important; }
+.cloudnav-redesign-root .cloudnav-rss-intake input { min-height: 40px !important; border: 1px solid var(--cn-line-strong) !important; border-radius: var(--cn-radius-sm) !important; background: var(--cn-surface) !important; color: var(--cn-ink) !important; padding: 0 10px !important; }
+.cloudnav-redesign-root .cloudnav-rss-intake button { min-height: 38px !important; border: 1px solid var(--cn-primary-dark) !important; border-radius: var(--cn-radius-sm) !important; background: var(--cn-primary) !important; color: #fff !important; font-weight: 700 !important; }
+.cloudnav-redesign-root .cloudnav-rss-notice { border: 1px solid var(--cn-line) !important; border-radius: var(--cn-radius) !important; background: var(--cn-surface) !important; color: var(--cn-muted) !important; }
+.cloudnav-redesign-root .cloudnav-rss-notice.is-error { border-color: #e3b8b8 !important; background: var(--cn-danger-soft) !important; color: var(--cn-danger) !important; }
+.cloudnav-redesign-root .cloudnav-rss-source-drawer,
+.cloudnav-redesign-root .cloudnav-rss-reader-sheet { border-color: var(--cn-line-strong) !important; border-radius: 0 !important; background: var(--cn-surface) !important; box-shadow: var(--cn-float-shadow) !important; }
+.cloudnav-redesign-root .cloudnav-rss-source-drawer-head,
+.cloudnav-redesign-root .cloudnav-rss-reader-sheet-head { border-bottom-color: var(--cn-line) !important; }
+.cloudnav-redesign-root .cloudnav-rss-source-drawer-body > button,
+.cloudnav-redesign-root .cloudnav-rss-source-drawer-body .cloudnav-rss-source-item { border-radius: var(--cn-radius-sm) !important; }
+.cloudnav-redesign-root .cloudnav-rss-source-drawer-body > button:hover,
+.cloudnav-redesign-root .cloudnav-rss-source-drawer-body > button.is-active { background: var(--cn-primary-soft) !important; color: var(--cn-primary-dark) !important; }
+.cloudnav-redesign-root .cloudnav-rss-source-item button { color: var(--cn-muted) !important; }
+.cloudnav-redesign-root .cloudnav-rss-source-item button.is-active { background: var(--cn-primary-soft) !important; color: var(--cn-primary-dark) !important; }
+.cloudnav-redesign-root .cloudnav-rss-source-edit,
+.cloudnav-redesign-root .cloudnav-rss-source-remove { border: 1px solid transparent !important; border-radius: 5px !important; background: transparent !important; color: var(--cn-faint) !important; }
+.cloudnav-redesign-root .cloudnav-rss-source-edit:hover,
+.cloudnav-redesign-root .cloudnav-rss-source-remove:hover { border-color: var(--cn-line) !important; background: var(--cn-surface-soft) !important; color: var(--cn-primary-dark) !important; }
+.cloudnav-redesign-root .cloudnav-rss-reader-sheet > h2 { color: var(--cn-ink-strong) !important; line-height: 1.18 !important; }
+.cloudnav-redesign-root .cloudnav-rss-reader-sheet .cloudnav-rss-reader-summary,
+.cloudnav-redesign-root .cloudnav-rss-reader-content p,
+.cloudnav-redesign-root .cloudnav-rss-reader-sheet .cloudnav-rss-ai-panel p,
+.cloudnav-redesign-root .cloudnav-rss-reader-sheet .cloudnav-rss-ai-panel ul { color: var(--cn-muted) !important; }
+.cloudnav-redesign-root .cloudnav-rss-reader-sheet .cloudnav-rss-ai-panel { border-top-color: var(--cn-line) !important; border-bottom-color: var(--cn-line) !important; background: transparent !important; }
+
+/* Personal pages reuse one readable split layout. */
+.cloudnav-redesign-root [data-page="inspiration"],
+.cloudnav-redesign-root [data-page="read-later"],
+.cloudnav-redesign-root [data-page="github"],
+.cloudnav-redesign-root [data-page="inbox"] {
+  width: 100%;
+}
+
+.cloudnav-redesign-root .cloudnav-inspiration-layout { grid-template-columns: 220px minmax(400px, 1fr) minmax(360px, .9fr) !important; min-height: 560px !important; border-top: 0 !important; border-bottom: 1px solid var(--cn-line) !important; }
+.cloudnav-redesign-root .cloudnav-filter-rail { border-right-color: var(--cn-line) !important; padding: 24px 22px 24px 0 !important; }
+.cloudnav-redesign-root .cloudnav-rail-title { color: var(--cn-faint) !important; }
+.cloudnav-redesign-root .cloudnav-rail-link { border-bottom-color: var(--cn-line) !important; color: var(--cn-muted) !important; }
+.cloudnav-redesign-root .cloudnav-rail-link.is-active { border-left: 3px solid var(--cn-primary) !important; background: var(--cn-primary-soft) !important; padding-left: 10px !important; color: var(--cn-primary-dark) !important; }
+.cloudnav-redesign-root .cloudnav-inspiration-stream { border-right-color: var(--cn-line) !important; padding: 0 !important; }
+.cloudnav-redesign-root .cloudnav-inspiration-item { min-height: 86px !important; border-bottom-color: var(--cn-line) !important; padding: 17px 22px !important; }
+.cloudnav-redesign-root .cloudnav-inspiration-item:hover,
+.cloudnav-redesign-root .cloudnav-inspiration-item.is-selected { background: var(--cn-primary-soft) !important; }
+.cloudnav-redesign-root .cloudnav-inspiration-item strong { color: var(--cn-ink-strong) !important; font-size: 14px !important; }
+.cloudnav-redesign-root .cloudnav-inspiration-item small,
+.cloudnav-redesign-root .cloudnav-inspiration-item span { color: var(--cn-muted) !important; }
+.cloudnav-redesign-root .cloudnav-inspiration-item em { color: var(--cn-primary-dark) !important; }
+.cloudnav-redesign-root .cloudnav-inspiration-detail { background: var(--cn-surface) !important; padding: 30px 36px !important; }
+.cloudnav-redesign-root .cloudnav-detail-meta { color: var(--cn-faint) !important; }
+.cloudnav-redesign-root .cloudnav-detail-meta span:first-child { color: var(--cn-primary-dark) !important; }
+.cloudnav-redesign-root .cloudnav-inspiration-detail h2 { color: var(--cn-ink-strong) !important; }
+.cloudnav-redesign-root .cloudnav-detail-content { color: var(--cn-muted) !important; line-height: 1.85 !important; }
+.cloudnav-redesign-root .cloudnav-ai-note { border-left-color: var(--cn-primary) !important; background: var(--cn-primary-soft) !important; color: var(--cn-primary-dark) !important; }
+.cloudnav-redesign-root .cloudnav-ai-note p { color: var(--cn-muted) !important; }
+
+.cloudnav-redesign-root .cloudnav-reading-list,
+.cloudnav-redesign-root .cloudnav-github-list,
+.cloudnav-redesign-root .cloudnav-inbox-stream { border-top-color: var(--cn-line) !important; }
+.cloudnav-redesign-root .cloudnav-reading-item,
+.cloudnav-redesign-root .cloudnav-github-item,
+.cloudnav-redesign-root .cloudnav-inbox-item { min-height: 86px !important; border-bottom-color: var(--cn-line) !important; padding: 16px 0 !important; }
+.cloudnav-redesign-root .cloudnav-reading-item:hover,
+.cloudnav-redesign-root .cloudnav-github-item:hover,
+.cloudnav-redesign-root .cloudnav-inbox-item:hover { background: var(--cn-surface-soft) !important; }
+.cloudnav-redesign-root .cloudnav-reading-item.is-selected,
+.cloudnav-redesign-root .cloudnav-github-item.is-selected { border-left: 4px solid var(--cn-primary) !important; background: var(--cn-primary-soft) !important; padding-left: 14px !important; }
+.cloudnav-redesign-root .cloudnav-reading-kind,
+.cloudnav-redesign-root .cloudnav-inbox-kind { color: var(--cn-primary-dark) !important; }
+.cloudnav-redesign-root .cloudnav-reading-item h2,
+.cloudnav-redesign-root .cloudnav-github-item h2,
+.cloudnav-redesign-root .cloudnav-inbox-item h2 { color: var(--cn-ink-strong) !important; font-size: 16px !important; }
+.cloudnav-redesign-root .cloudnav-reading-item p,
+.cloudnav-redesign-root .cloudnav-github-item p,
+.cloudnav-redesign-root .cloudnav-inbox-item p { color: var(--cn-muted) !important; font-size: 13px !important; line-height: 1.6 !important; }
+.cloudnav-redesign-root .cloudnav-reading-item small,
+.cloudnav-redesign-root .cloudnav-github-item small,
+.cloudnav-redesign-root .cloudnav-inbox-item small { color: var(--cn-faint) !important; }
+.cloudnav-redesign-root .cloudnav-github-add { min-width: 460px !important; }
+.cloudnav-redesign-root .cloudnav-github-add input,
+.cloudnav-redesign-root .cloudnav-field,
+.cloudnav-redesign-root .cloudnav-capture-modal input,
+.cloudnav-redesign-root .cloudnav-capture-modal textarea { min-height: 40px !important; border: 1px solid var(--cn-line-strong) !important; border-radius: var(--cn-radius-sm) !important; background: var(--cn-surface) !important; color: var(--cn-ink) !important; }
+.cloudnav-redesign-root .cloudnav-github-mark { border: 1px solid var(--cn-line) !important; border-radius: 6px !important; background: var(--cn-surface) !important; color: var(--cn-ink) !important; }
+.cloudnav-redesign-root .cloudnav-badge { border: 1px solid var(--cn-line) !important; border-radius: 999px !important; background: var(--cn-surface-soft) !important; padding: 3px 7px !important; color: var(--cn-muted) !important; }
+.cloudnav-redesign-root .cloudnav-stars { color: var(--cn-accent) !important; }
+
+/* Reading workspace: reader content is always the dominant surface. */
+.cloudnav-redesign-root .cloudnav-reading-grid { grid-template-columns: minmax(300px, 360px) minmax(0, 1fr) !important; min-height: 640px !important; border: 0 !important; border-top: 1px solid var(--cn-line) !important; border-bottom: 1px solid var(--cn-line) !important; border-radius: 0 !important; background: transparent !important; }
+.cloudnav-redesign-root .cloudnav-reading-list { border-right-color: var(--cn-line) !important; background: transparent !important; }
+.cloudnav-redesign-root .cloudnav-reading-list-head { min-height: 48px !important; border-bottom-color: var(--cn-line) !important; padding: 0 12px !important; color: var(--cn-muted) !important; }
+.cloudnav-redesign-root .cloudnav-reading-card { min-height: 92px !important; border-bottom-color: var(--cn-line) !important; padding: 15px 12px !important; }
+.cloudnav-redesign-root .cloudnav-reading-card:hover,
+.cloudnav-redesign-root .cloudnav-reading-card.is-active { background: var(--cn-primary-soft) !important; }
+.cloudnav-redesign-root .cloudnav-reading-card h2 { color: var(--cn-ink-strong) !important; font-size: 14px !important; }
+.cloudnav-redesign-root .cloudnav-reading-card p { color: var(--cn-muted) !important; font-size: 12px !important; }
+.cloudnav-redesign-root .cloudnav-reading-card small,
+.cloudnav-redesign-root .cloudnav-reading-card-meta { color: var(--cn-faint) !important; }
+.cloudnav-redesign-root .cloudnav-reading-reader { min-width: 0 !important; background: var(--cn-surface) !important; padding: 30px clamp(24px, 5vw, 78px) 60px !important; }
+.cloudnav-redesign-root .cloudnav-reader-actions { border-bottom: 1px solid var(--cn-line) !important; padding-bottom: 14px !important; }
+.cloudnav-redesign-root .cloudnav-reader-actions button,
+.cloudnav-redesign-root .cloudnav-reader-footer button { min-height: 36px !important; border: 1px solid var(--cn-line) !important; border-radius: var(--cn-radius-sm) !important; background: var(--cn-surface) !important; color: var(--cn-muted) !important; }
+.cloudnav-redesign-root .cloudnav-reader-actions button:hover,
+.cloudnav-redesign-root .cloudnav-reader-footer button:hover { border-color: var(--cn-primary) !important; color: var(--cn-primary-dark) !important; }
+.cloudnav-redesign-root .cloudnav-reader-heading,
+.cloudnav-redesign-root .cloudnav-reader-ai-summary,
+.cloudnav-redesign-root .cloudnav-reader-body,
+.cloudnav-redesign-root .cloudnav-reader-notes,
+.cloudnav-redesign-root .cloudnav-reader-footer { max-width: 760px !important; }
+.cloudnav-redesign-root .cloudnav-reader-heading h2 { color: var(--cn-ink-strong) !important; font-size: clamp(30px, 3vw, 48px) !important; line-height: 1.16 !important; }
+.cloudnav-redesign-root .cloudnav-reader-heading p { color: var(--cn-faint) !important; }
+.cloudnav-redesign-root .cloudnav-reader-ai-summary { border-left-color: var(--cn-primary) !important; background: var(--cn-primary-soft) !important; color: var(--cn-muted) !important; }
+.cloudnav-redesign-root .cloudnav-reader-ai-summary strong { color: var(--cn-primary-dark) !important; }
+.cloudnav-redesign-root .cloudnav-reader-body { color: var(--cn-ink) !important; font-size: 16px !important; line-height: 1.95 !important; }
+.cloudnav-redesign-root .cloudnav-reader-notes { border-top-color: var(--cn-line) !important; }
+.cloudnav-redesign-root .cloudnav-reader-notes textarea,
+.cloudnav-redesign-root .cloudnav-reader-tags { border-color: var(--cn-line-strong) !important; border-radius: var(--cn-radius-sm) !important; background: var(--cn-surface-soft) !important; color: var(--cn-ink) !important; }
+.cloudnav-redesign-root .cloudnav-reader-footer { border-top-color: var(--cn-line) !important; }
+
+/* Floating todo is a single useful overlay, not a second page frame. */
+.cloudnav-redesign-root .cloudnav-floating-todo {
+  position: fixed !important;
+  right: 28px !important;
+  bottom: 24px !important;
+  z-index: 60 !important;
+  width: min(340px, calc(100vw - 40px)) !important;
+  border: 1px solid var(--cn-line-strong) !important;
+  border-radius: var(--cn-radius) !important;
+  background: var(--cn-surface) !important;
+  box-shadow: var(--cn-float-shadow) !important;
+  color: var(--cn-ink) !important;
+}
+.cloudnav-redesign-root .cloudnav-floating-todo-toggle { display: flex !important; align-items: center !important; width: 100% !important; min-height: 58px !important; gap: 10px !important; border: 0 !important; background: transparent !important; padding: 9px 12px !important; color: var(--cn-ink) !important; text-align: left !important; }
+.cloudnav-redesign-root .cloudnav-floating-todo-mark { display: grid !important; width: 32px !important; height: 32px !important; place-items: center !important; border-radius: 6px !important; background: var(--cn-accent-soft) !important; color: var(--cn-accent) !important; }
+.cloudnav-redesign-root .cloudnav-floating-todo-heading { display: grid !important; flex: 1 !important; gap: 2px !important; }
+.cloudnav-redesign-root .cloudnav-floating-todo-heading strong { color: var(--cn-ink-strong) !important; font-size: 13px !important; }
+.cloudnav-redesign-root .cloudnav-floating-todo-heading small { color: var(--cn-muted) !important; font-size: 11px !important; }
+.cloudnav-redesign-root .cloudnav-floating-todo-toggle > b { display: grid !important; min-width: 22px !important; height: 22px !important; place-items: center !important; border-radius: 999px !important; background: var(--cn-accent-soft) !important; color: var(--cn-accent) !important; font-size: 11px !important; }
+.cloudnav-redesign-root .cloudnav-floating-todo-body { border-top: 1px solid var(--cn-line) !important; padding: 10px 12px 12px !important; }
+.cloudnav-redesign-root .cloudnav-floating-todo-add { display: flex !important; gap: 6px !important; }
+.cloudnav-redesign-root .cloudnav-floating-todo-add input { min-width: 0 !important; flex: 1 !important; min-height: 36px !important; border: 1px solid var(--cn-line-strong) !important; border-radius: var(--cn-radius-sm) !important; padding: 0 9px !important; color: var(--cn-ink) !important; }
+.cloudnav-redesign-root .cloudnav-floating-todo-add button { display: grid !important; width: 36px !important; height: 36px !important; place-items: center !important; border: 0 !important; border-radius: var(--cn-radius-sm) !important; background: var(--cn-primary) !important; color: #fff !important; }
+.cloudnav-redesign-root .cloudnav-floating-todo-row { display: flex !important; align-items: center !important; gap: 8px !important; min-height: 34px !important; border-bottom: 1px solid var(--cn-line) !important; }
+.cloudnav-redesign-root .cloudnav-floating-todo-row > span { min-width: 0 !important; flex: 1 !important; overflow: hidden !important; color: var(--cn-ink) !important; font-size: 12px !important; text-overflow: ellipsis !important; white-space: nowrap !important; }
+.cloudnav-redesign-root .cloudnav-floating-todo-row.is-done > span { color: var(--cn-faint) !important; text-decoration: line-through !important; }
+.cloudnav-redesign-root .cloudnav-floating-todo-check,
+.cloudnav-redesign-root .cloudnav-floating-todo-delete { display: grid !important; width: 26px !important; height: 26px !important; place-items: center !important; border: 1px solid var(--cn-line) !important; border-radius: 5px !important; background: transparent !important; color: var(--cn-muted) !important; }
+.cloudnav-redesign-root .cloudnav-floating-todo-check:hover { border-color: var(--cn-primary) !important; color: var(--cn-primary) !important; }
+.cloudnav-redesign-root .cloudnav-floating-todo-delete:hover { border-color: #e3b8b8 !important; color: var(--cn-danger) !important; }
+.cloudnav-redesign-root .cloudnav-floating-todo-empty { margin: 10px 0 2px !important; color: var(--cn-faint) !important; font-size: 12px !important; }
+
+@media (max-width: 1280px) {
+  .cloudnav-redesign-root .cloudnav-desktop-content { padding-right: 28px !important; padding-left: 28px !important; }
+  .cloudnav-redesign-root .cloudnav-workbench-main { grid-template-columns: minmax(0, 1fr) 280px !important; gap: 22px !important; }
+  .cloudnav-redesign-root .cloudnav-library-row-head,
+  .cloudnav-redesign-root .cloudnav-library-row { grid-template-columns: 36px minmax(220px, 1.8fr) minmax(120px, .8fr) 96px 186px !important; }
+}
+
+@media (max-width: 1023px) {
+  .cloudnav-redesign-root .cloudnav-desktop-sidebar { position: fixed !important; left: 0 !important; top: 0 !important; bottom: 0 !important; width: 248px !important; transform: translateX(-100%) !important; }
+  .cloudnav-redesign-root .cloudnav-desktop-sidebar.translate-x-0 { transform: translateX(0) !important; }
+  .cloudnav-redesign-root .cloudnav-desktop-main { width: 100% !important; }
+  .cloudnav-redesign-root .cloudnav-desktop-header { padding: 0 18px !important; }
+  .cloudnav-redesign-root .cloudnav-desktop-content { padding: 22px 20px 88px !important; }
+  .cloudnav-redesign-root .cloudnav-workbench-main,
+  .cloudnav-redesign-root .cloudnav-inspiration-layout { display: block !important; }
+  .cloudnav-redesign-root .cloudnav-workbench-side { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; margin-top: 20px !important; }
+  .cloudnav-redesign-root .cloudnav-workbench-entry-list { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .cloudnav-redesign-root .cloudnav-inspiration-stream { border-right: 0 !important; }
+  .cloudnav-redesign-root .cloudnav-inspiration-detail { border-top: 1px solid var(--cn-line) !important; }
+  .cloudnav-redesign-root .cloudnav-reading-grid { grid-template-columns: 1fr !important; }
+  .cloudnav-redesign-root .cloudnav-reading-list { max-height: 360px !important; border-right: 0 !important; border-bottom: 1px solid var(--cn-line) !important; }
+  .cloudnav-redesign-root .cloudnav-rss-v5-toolbar { align-items: stretch !important; flex-direction: column !important; }
+  .cloudnav-redesign-root .cloudnav-rss-v5-toolbar-actions { flex-wrap: wrap !important; }
+  .cloudnav-redesign-root .cloudnav-rss-v5-toolbar-main { width: 100% !important; }
+  .cloudnav-redesign-root .cloudnav-rss-source-drawer-backdrop,
+  .cloudnav-redesign-root .cloudnav-rss-reader-sheet-backdrop { left: 0 !important; top: 0 !important; }
+}
+
+@media (max-width: 760px) {
+  .cloudnav-redesign-root .cloudnav-desktop-content { padding-right: 14px !important; padding-left: 14px !important; }
+  .cloudnav-redesign-root .cloudnav-page-header,
+  .cloudnav-redesign-root .cloudnav-reading-header,
+  .cloudnav-redesign-root .cloudnav-library-header,
+  .cloudnav-redesign-root .cloudnav-rss-v5-header,
+  .cloudnav-redesign-root .cloudnav-workbench-header { align-items: flex-start !important; flex-direction: column !important; }
+  .cloudnav-redesign-root .cloudnav-workbench-stats { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .cloudnav-redesign-root .cloudnav-workbench-stats > div:nth-child(2) { border-right: 0 !important; }
+  .cloudnav-redesign-root .cloudnav-workbench-main,
+  .cloudnav-redesign-root .cloudnav-workbench-side { display: block !important; }
+  .cloudnav-redesign-root .cloudnav-workbench-side > * { margin-top: 20px !important; }
+  .cloudnav-redesign-root .cloudnav-workbench-entry-list { grid-template-columns: 1fr !important; }
+  .cloudnav-redesign-root .cloudnav-library-row-head { display: none !important; }
+  .cloudnav-redesign-root .cloudnav-library-row { grid-template-columns: 34px minmax(0, 1fr) auto !important; gap: 10px !important; }
+  .cloudnav-redesign-root .cloudnav-library-source,
+  .cloudnav-redesign-root .cloudnav-library-visit { display: none !important; }
+  .cloudnav-redesign-root .cloudnav-library-actions { grid-column: 3; grid-row: 1; }
+  .cloudnav-redesign-root .cloudnav-github-add { width: 100% !important; min-width: 0 !important; flex-direction: column !important; }
+  .cloudnav-redesign-root .cloudnav-rss-v5-stats { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .cloudnav-redesign-root .cloudnav-rss-v5-stats > span { border-bottom: 1px solid var(--cn-line) !important; }
+  .cloudnav-redesign-root .cloudnav-rss-v5-stats-note { grid-column: 1 / -1 !important; text-align: left !important; }
+  .cloudnav-redesign-root .cloudnav-rss-v5-row { grid-template-columns: 16px minmax(0, 1fr) !important; }
+  .cloudnav-redesign-root .cloudnav-rss-v5-row-status { grid-column: 2; justify-content: flex-start !important; }
+  .cloudnav-redesign-root .cloudnav-floating-todo { right: 14px !important; bottom: 74px !important; }
+}
+
+.dark .cloudnav-redesign-root,
+.dark .cloudnav-redesign-root .cloudnav-desktop-main,
+.dark .cloudnav-redesign-root .cloudnav-desktop-content {
+  --cn-bg: #14211f;
+  --cn-surface: #1b2b29;
+  --cn-surface-soft: #203532;
+  --cn-ink: #eef7f3;
+  --cn-ink-strong: #ffffff;
+  --cn-muted: #c1d3cd;
+  --cn-faint: #92aaa2;
+  --cn-line: #304844;
+  --cn-line-strong: #46615a;
+  --cn-primary-soft: #214642;
+  --cn-accent-soft: #4b3324;
+  --cn-danger-soft: #42282a;
+  background: var(--cn-bg) !important;
+  color: var(--cn-ink) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cloudnav-redesign-root *,
+  .cloudnav-redesign-root *::before,
+  .cloudnav-redesign-root *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; }
+}

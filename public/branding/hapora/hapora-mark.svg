@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 320 320" role="img" aria-labelledby="title desc">
+  <title id="title">HAPORA mark</title>
+  <desc id="desc">Abstract flowing frame with a subtle smile.</desc>
+  <defs>
+    <linearGradient id="haporaPulse" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FF826F"/>
+      <stop offset="1" stop-color="#806BFF"/>
+    </linearGradient>
+  </defs>
+  <path d="M72 52v118c0 22 18 40 40 40h24c22 0 40-18 40-40v-62c0-22 18-40 40-40h24" fill="none" stroke="url(#haporaPulse)" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M240 52v118c0 22-18 40-40 40h-24c-22 0-40-18-40-40v-62c0-22-18-40-40-40H72" fill="none" stroke="#141722" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M106 152c18 26 58 26 76 0" fill="none" stroke="#141722" stroke-width="14" stroke-linecap="round"/>
+  <circle cx="106" cy="124" r="8" fill="#FF826F"/>
+  <circle cx="182" cy="124" r="8" fill="#806BFF"/>
+</svg>

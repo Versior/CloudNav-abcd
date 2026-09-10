@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="400" viewBox="0 0 1600 400" role="img" aria-labelledby="title desc">
+  <title id="title">HAPORA dark logo</title>
+  <desc id="desc">Abstract HAPORA mark with a flowing frame and a subtle smile, followed by the HAPORA wordmark.</desc>
+  <defs>
+    <linearGradient id="haporaPulse" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FF9988"/>
+      <stop offset="1" stop-color="#A69AFF"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(56 56)">
+    <path d="M48 26v118c0 22 18 40 40 40h24c22 0 40-18 40-40V82c0-22 18-40 40-40h24" fill="none" stroke="url(#haporaPulse)" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M216 26v118c0 22-18 40-40 40h-24c-22 0-40-18-40-40V82c0-22-18-40-40-40H48" fill="none" stroke="#F7F4EE" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M82 126c18 26 58 26 76 0" fill="none" stroke="#F7F4EE" stroke-width="14" stroke-linecap="round"/>
+    <circle cx="82" cy="98" r="8" fill="#FF9988"/>
+    <circle cx="158" cy="98" r="8" fill="#A69AFF"/>
+  </g>
+  <text x="380" y="252" fill="#F7F4EE" font-family="Inter, Avenir Next, Segoe UI, sans-serif" font-size="154" font-weight="700" letter-spacing="22">HAPORA</text>
+</svg>

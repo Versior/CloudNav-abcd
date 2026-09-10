@@ -1,26 +1,7 @@
 import { Category, LinkItem, WebDavConfig, SearchConfig, AIConfig } from "../types";
+import { createBackupEnvelope, sanitizeBackupData, BackupPayload } from './backupService';
 
-type BackupData = { links: LinkItem[], categories: Category[], searchConfig?: SearchConfig, aiConfig?: AIConfig };
-
-const sanitizeLinks = (links: LinkItem[]): LinkItem[] => links.map(link => ({
-    ...link,
-    credentials: link.credentials?.map(credential => ({
-        id: credential.id,
-        label: credential.label,
-        username: credential.username,
-        account: credential.account,
-        passwordCipher: credential.passwordCipher,
-        passwordHint: credential.passwordHint,
-        remark: credential.remark,
-        updatedAt: credential.updatedAt,
-    })),
-}));
-
-const sanitizeBackupData = (data: BackupData): BackupData => ({
-    ...data,
-    links: sanitizeLinks(data.links),
-    aiConfig: data.aiConfig ? { ...data.aiConfig, apiKey: '' } : undefined,
-});
+type BackupData = BackupPayload;
 
 const callWebDavProxy = async (
   operation: 'check' | 'upload' | 'download' | 'list',
@@ -56,7 +37,7 @@ export const checkWebDavConnection = async (_config: WebDavConfig): Promise<bool
 };
 
 export const uploadBackup = async (_config: WebDavConfig, data: BackupData): Promise<boolean> => {
-    const result = await callWebDavProxy('upload', data);
+    const result = await callWebDavProxy('upload', createBackupEnvelope(data));
     return result?.success === true;
 };
 
@@ -64,7 +45,7 @@ export const uploadBackupWithTimestamp = async (_config: WebDavConfig, data: Bac
     const now = new Date();
     const timestamp = now.toISOString().replace(/[:.]/g, '-').replace('T', '_').split('.')[0];
     const filename = `cloudnav_backup_${timestamp}.json`;
-    const result = await callWebDavProxy('upload', data, filename);
+    const result = await callWebDavProxy('upload', createBackupEnvelope(data), filename);
     return { success: result?.success === true, filename };
 };
 

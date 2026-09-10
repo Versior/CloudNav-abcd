@@ -1,11 +1,26 @@
 import React from 'react';
-import { pinyin } from 'pinyin-pro';
 import { LinkItem, Category } from '../types';
+
+type PinyinConverter = typeof import('pinyin-pro')['pinyin'];
+let pinyinConverter: PinyinConverter | null = null;
+let pinyinLoadPromise: Promise<void> | null = null;
+
+export const preloadPinyin = async (): Promise<void> => {
+  if (pinyinConverter) return;
+  if (!pinyinLoadPromise) {
+    pinyinLoadPromise = import('pinyin-pro').then(({ pinyin }) => {
+      pinyinConverter = pinyin;
+    });
+  }
+  await pinyinLoadPromise;
+};
 
 export interface ParsedQuery {
   tag?: string;
   cat?: string;
   visited?: number;
+  status?: string;
+  health?: 'ok' | 'broken' | 'redirected' | 'unknown';
   text: string;
 }
 
@@ -21,6 +36,7 @@ const getLinkSearchText = (link: LinkItem): string => {
     link.description,
     link.note,
     (link.tags || []).join(' '),
+    (link.aliases || []).join(' '),
     credentialText,
   ]
     .filter(Boolean)
@@ -33,6 +49,8 @@ export const parseSearchQuery = (query: string): ParsedQuery => {
   let tag: string | undefined;
   let cat: string | undefined;
   let visited: number | undefined;
+  let status: string | undefined;
+  let health: ParsedQuery['health'];
 
   const tagMatch = text.match(/\btag:(\S+)/);
   if (tagMatch) { tag = tagMatch[1]; text = text.replace(tagMatch[0], '').trim(); }
@@ -43,7 +61,13 @@ export const parseSearchQuery = (query: string): ParsedQuery => {
   const visitedMatch = text.match(/\bvisited:(\d+)/);
   if (visitedMatch) { visited = parseInt(visitedMatch[1]); text = text.replace(visitedMatch[0], '').trim(); }
 
-  return { tag, cat, visited, text };
+  const statusMatch = text.match(/\bstatus:(unread|read|favorite|archived)\b/);
+  if (statusMatch) { status = statusMatch[1]; text = text.replace(statusMatch[0], '').trim(); }
+
+  const healthMatch = text.match(/\bhealth:(ok|broken|redirected|unknown)\b/);
+  if (healthMatch) { health = healthMatch[1] as ParsedQuery['health']; text = text.replace(healthMatch[0], '').trim(); }
+
+  return { tag, cat, visited, status, health, text };
 };
 
 export const matchesFilters = (link: LinkItem, parsed: ParsedQuery, categories: Category[]): boolean => {
@@ -58,16 +82,19 @@ export const matchesFilters = (link: LinkItem, parsed: ParsedQuery, categories: 
     const cutoff = Date.now() - parsed.visited * 24 * 60 * 60 * 1000;
     if (link.lastVisitedAt < cutoff) return false;
   }
+  if (parsed.status && link.status !== parsed.status) return false;
+  if (parsed.health && link.health?.status !== parsed.health) return false;
   return true;
 };
 
-export const matchesQuery = (link: LinkItem, query: string): boolean => {
+export const matchesQuery = (link: LinkItem, query: string, indexedText?: string): boolean => {
   const q = query.trim().toLowerCase();
   if (!q) return true;
-  if (getLinkSearchText(link).includes(q)) return true;
+  if ((indexedText || getLinkSearchText(link)).includes(q)) return true;
   try {
-    const full = pinyin(link.title, { toneType: 'none', type: 'array' }).join('').toLowerCase();
-    const first = pinyin(link.title, { pattern: 'first', toneType: 'none', type: 'array' }).join('').toLowerCase();
+    if (!pinyinConverter) return false;
+    const full = pinyinConverter(link.title, { toneType: 'none', type: 'array' }).join('').toLowerCase();
+    const first = pinyinConverter(link.title, { pattern: 'first', toneType: 'none', type: 'array' }).join('').toLowerCase();
     return full.includes(q) || first.includes(q);
   } catch { return false; }
 };
@@ -82,6 +109,12 @@ export const sortByRelevance = (links: LinkItem[], query: string): LinkItem[] =>
     const aIncludesTitle = q && a.title.toLowerCase().includes(q) ? 1 : 0;
     const bIncludesTitle = q && b.title.toLowerCase().includes(q) ? 1 : 0;
     if (aIncludesTitle !== bIncludesTitle) return bIncludesTitle - aIncludesTitle;
+
+    const healthRank = (link: LinkItem) => link.health?.status === 'ok' ? 3 : link.health?.status === 'redirected' ? 2 : link.health?.status === 'unknown' ? 1 : 0;
+    const aHealth = healthRank(a);
+    const bHealth = healthRank(b);
+    if (aHealth !== bHealth) return bHealth - aHealth;
+    if (!!a.pinned !== !!b.pinned) return Number(!!b.pinned) - Number(!!a.pinned);
 
     const aVisits = a.visitCount || 0;
     const bVisits = b.visitCount || 0;

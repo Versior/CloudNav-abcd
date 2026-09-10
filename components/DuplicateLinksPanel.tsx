@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { CopyCheck, ExternalLink, Trash2, Star, RefreshCw, Check } from 'lucide-react';
 import { Category, LinkItem } from '../types';
-import { findDuplicateGroups, summarizeDuplicateScan, DuplicateGroup } from '../services/duplicateService';
+import { findDuplicateGroups, mergeDuplicateMetadata, summarizeDuplicateScan, DuplicateGroup } from '../services/duplicateService';
+import { softDeleteLinks } from '../services/recycleBin';
 
 interface DuplicateLinksPanelProps {
   links: LinkItem[];
@@ -92,7 +93,18 @@ const DuplicateLinksPanel: React.FC<DuplicateLinksPanelProps> = ({
     }
     if (!confirm(`确定删除 ${deleteIds.size} 个重复书签吗？保留项不会被删除。`)) return;
 
-    const nextLinks = links.filter(link => !deleteIds.has(link.id));
+    let mergedLinks = [...links];
+    groups?.forEach(group => {
+      const keepId = keepIds[group.key] || group.recommendedKeepId;
+      const keeper = mergedLinks.find(link => link.id === keepId);
+      if (!keeper) return;
+      group.members.filter(member => member.link.id !== keepId && deleteIds.has(member.link.id)).forEach(member => {
+        const currentKeeper = mergedLinks.find(link => link.id === keepId);
+        if (!currentKeeper) return;
+        mergedLinks = mergedLinks.map(link => link.id === keepId ? mergeDuplicateMetadata(currentKeeper, member.link) : link);
+      });
+    });
+    const nextLinks = softDeleteLinks(mergedLinks, [...deleteIds]);
     onUpdateLinks(nextLinks);
 
     // refresh scan against remaining data
@@ -108,7 +120,7 @@ const DuplicateLinksPanel: React.FC<DuplicateLinksPanelProps> = ({
     setGroups(refreshed);
     setKeepIds(nextKeep);
     setDeleteIds(nextDelete);
-    alert(`已删除 ${deleteIds.size} 个重复书签${refreshed.length ? `，仍剩 ${refreshed.length} 组重复` : ''}`);
+    alert(`已合并并移入回收站 ${deleteIds.size} 个重复书签${refreshed.length ? `，仍剩 ${refreshed.length} 组重复` : ''}`);
   };
 
   return (

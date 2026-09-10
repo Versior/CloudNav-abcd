@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 320" role="img" aria-labelledby="title desc">
+  <title id="title">KAI.CUE 开镜</title>
+  <desc id="desc">An open lens-frame mark with a cue dot and K monogram.</desc>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M112 64h86M256 122v86c0 27-21 48-48 48h-96c-27 0-48-21-48-48v-96c0-27 21-48 48-48" stroke="#101114" stroke-width="28"/>
+    <path d="M112 112v96M112 160l80-48M112 160l80 48" stroke="#6658D8" stroke-width="22"/>
+  </g>
+  <circle cx="232" cy="64" r="15" fill="#FF6B4A"/>
+  <text x="360" y="174" fill="#101114" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="92" font-weight="700" letter-spacing="6">KAI<tspan fill="#FF6B4A">.</tspan>CUE</text>
+  <text x="365" y="228" fill="#74747D" font-family="Microsoft YaHei, Segoe UI, Arial, sans-serif" font-size="30" font-weight="500" letter-spacing="12">开镜</text>
+</svg>

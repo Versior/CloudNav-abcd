@@ -1,4 +1,5 @@
 import { jsonResponse, optionsResponse, requireAuth } from '../_shared/auth';
+import { isPrivateHostname } from '../_shared/urlSafety';
 
 interface Env {
   CLOUDNAV_KV: KVNamespace;
@@ -14,30 +15,7 @@ interface WebDavConfig {
 }
 
 type Operation = 'check' | 'upload' | 'download';
-
-const isPrivateHostname = (hostname: string) => {
-  const normalized = hostname.toLowerCase();
-  if (normalized === 'localhost' || normalized.endsWith('.localhost')) return true;
-
-  const ipv4 = normalized.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (!ipv4) return false;
-
-  const parts = ipv4.slice(1).map(Number);
-  if (parts.some(part => part < 0 || part > 255)) return true;
-
-  const [a, b] = parts;
-  return (
-    a === 0 ||
-    a === 10 ||
-    a === 127 ||
-    (a === 100 && b >= 64 && b <= 127) ||
-    (a === 169 && b === 254) ||
-    (a === 172 && b >= 16 && b <= 31) ||
-    (a === 192 && b === 168) ||
-    (a === 198 && (b === 18 || b === 19)) ||
-    a >= 224
-  );
-};
+const REQUEST_TIMEOUT_MS = 20_000;
 
 const buildSafeBaseUrl = (url: string) => {
   const parsed = new URL(url.trim());
@@ -125,12 +103,20 @@ export const onRequestPost = async (context: { request: Request; env: Env }) => 
       method = 'GET';
     }
 
-    const response = await fetch(fetchUrl, {
-      method,
-      headers,
-      body: requestBody,
-      redirect: 'manual',
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    let response: Response;
+    try {
+      response = await fetch(fetchUrl, {
+        method,
+        headers,
+        body: requestBody,
+        redirect: 'manual',
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
 
     if (response.status >= 300 && response.status < 400) {
       return jsonResponse({ error: 'WebDAV redirects are not allowed' }, { status: 400 });

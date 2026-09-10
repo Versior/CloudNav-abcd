@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Search, Plus, Upload, Moon, Sun, Menu,
   Trash2, Edit2, Loader2, Cloud, CheckCircle2, AlertCircle,
-  Pin, Settings, Lock, CloudCog, Github, GitFork, GripVertical, Save, CheckSquare, LogOut, ExternalLink, X, Filter, CopyCheck
+  Pin, Settings, Lock, CloudCog, Github, GitFork, GripVertical, Save, CheckSquare, LogOut, ExternalLink, X, Filter, CopyCheck, FileText
 } from 'lucide-react';
 import {
   DndContext,
@@ -27,9 +27,8 @@ import { CSS } from '@dnd-kit/utilities';
 import { LinkItem, Category, DEFAULT_CATEGORIES, INITIAL_LINKS, WebDavConfig, AIConfig, SearchMode, ExternalSearchSource, SearchConfig, DashboardConfig, DEFAULT_DASHBOARD_CONFIG, INBOX_ID } from './types';
 import Icon from './components/Icon';
 import { useToast } from './components/Toast';
-import { AI_CONFIG_KEY, DASHBOARD_CONFIG_KEY, SEARCH_HISTORY_KEY, SITE_SETTINGS_KEY, WORKBENCH_TOOLS_KEY } from './constants/storageKeys';
+import { AI_CONFIG_KEY, DASHBOARD_CONFIG_KEY, SEARCH_HISTORY_KEY, SITE_SETTINGS_KEY, WORKBENCH_TOOLS_KEY, READ_LATER_KEY } from './constants/storageKeys';
 import AuthModal from './components/AuthModal';
-import WorkbenchPage from './components/WorkbenchPage';
 import ModalErrorBoundary from './components/ModalErrorBoundary';
 import { getDefaultSearchSources } from './services/defaultSearchSources';
 import { matchesFilters, matchesQuery, parseSearchQuery, preloadPinyin, sortByRelevance } from './services/searchService';
@@ -37,12 +36,13 @@ import { normalizeDashboardConfig } from './services/dashboardConfig';
 import { applyBulkAction } from './services/bulkActions';
 import { normalizeSearchHistory, recordSearch } from './services/searchHistory';
 import { buildSearchIndex } from './services/searchIndex';
+import { moveItem, type MoveDirection } from './services/linkOrdering';
 import MobileBottomNav from './components/MobileBottomNav';
 import InstallPrompt from './components/InstallPrompt';
 import { softDeleteLinks } from './services/recycleBin';
 import { mergeThreeWay } from './services/mergeService';
 import { enqueuePendingMutation, readPendingMutations, replacePendingMutations } from './services/offlineStore';
-import { takeNextMutation } from './services/offlineQueue';
+import { createPendingMutationId, takeNextMutation } from './services/offlineQueue';
 import { appendRecoverySnapshot, createRecoverySnapshot, normalizeRecoverySnapshots } from './services/recoverySnapshots';
 import { RECOVERY_SNAPSHOTS_KEY } from './constants/storageKeys';
 import { normalizeWorkbenchTools, type WorkbenchToolsState } from './services/workbenchTools';
@@ -52,6 +52,18 @@ import AppShell from './components/AppShell';
 import PinnedSiteCard from './components/PinnedSiteCard';
 import PinnedSitesPage from './components/PinnedSitesPage';
 import PinnedSitesEmptyState from './components/PinnedSitesEmptyState';
+import DesktopLibraryPage from './components/DesktopLibraryPage';
+import TopWeather from './components/TopWeather';
+import { readWorkspaceList, WORKSPACE_DATA_CHANGED_EVENT, writeWorkspaceList } from './services/workspaceStorage';
+import type { QuickCaptureInput } from './components/QuickCaptureModal';
+import { addReadLater, normalizeReadLater } from './services/readLaterService';
+import { searchWorkspace, type UnifiedSearchResult } from './services/unifiedSearch';
+import { normalizeInspirations } from './services/inspirationService';
+import { normalizeGithubWatch } from './services/githubService';
+import { readRssState } from './services/rssService';
+import { readReadingDocuments, writeReadingDocuments } from './services/readingStorage';
+import { readingDocumentFromRss, upsertReadingDocument } from './services/readingWorkspace';
+import { normalizeWorkspaceSnapshot, readWorkspaceSnapshot, writeWorkspaceSnapshot } from './services/workspaceSnapshot';
 
 // 非首屏模块按需加载，避免首页把所有弹窗、备份工具和二维码库一次性打进首包。
 const CommandPalette = React.lazy(() => import('./components/CommandPalette'));
@@ -70,6 +82,12 @@ const SyncConflictModal = React.lazy(() => import('./components/SyncConflictModa
 const OrganizeModeBar = React.lazy(() => import('./components/OrganizeModeBar'));
 const AdvancedSearchBar = React.lazy(() => import('./components/AdvancedSearchBar'));
 const RssPage = React.lazy(() => import('./components/RssPage'));
+const WorkbenchPage = React.lazy(() => import('./components/WorkbenchPage'));
+const InspirationPage = React.lazy(() => import('./components/InspirationPage'));
+const ReadLaterPage = React.lazy(() => import('./components/ReadLaterPage'));
+const GithubPage = React.lazy(() => import('./components/GithubPage'));
+const InboxPage = React.lazy(() => import('./components/InboxPage'));
+const ReadingWorkspacePage = React.lazy(() => import('./components/ReadingWorkspacePage'));
 
 const getSearchSourceIconUrl = (url: string) => {
   try {
@@ -100,9 +118,16 @@ const readLocalAIConfig = (): AIConfig => {
     const saved = localStorage.getItem(AI_CONFIG_KEY);
     if (saved) {
       const parsed = JSON.parse(saved) as Partial<AIConfig>;
+      const storedKey = parsed.apiKey || '';
+      const sessionKey = sessionStorage.getItem(`${AI_CONFIG_KEY}:session`) || storedKey;
+      if (storedKey && sessionKey) {
+        sessionStorage.setItem(`${AI_CONFIG_KEY}:session`, sessionKey);
+        localStorage.setItem(AI_CONFIG_KEY, JSON.stringify({ ...parsed, apiKey: '' }));
+      }
       return {
         ...DEFAULT_AI_CONFIG,
         ...parsed,
+        apiKey: sessionKey,
         hasApiKey: !!parsed.hasApiKey || !!parsed.apiKey,
       };
     }
@@ -124,8 +149,22 @@ const saveLocalAIConfig = (config: AIConfig): AIConfig => {
     ...config,
     hasApiKey: !!config.hasApiKey || !!config.apiKey,
   };
-  localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(next));
+  try {
+    if (next.apiKey) sessionStorage.setItem(`${AI_CONFIG_KEY}:session`, next.apiKey);
+    else sessionStorage.removeItem(`${AI_CONFIG_KEY}:session`);
+    localStorage.setItem(AI_CONFIG_KEY, JSON.stringify({ ...next, apiKey: '' }));
+  } catch {}
   return next;
+};
+
+const fetchWithTimeout = async (input: RequestInfo | URL, init: RequestInit = {}, timeoutMs = 12000) => {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    window.clearTimeout(timeout);
+  }
 };
 
 const mergeLocalVisitState = (incomingLinks: LinkItem[]): LinkItem[] => {
@@ -199,6 +238,7 @@ function App() {
   const { snapshot: bootstrapSnapshot, refresh: refreshBootstrap } = useAppBootstrap();
   const [isPaletteOpen, setIsPaletteOpen] = useState(false);
   const [selectedLinkId, setSelectedLinkId] = useState<string | null>(null);
+  const [unifiedSearchTarget, setUnifiedSearchTarget] = useState<UnifiedSearchResult | null>(null);
   const [detailsOrigin, setDetailsOrigin] = useState<'right' | 'bottom'>('right');
   const [isOrganizeMode, setIsOrganizeMode] = useState(false);
   const [isAiOrganizing, setIsAiOrganizing] = useState(false);
@@ -225,7 +265,9 @@ function App() {
   }));
   const [links, setLinks] = useState<LinkItem[]>(localInitialData.links);
   const [categories, setCategories] = useState<Category[]>(localInitialData.categories);
-  const [activeView, setActiveView] = useState<'links' | 'workbench' | 'rss'>('links');
+  const [activeView, setActiveView] = useState<'links' | 'workbench' | 'rss' | 'inspiration' | 'read-later' | 'github' | 'inbox' | 'reading'>('links');
+  const [quickCaptureSeed, setQuickCaptureSeed] = useState<Partial<QuickCaptureInput> | undefined>(undefined);
+  const [readingCaptureSeed, setReadingCaptureSeed] = useState<{ title?: string; url?: string } | undefined>(undefined);
   const [dashboardConfig, setDashboardConfig] = useState<DashboardConfig>(() => bootstrapSnapshot.dashboardConfig);
   const [workbenchTools, setWorkbenchTools] = useState<WorkbenchToolsState>(() => bootstrapSnapshot.workbenchTools);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -237,11 +279,26 @@ function App() {
   const [darkMode, setDarkMode] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
-  
+  const [workspaceRevision, setWorkspaceRevision] = useState(0);
+
   // Search Mode State
   const [searchMode, setSearchMode] = useState<SearchMode>('external');
   const [externalSearchSources, setExternalSearchSources] = useState<ExternalSearchSource[]>([]);
   const [isLoadingSearchConfig, setIsLoadingSearchConfig] = useState(true);
+
+  const unifiedSearchResults = useMemo(() => {
+    if (searchMode !== 'internal' || !searchQuery.trim()) return [];
+    try {
+      return searchWorkspace(searchQuery, {
+        links,
+        articles: readRssState().articles,
+        inspirations: normalizeInspirations(JSON.parse(localStorage.getItem('cloudnav_inspirations') || '[]')),
+        readLater: normalizeReadLater(JSON.parse(localStorage.getItem(READ_LATER_KEY) || '[]')),
+        githubWatch: normalizeGithubWatch(JSON.parse(localStorage.getItem('cloudnav_github_watch') || '[]')),
+        readingDocuments: readReadingDocuments(),
+      });
+    } catch { return []; }
+  }, [links, searchMode, searchQuery, workspaceRevision]);
   
   // Category Security State
   const [unlockedCategoryIds, setUnlockedCategoryIds] = useState<Set<string>>(new Set());
@@ -291,9 +348,11 @@ function App() {
   
   // Sync State
   const [syncStatus, setSyncStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [pendingSyncCount, setPendingSyncCount] = useState(0);
   const [authToken, setAuthToken] = useState<boolean>(false);
   const cloudVersionRef = useRef(0);
   const cloudBaseRef = useRef<{ links: LinkItem[]; categories: Category[] }>({ links: localInitialData.links, categories: localInitialData.categories });
+  const syncTimerRef = useRef<number | null>(null);
   const [extensionToken, setExtensionToken] = useState('');
   const [requiresAuth, setRequiresAuth] = useState<boolean | null>(null); // null表示未检查，true表示需要认证，false表示不需要
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
@@ -393,6 +452,49 @@ function App() {
     setIsModalOpen(true);
   };
 
+  const saveRssArticleToReadLater = (article: import('./types').RssArticle) => {
+    try {
+      const current = readWorkspaceList(READ_LATER_KEY, normalizeReadLater);
+      const next = addReadLater(current, { kind: 'rss', title: article.title, url: article.url, source: article.sourceTitle, summary: article.aiSummary || article.summary });
+      writeWorkspaceList(READ_LATER_KEY, next, normalizeReadLater);
+      showToast('已加入稍后阅读', { type: 'success' });
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '加入稍后阅读失败', { type: 'error' });
+    }
+  };
+
+  const saveRssArticleToReading = (article: import('./types').RssArticle) => {
+    try {
+      const next = upsertReadingDocument(readReadingDocuments(), readingDocumentFromRss(article));
+      writeReadingDocuments(next);
+      showToast('已保存到阅读 Inbox', { type: 'success' });
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '保存到阅读 Inbox 失败', { type: 'error' });
+    }
+  };
+
+  const saveLinkToReadLater = (link: LinkItem) => {
+    try {
+      const current = readWorkspaceList(READ_LATER_KEY, normalizeReadLater);
+      const next = addReadLater(current, { kind: 'website', title: link.title, url: link.url, source: '网站库', summary: link.description });
+      writeWorkspaceList(READ_LATER_KEY, next, normalizeReadLater);
+      showToast('网站已加入稍后阅读', { type: 'success' });
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '加入稍后阅读失败', { type: 'error' });
+    }
+  };
+
+  const captureRssArticle = (article: import('./types').RssArticle) => {
+    openInspiration({
+      title: article.title,
+      content: article.aiSummary || article.summary || '待补充：这篇文章值得记录什么？',
+      type: 'bookmark',
+      sourceUrl: article.url,
+      sourceTitle: article.sourceTitle || 'RSS 资讯',
+      tags: article.aiTags || ['RSS'],
+    });
+  };
+
   const updateDashboardConfig = (nextConfig: DashboardConfig) => {
     const normalized = normalizeDashboardConfig(nextConfig);
     setDashboardConfig(normalized);
@@ -410,6 +512,7 @@ function App() {
     const normalized = normalizeWorkbenchTools(next);
     setWorkbenchTools(normalized);
     localStorage.setItem(WORKBENCH_TOOLS_KEY, JSON.stringify(normalized));
+    if (authToken && navigator.onLine) scheduleCloudSync(links, categories);
   };
 
   const saveSearchQuery = (query: string) => {
@@ -426,39 +529,48 @@ function App() {
     setCategories(localData.categories);
   };
 
-  const applyCloudData = (remoteLinks: LinkItem[], remoteCategories: Category[], version?: number) => {
+  const applyCloudData = (remoteLinks: LinkItem[], remoteCategories: Category[], version?: number, remoteWorkspace?: unknown) => {
     setLinks(remoteLinks);
     setCategories(remoteCategories);
     cloudBaseRef.current = { links: remoteLinks, categories: remoteCategories };
     if (typeof version === 'number') cloudVersionRef.current = version;
+    if (remoteWorkspace) writeWorkspaceSnapshot(normalizeWorkspaceSnapshot(remoteWorkspace), false);
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ links: remoteLinks, categories: remoteCategories, version: cloudVersionRef.current }));
   };
 
   const queueOfflineMutation = async (newLinks: LinkItem[], newCategories: Category[]) => {
     await enqueuePendingMutation({
-      id: 'latest',
+      id: createPendingMutationId(),
       createdAt: Date.now(),
       links: newLinks,
       categories: newCategories,
       baseVersion: cloudVersionRef.current,
+      workspace: readWorkspaceSnapshot(),
     });
+    setPendingSyncCount(1);
     setSyncStatus('error');
   };
 
-  const syncToCloud = async (newLinks: LinkItem[], newCategories: Category[]) => {
+  const syncToCloud = async (newLinks: LinkItem[], newCategories: Category[], baseVersion = cloudVersionRef.current, workspace = readWorkspaceSnapshot()) => {
     if (!navigator.onLine) {
       await queueOfflineMutation(newLinks, newCategories);
       return false;
     }
     setSyncStatus('saving');
     try {
-        const response = await fetch('/api/storage', {
+        const controller = new AbortController();
+        const timeout = window.setTimeout(() => controller.abort(), 12000);
+        let response: Response;
+        try {
+          response = await fetch('/api/storage', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ links: newLinks, categories: newCategories, baseVersion: cloudVersionRef.current })
-        });
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ links: newLinks, categories: newCategories, workspace, baseVersion }),
+            signal: controller.signal,
+          });
+        } finally {
+          window.clearTimeout(timeout);
+        }
 
         if (response.status === 409) {
             try {
@@ -475,8 +587,8 @@ function App() {
                     setSyncConflictResolve({
                         useLocal: () => syncToCloud(localSnapshot.links, localSnapshot.categories),
                         useCloud: () => {
-                            void replacePendingMutations([]);
-                            applyCloudData(cloudData.links, cloudData.categories || [], cloudData.version);
+                             void replacePendingMutations([]);
+                             applyCloudData(cloudData.links, cloudData.categories || [], cloudData.version, cloudData.workspace);
                         },
                         merge: () => {
                             updateData(mergeResult.data.links, mergeResult.data.categories);
@@ -502,7 +614,9 @@ function App() {
         if (typeof result.version === 'number') cloudVersionRef.current = result.version;
 
         cloudBaseRef.current = { links: newLinks, categories: newCategories };
+        if (result.workspace) writeWorkspaceSnapshot(normalizeWorkspaceSnapshot(result.workspace), false);
         await replacePendingMutations([]);
+        setPendingSyncCount(0);
 
         setSyncStatus('saved');
         setTimeout(() => setSyncStatus('idle'), 2000);
@@ -519,10 +633,27 @@ function App() {
     if (!authToken || !navigator.onLine) return;
     const pending = await readPendingMutations();
     const [next] = takeNextMutation(pending);
-    if (!next) return;
-    const ok = await syncToCloud(next.links as LinkItem[], next.categories as Category[]);
+    if (!next) { setPendingSyncCount(0); return; }
+    const ok = await syncToCloud(next.links as LinkItem[], next.categories as Category[], next.baseVersion, next.workspace ? normalizeWorkspaceSnapshot(next.workspace) : readWorkspaceSnapshot());
     if (ok) await replacePendingMutations([]);
   };
+
+  const scheduleCloudSync = (newLinks: LinkItem[], newCategories: Category[]) => {
+    if (syncTimerRef.current !== null) window.clearTimeout(syncTimerRef.current);
+    syncTimerRef.current = window.setTimeout(() => {
+      syncTimerRef.current = null;
+      void syncToCloud(newLinks, newCategories);
+    }, 220);
+  };
+
+  useEffect(() => {
+    const handleWorkspaceChange = () => {
+      setWorkspaceRevision(value => value + 1);
+      if (authToken && navigator.onLine) scheduleCloudSync(links, categories);
+    };
+    window.addEventListener(WORKSPACE_DATA_CHANGED_EVENT, handleWorkspaceChange);
+    return () => window.removeEventListener(WORKSPACE_DATA_CHANGED_EVENT, handleWorkspaceChange);
+  }, [authToken, links, categories]);
 
   const updateData = (newLinks: LinkItem[], newCategories: Category[]) => {
       try {
@@ -535,11 +666,15 @@ function App() {
       setCategories(newCategories);
       
       // 2. Save to Local Cache
-      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ links: newLinks, categories: newCategories }));
+       try {
+         localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ links: newLinks, categories: newCategories }));
+       } catch {
+         showToast('本地空间写入失败，当前修改尚未可靠保存', { type: 'error' });
+       }
 
       // 3. Sync to Cloud (if authenticated)
        if (authToken && navigator.onLine) {
-           syncToCloud(newLinks, newCategories);
+           scheduleCloudSync(newLinks, newCategories);
        } else if (authToken) {
            void queueOfflineMutation(newLinks, newCategories);
        }
@@ -808,13 +943,21 @@ function App() {
         });
         setEditingLink(undefined);
         setIsModalOpen(true);
+    } else {
+        const sharedText = urlParams.get('text') || '';
+        const sharedUrl = urlParams.get('url') || sharedText.match(/https?:\/\/[^\s]+/i)?.[0] || '';
+        if (sharedUrl) {
+          setReadingCaptureSeed({ title: urlParams.get('title') || '', url: sharedUrl });
+          setActiveView('reading');
+          window.history.replaceState({}, '', window.location.pathname);
+        }
     }
 
     // Initial Data Fetch
     const initData = async () => {
         let authenticated = false;
         try {
-            const authRes = await fetch('/api/storage?checkAuth=true');
+            const authRes = await fetchWithTimeout('/api/storage?checkAuth=true');
             if (authRes.ok) {
                 const authData = await authRes.json();
                 authenticated = !!authData.authenticated;
@@ -834,11 +977,11 @@ function App() {
 
         // 认证通过后，配置和内容请求互不依赖；本地快照已经先行渲染。
         const [webDavConfigRes, aiConfigRes] = await Promise.all([
-          fetch('/api/storage?getConfig=webdav').catch((error) => {
+          fetchWithTimeout('/api/storage?getConfig=webdav').catch((error) => {
             console.warn("Failed to fetch WebDAV config.", error);
             return null;
             }),
-            fetch('/api/storage?getConfig=ai').catch((error) => {
+            fetchWithTimeout('/api/storage?getConfig=ai').catch((error) => {
                 console.warn("Failed to fetch AI config.", error);
                 return null;
             }),
@@ -852,7 +995,7 @@ function App() {
             const remoteConfig = await aiConfigRes.json();
             const mergedConfig = mergeClientAIConfig(remoteConfig);
             setAiConfig(mergedConfig);
-            localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(mergedConfig));
+            saveLocalAIConfig(mergedConfig);
         }
 
         let hasCloudData = false;
@@ -882,11 +1025,11 @@ function App() {
         // 无论是否有云端数据，都尝试从KV空间加载搜索配置和网站配置
         let hasLoadedSearchConfig = false;
         const [searchConfigRes, websiteConfigRes] = await Promise.all([
-            fetch('/api/storage?getConfig=search').catch((error) => {
+            fetchWithTimeout('/api/storage?getConfig=search').catch((error) => {
                 console.warn("Failed to fetch search config from KV.", error);
                 return null;
             }),
-            fetch('/api/storage?getConfig=website').catch((error) => {
+            fetchWithTimeout('/api/storage?getConfig=website').catch((error) => {
                 console.warn("Failed to fetch website config from KV.", error);
                 return null;
             }),
@@ -1011,6 +1154,10 @@ function App() {
   useEffect(() => {
     if (authToken && isOnline) void flushPendingSync();
   }, [authToken, isOnline]);
+
+  useEffect(() => {
+    void readPendingMutations().then(items => setPendingSyncCount(items.length)).catch(() => setPendingSyncCount(0));
+  }, [authToken]);
 
   // 仅在用户开始搜索时加载拼音库，避免首屏为中文搜索能力支付额外体积。
   useEffect(() => {
@@ -1170,7 +1317,7 @@ function App() {
             }
 
             try {
-                const res = await fetch('/api/storage');
+                const res = await fetchWithTimeout('/api/storage');
                 if (res.ok) {
                     const data = await res.json();
                     cloudVersionRef.current = typeof data.version === 'number' ? data.version : 0;
@@ -1179,6 +1326,8 @@ function App() {
                         const nextCategories = normalizeCategories(data.categories);
                         setLinks(mergedLinks);
                         setCategories(nextCategories);
+                        cloudBaseRef.current = { links: mergedLinks, categories: nextCategories };
+                        if (data.workspace) writeWorkspaceSnapshot(normalizeWorkspaceSnapshot(data.workspace), false);
                         localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ ...data, links: mergedLinks, categories: nextCategories }));
                         loadLinkIcons(mergedLinks);
                     } else {
@@ -1190,17 +1339,17 @@ function App() {
             } catch (e) {
                 console.warn("Failed to fetch data after login.", e);
                 loadFromLocal();
-                syncToCloud(links, categories);
+                showToast('云端数据加载失败，已保留本地数据，未自动覆盖云端', { type: 'error' });
             }
 
             try {
-                const aiConfigRes = await fetch('/api/storage?getConfig=ai');
+                const aiConfigRes = await fetchWithTimeout('/api/storage?getConfig=ai');
                 if (aiConfigRes.ok) {
                     const aiConfigData = await aiConfigRes.json();
                     if (aiConfigData && Object.keys(aiConfigData).length > 0) {
                         const mergedConfig = mergeClientAIConfig(aiConfigData);
                         setAiConfig(mergedConfig);
-                        localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(mergedConfig));
+                        saveLocalAIConfig(mergedConfig);
                     }
                 }
             } catch (e) {
@@ -1239,6 +1388,12 @@ function App() {
       setAuthToken(false);
       setExtensionToken('');
       setSyncStatus('idle');
+      if (syncTimerRef.current !== null) {
+        window.clearTimeout(syncTimerRef.current);
+        syncTimerRef.current = null;
+      }
+      void replacePendingMutations([]);
+      setPendingSyncCount(0);
       loadFromLocal();
   };
 
@@ -1435,6 +1590,94 @@ function App() {
     }
   };
 
+  const openInspirationView = () => {
+    setActiveView('inspiration');
+    setSelectedCategory('all');
+    setSearchQuery('');
+    setQuickCaptureSeed(undefined);
+    setSidebarOpen(false);
+  };
+
+  const openInspiration = (seed?: Partial<QuickCaptureInput>) => {
+    openInspirationView();
+    setQuickCaptureSeed(seed || { title: '', content: '', type: 'idea', tags: [] });
+  };
+
+  const openReadLater = () => {
+    setActiveView('read-later');
+    setSelectedCategory('all');
+    setSearchQuery('');
+    setSidebarOpen(false);
+  };
+
+  const openGithub = () => {
+    setActiveView('github');
+    setSelectedCategory('all');
+    setSearchQuery('');
+    setSidebarOpen(false);
+  };
+
+  const openInbox = () => {
+    setActiveView('inbox');
+    setSelectedCategory('all');
+    setSearchQuery('');
+    setSidebarOpen(false);
+  };
+
+  const openReadingWorkspace = () => {
+    setActiveView('reading');
+    setSelectedCategory('all');
+    setSearchQuery('');
+    setSidebarOpen(false);
+  };
+
+  const openUnifiedResult = (result: UnifiedSearchResult) => {
+    setSearchQuery('');
+    setUnifiedSearchTarget(result);
+    if (result.kind === 'link') {
+      openLinksView('all');
+      setDetailsOrigin('right');
+      setSelectedLinkId(result.id);
+    } else if (result.kind === 'rss') openRssReader();
+    else if (result.kind === 'inspiration') openInspirationView();
+    else if (result.kind === 'read-later') openReadLater();
+    else if (result.kind === 'github') openGithub();
+    else if (result.kind === 'reading') openReadingWorkspace();
+    else openInbox();
+  };
+
+  const handleQuickMoveLink = (linkId: string, direction: MoveDirection) => {
+    if (!authToken) { setIsAuthOpen(true); return; }
+    const target = links.find(link => link.id === linkId);
+    if (!target || target.deletedAt) return;
+
+    const isPinnedView = selectedCategory === 'all' && !searchQuery.trim();
+    const categoryIds = selectedCategory === 'all'
+      ? new Set<string>()
+      : new Set([selectedCategory, ...categories.filter(category => category.parentId === selectedCategory).map(category => category.id)]);
+    const scopedLinks = links
+      .filter(link => !link.deletedAt && !isCategoryLocked(link.categoryId) && (isPinnedView ? link.pinned : categoryIds.has(link.categoryId)))
+      .sort((a, b) => {
+        if (isPinnedView) {
+          const aOrder = a.pinnedOrder ?? a.createdAt;
+          const bOrder = b.pinnedOrder ?? b.createdAt;
+          return aOrder - bOrder;
+        }
+        const aOrder = a.order ?? a.createdAt;
+        const bOrder = b.order ?? b.createdAt;
+        return aOrder - bOrder;
+      });
+    const reordered = moveItem(scopedLinks, linkId, direction);
+    if (reordered.every((link, index) => link.id === scopedLinks[index]?.id)) return;
+    const orderMap = new Map(reordered.map((link, index) => [link.id, index]));
+    const updated = links.map(link => {
+      const nextOrder = orderMap.get(link.id);
+      if (nextOrder === undefined) return link;
+      return isPinnedView ? { ...link, pinnedOrder: nextOrder } : { ...link, order: nextOrder };
+    });
+    updateData(updated, categories);
+  };
+
   // 置顶链接拖拽结束事件处理函数
   const handlePinnedDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
@@ -1589,7 +1832,7 @@ function App() {
                   if (data.config) {
                       const mergedConfig = mergeClientAIConfig(data.config, localConfig);
                       setAiConfig(mergedConfig);
-                      localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(mergedConfig));
+                       saveLocalAIConfig(mergedConfig);
                   }
               } else {
                   console.error('Failed to save AI config to KV:', response.statusText);
@@ -1643,7 +1886,7 @@ function App() {
                   if (data.config) {
                       const mergedConfig = mergeClientAIConfig(data.config, localConfig);
                       setAiConfig(mergedConfig);
-                      localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(mergedConfig));
+                       saveLocalAIConfig(mergedConfig);
                   }
               } else {
                   console.error('Failed to restore AI config to KV:', response.statusText);
@@ -2307,7 +2550,7 @@ function App() {
   return (
     <React.Suspense fallback={null}>
       <AppShell>
-      <div data-ui-skin="command-desk" className="cloudnav-desktop-frame cloudnav-command-desk flex h-screen overflow-hidden text-slate-900 dark:text-slate-50">
+        <div data-ui-skin="command-desk" data-redesign-skin="cloudnav-redesign" data-command-v2="true" className="cloudnav-desktop-frame cloudnav-command-desk cloudnav-command-v2 cloudnav-redesign-root flex h-screen overflow-hidden text-slate-900 dark:text-slate-50">
       {/* 认证遮罩层 - 当需要认证时显示 */}
       {requiresAuth && !authToken && (
         <div className="fixed inset-0 z-50 bg-white dark:bg-slate-900 flex items-center justify-center">
@@ -2437,7 +2680,12 @@ function App() {
           { id: 'backup', title: '备份与恢复', description: 'WebDAV 与本地导出', keywords: ['backup', '备份', '恢复'], icon: <Cloud size={14} />, group: 'action', run: () => setIsBackupModalOpen(true) },
           { id: 'import', title: '导入书签', description: '导入 HTML 或 JSON 备份', keywords: ['import', '导入', '书签'], icon: <Upload size={14} />, group: 'action', run: () => setIsImportModalOpen(true) },
            { id: 'organize', title: '整理待处理链接', description: `${inboxLinks.length} 个待整理`, keywords: ['organize', 'inbox', '整理', '待整理'], icon: <CheckSquare size={14} />, group: 'action', run: () => { if (inboxLinks.length > 0) { openLinksView(INBOX_ID); setOrganizeIndex(0); setIsOrganizeMode(true); } } },
-           { id: 'rss', title: '打开 RSS 资讯', description: '阅读每日热点与订阅源', keywords: ['rss', 'news', '资讯', '订阅', '热点'], icon: <ExternalLink size={14} />, group: 'action', run: openRssReader },
+            { id: 'rss', title: '打开 RSS 资讯', description: '阅读每日热点与订阅源', keywords: ['rss', 'news', '资讯', '订阅', '热点'], icon: <ExternalLink size={14} />, group: 'action', run: openRssReader },
+            { id: 'unified-inbox', title: '打开统一收件箱', description: '集中处理资讯、灵感和稍后阅读', keywords: ['inbox', '收件箱', '待处理', '信息流'], icon: <CheckSquare size={14} />, group: 'action', run: openInbox },
+            { id: 'capture', title: '快速记录灵感', description: '把想法、摘录或网页保存到灵感库', keywords: ['capture', 'idea', '灵感', '记录', '笔记'], icon: <Plus size={14} />, group: 'action', run: () => openInspiration() },
+           { id: 'read-later', title: '打开稍后阅读', description: '查看待阅读和已归档内容', keywords: ['later', '稍后', '阅读', '未读'], icon: <CheckSquare size={14} />, group: 'action', run: openReadLater },
+           { id: 'reading-workspace', title: '打开阅读台', description: '统一阅读、批注、高亮和离线内容', keywords: ['reading', 'reader', '阅读台', '高亮', '批注', '离线'], icon: <FileText size={14} />, group: 'action', run: openReadingWorkspace },
+           { id: 'github', title: '打开 GitHub 追踪', description: '查看正在关注的仓库', keywords: ['github', '仓库', '项目', '追踪'], icon: <Github size={14} />, group: 'action', run: openGithub },
           { id: 'theme', title: darkMode ? '切换到浅色模式' : '切换到深色模式', keywords: ['theme', 'dark', 'light', '主题'], icon: darkMode ? <Sun size={14} /> : <Moon size={14} />, group: 'action', run: toggleTheme },
         ]}
         onOpenLink={(link) => { recordVisit(link.id); window.open(link.url, '_blank'); }}
@@ -2508,6 +2756,26 @@ function App() {
                 <div className="p-1"><Icon name="Rss" size={18} /></div>
                 <span>RSS资讯</span>
               </button>
+              <button
+                onClick={openInbox}
+                className={`command-desk-nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeView === 'inbox' ? 'cloudnav-desktop-active bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'}`}
+              ><div className="p-1"><Icon name="Inbox" size={18} /></div><span>统一收件箱</span></button>
+              <button
+                onClick={openReadingWorkspace}
+                className={`command-desk-nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeView === 'reading' ? 'cloudnav-desktop-active bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'}`}
+              ><div className="p-1"><Icon name="BookOpen" size={18} /></div><span>阅读台</span></button>
+              <button
+                onClick={openInspirationView}
+                className={`command-desk-nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeView === 'inspiration' ? 'cloudnav-desktop-active bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'}`}
+              ><div className="p-1"><Icon name="Lightbulb" size={18} /></div><span>灵感库</span></button>
+              <button
+                onClick={openReadLater}
+                className={`command-desk-nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeView === 'read-later' ? 'cloudnav-desktop-active bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'}`}
+              ><div className="p-1"><Icon name="Bookmark" size={18} /></div><span>稍后阅读</span></button>
+              <button
+                onClick={openGithub}
+                className={`command-desk-nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeView === 'github' ? 'cloudnav-desktop-active bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'}`}
+              ><div className="p-1"><Icon name="Github" size={18} /></div><span>GitHub追踪</span></button>
             </div>
             
             <div className="flex items-center justify-between pt-4 pb-2 px-8">
@@ -2627,7 +2895,7 @@ function App() {
                  {syncStatus === 'saving' && <Loader2 className="animate-spin w-3 h-3 text-blue-500" />}
                  {syncStatus === 'saved' && <CheckCircle2 className="w-3 h-3 text-green-500" />}
                  {syncStatus === 'error' && <AlertCircle className="w-3 h-3 text-red-500" />}
-                 {!isOnline ? <span className="text-amber-500">离线</span> : authToken ? <span className="text-green-600">已同步</span> : <span className="text-slate-400">本地模式</span>}
+                 {!isOnline ? <span className="text-amber-500">离线{pendingSyncCount ? ` · 待同步 ${pendingSyncCount}` : ''}</span> : syncStatus === 'saving' ? <span className="text-blue-600">同步中…</span> : syncStatus === 'error' ? <span className="text-red-600">待同步{pendingSyncCount ? ` ${pendingSyncCount}` : ''}</span> : syncStatus === 'saved' ? <span className="text-green-600">刚刚已保存</span> : authToken ? <span className="text-slate-500">云端就绪</span> : <span className="text-slate-400">本地模式</span>}
                </div>
 
                <a 
@@ -2752,6 +3020,13 @@ function App() {
                     <div className="flex flex-wrap gap-2">{searchHistory.map(query => <button key={query} onClick={() => { setSearchQuery(query); setActiveView('links'); }} className="max-w-full truncate rounded-full bg-slate-100 dark:bg-slate-700 px-3 py-1.5 text-xs text-slate-600 dark:text-slate-200 hover:bg-blue-100 hover:text-blue-600">{query}</button>)}</div>
                   </div>
                 )}
+
+                {searchMode === 'internal' && searchQuery.trim() && unifiedSearchResults.length > 0 && (
+                  <div className="absolute left-0 top-full mt-2 w-full rounded-xl border border-slate-200 bg-white p-2 shadow-xl dark:border-slate-700 dark:bg-slate-800 z-40" data-unified-search-results>
+                    <div className="px-2 py-1 text-[11px] font-semibold tracking-wider text-slate-400">统一搜索 · {unifiedSearchResults.length} 条</div>
+                    {unifiedSearchResults.map(result => <button key={`${result.kind}-${result.id}`} type="button" onClick={() => openUnifiedResult(result)} className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left hover:bg-slate-50 dark:hover:bg-slate-700"><span className="w-16 shrink-0 text-[10px] font-bold tracking-wider text-teal-600">{result.kind === 'rss' ? 'RSS' : result.kind === 'read-later' ? '稍后阅读' : result.kind === 'github' ? 'GITHUB' : result.kind === 'inspiration' ? '灵感' : result.kind === 'reading' ? '阅读库' : '网站'}</span><span className="min-w-0 flex-1"><strong className="block truncate text-sm text-slate-700 dark:text-slate-200">{result.title}</strong><small className="block truncate text-xs text-slate-400">{result.subtitle}</small></span></button>)}
+                  </div>
+                )}
                 
                 {/* 搜索图标 */}
                 <div 
@@ -2798,7 +3073,6 @@ function App() {
                   onChange={(e) => {
                     const value = e.target.value;
                     setSearchQuery(value);
-                    if (value.trim()) setActiveView('links');
                   }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && e.currentTarget.value.trim()) saveSearchQuery(e.currentTarget.value);
@@ -2856,6 +3130,8 @@ function App() {
           </div>
 
           <div className="flex items-center gap-2">
+            <TopWeather value={workbenchTools} onChange={updateWorkbenchTools} />
+
             {/* 视图切换控制器 - 移动端：搜索框展开时隐藏，桌面端始终显示 */}
             <div className={`${isMobileSearchOpen ? 'hidden' : 'flex'} lg:flex items-center bg-slate-100 dark:bg-slate-700 rounded-full p-1`}>
               <button
@@ -2911,6 +3187,14 @@ function App() {
             {/* 添加按钮 - 移动端：搜索框展开时隐藏，桌面端始终显示 */}
             <div className={`${isMobileSearchOpen ? 'hidden' : 'flex'}`}>
               <button
+                onClick={() => openInspiration()}
+                className="mr-1 hidden items-center gap-2 rounded-full border border-teal-200 bg-teal-50 px-3 py-2 text-sm font-medium text-teal-700 hover:bg-teal-100 lg:flex"
+                title="快速记录灵感"
+                data-quick-capture-trigger
+              >
+                <FileText size={15} /> <span>记录</span>
+              </button>
+              <button
                 onClick={() => { if(!authToken) setIsAuthOpen(true); else { setEditingLink(undefined); setIsModalOpen(true); }}}
                 className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-full text-sm font-medium shadow-lg shadow-blue-500/30"
               >
@@ -2920,23 +3204,8 @@ function App() {
           </div>
         </header>
 
-        <div className="cloudnav-desktop-context hidden lg:flex items-center justify-between gap-6 px-10 py-3 xl:px-12">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.18em] text-blue-500 dark:text-blue-300">
-              <span>{siteSettings.navTitle || 'CloudNav'}</span>
-              <span className="text-slate-300 dark:text-slate-600">/</span>
-              <span>{activeView === 'links' ? '置顶网站' : activeView === 'workbench' ? '工作台' : 'RSS资讯'}</span>
-            </div>
-            <p className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">连续空间已就绪，常用入口和工作内容保持在同一条路径上。</p>
-          </div>
-          <div className="flex shrink-0 items-center gap-2 text-[11px]">
-            <span className="cloudnav-desktop-context-chip"><span className="cloudnav-desktop-status-dot" />{isOnline ? '在线同步' : '离线模式'}</span>
-            <span className="cloudnav-desktop-context-chip">{links.length} 个链接</span>
-          </div>
-        </div>
-
         {/* Content Scroll Area */}
-        <div className="cloudnav-desktop-content flex-1 overflow-y-auto p-4 lg:px-10 lg:pb-12 lg:pt-3 xl:px-12 space-y-8">
+        <div className="cloudnav-desktop-content flex-1 overflow-y-auto p-4 lg:px-10 lg:pb-12 lg:pt-6 xl:px-12 space-y-8">
 
             {isOrganizeMode && (
               <OrganizeModeBar
@@ -2968,6 +3237,7 @@ function App() {
               />
             )}
 
+            <React.Suspense fallback={<div className="flex min-h-[420px] items-center justify-center text-slate-400"><Loader2 className="mr-2 animate-spin" size={18} />正在打开工作区…</div>}>
             <SpatialViewTransition viewKey={activeView}>
               {activeView === 'workbench' && (
                 <WorkbenchPage
@@ -2977,6 +3247,7 @@ function App() {
                  onConfigChange={updateDashboardConfig}
                  workbenchTools={workbenchTools}
                  onWorkbenchToolsChange={updateWorkbenchTools}
+                 aiConfig={aiConfig}
                 onOpenInbox={() => { openLinksView(INBOX_ID); setOrganizeIndex(0); setIsOrganizeMode(true); }}
                 onClickLink={(link) => { recordVisit(link.id); window.open(link.url, '_blank'); }}
                 onSelectCategory={(categoryId) => {
@@ -2988,394 +3259,90 @@ function App() {
 
             {activeView === 'rss' && (
                 <React.Suspense fallback={<div className="flex min-h-[420px] items-center justify-center text-slate-400"><Loader2 className="mr-2 animate-spin" size={18} />正在加载资讯中心…</div>}>
-                  <RssPage onSaveArticle={saveRssArticleToLinks} />
+                  <RssPage onSaveArticle={saveRssArticleToLinks} onSaveToReadLater={saveRssArticleToReadLater} onSaveToReading={saveRssArticleToReading} onCaptureInspiration={captureRssArticle} initialArticleId={unifiedSearchTarget?.kind === 'rss' ? unifiedSearchTarget.id : undefined} onInitialArticleConsumed={() => setUnifiedSearchTarget(null)} aiConfig={aiConfig} />
                 </React.Suspense>
               )}
 
+              {activeView === 'inspiration' && (
+                <InspirationPage
+                  aiConfig={aiConfig}
+                  initialCapture={quickCaptureSeed}
+                  initialId={unifiedSearchTarget?.kind === 'inspiration' ? unifiedSearchTarget.id : undefined}
+                  onInitialIdConsumed={() => setUnifiedSearchTarget(null)}
+                  onNotice={(message) => showToast(message, { type: message.includes('失败') ? 'error' : 'success' })}
+                  onOpenUrl={(url) => window.open(url, '_blank', 'noopener,noreferrer')}
+                />
+              )}
+
+              {activeView === 'read-later' && (
+                <ReadLaterPage
+                  initialId={unifiedSearchTarget?.kind === 'read-later' ? unifiedSearchTarget.id : undefined}
+                  onInitialIdConsumed={() => setUnifiedSearchTarget(null)}
+                  onNotice={(message) => showToast(message, { type: 'info' })}
+                  onOpenUrl={(url) => window.open(url, '_blank', 'noopener,noreferrer')}
+                />
+              )}
+
+              {activeView === 'github' && (
+                <GithubPage
+                  initialId={unifiedSearchTarget?.kind === 'github' ? unifiedSearchTarget.id : undefined}
+                  onInitialIdConsumed={() => setUnifiedSearchTarget(null)}
+                  onNotice={(message) => showToast(message, { type: message.includes('失败') || message.includes('限流') ? 'error' : 'success' })}
+                  onOpenUrl={(url) => window.open(url, '_blank', 'noopener,noreferrer')}
+                />
+              )}
+
+              {activeView === 'inbox' && (
+                <InboxPage
+                  links={links}
+                  onOpenUrl={(url) => window.open(url, '_blank', 'noopener,noreferrer')}
+                  onCaptureRss={captureRssArticle}
+                  onMarkLinkDone={(linkId) => updateData(links.map(link => link.id === linkId ? { ...link, status: 'read' as const, updatedAt: Date.now() } : link), categories)}
+                />
+              )}
+
+              {activeView === 'reading' && (
+                <ReadingWorkspacePage
+                  initialId={unifiedSearchTarget?.kind === 'reading' ? unifiedSearchTarget.id : undefined}
+                  onInitialIdConsumed={() => setUnifiedSearchTarget(null)}
+                  initialCapture={readingCaptureSeed}
+                  aiConfig={aiConfig}
+                  onOpenUrl={(url) => window.open(url, '_blank', 'noopener,noreferrer')}
+                  onNotice={(message) => showToast(message, { type: message.includes('失败') ? 'error' : 'success' })}
+                />
+              )}
+
             {activeView === 'links' && (
-              <PinnedSitesPage
-                isDefaultView={!searchQuery.trim() && selectedCategory === 'all'}
-                pinnedCount={pinnedLinks.length}
-              >
-            {!searchQuery.trim() && selectedCategory === 'all' && pinnedLinks.length === 0 && (
-              <PinnedSitesEmptyState
+              <DesktopLibraryPage
+                links={links.filter(link => !link.deletedAt)}
+                pinnedLinks={pinnedLinks}
+                displayedLinks={displayedLinks}
+                otherCategoryResults={otherCategoryResults}
+                categories={categories}
+                selectedCategory={selectedCategory}
+                searchQuery={searchQuery}
+                isBatchEditMode={isBatchEditMode}
+                selectedLinks={selectedLinks}
+                aiConfig={aiConfig}
+                onSearch={setSearchQuery}
                 onAdd={() => { if (!authToken) setIsAuthOpen(true); else { setEditingLink(undefined); setIsModalOpen(true); } }}
-                onBrowse={() => openLinksView(categories[0]?.id || 'all')}
+                onOpen={(link) => { recordVisit(link.id); window.open(link.url, '_blank', 'noopener,noreferrer'); }}
+                 onDetails={(link) => { setDetailsOrigin('right'); setSelectedLinkId(link.id); }}
+                 onEdit={(link) => { setEditingLink(link); setIsModalOpen(true); }}
+                 onDelete={(link) => handleDeleteLink(link.id)}
+                 onMoveLink={(link, direction) => handleQuickMoveLink(link.id, direction)}
+                 onSaveToReadLater={saveLinkToReadLater}
+                 onTogglePin={(link, event) => togglePin(link.id, event)}
+                onContextMenu={handleContextMenu}
+                onToggleBatchMode={toggleBatchEditMode}
+                onToggleSelection={toggleLinkSelection}
+                onSelectAll={handleSelectAll}
+                onBatchDelete={handleBatchDelete}
+                onExitBatchMode={() => { setIsBatchEditMode(false); setSelectedLinks(new Set()); }}
               />
             )}
-            {/* 1. Pinned Area (Custom Top Area) */}
-            {activeView === 'links' && pinnedLinks.length > 0 && !searchQuery && selectedCategory === 'all' && (
-                <section>
-                    <div className="flex items-center justify-between mb-4">
-                        <div className="flex items-center gap-2">
-                            <Pin size={16} className="text-blue-500 fill-blue-500" />
-                            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                                置顶 / 常用
-                            </h2>
-                            <span className="ml-2 px-2 py-0.5 text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300 rounded-full">
-                                {pinnedLinks.length}
-                            </span>
-                        </div>
-                        {isSortingPinned ? (
-                            <div className="flex gap-2">
-                                <button 
-                                    onClick={savePinnedSorting}
-                                    className="flex items-center gap-1 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-medium rounded-full transition-colors"
-                                    title="保存顺序"
-                                >
-                                    <Save size={14} />
-                                    <span>保存顺序</span>
-                                </button>
-                                <button 
-                                    onClick={cancelPinnedSorting}
-                                    className="px-3 py-1.5 bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs font-medium rounded-full hover:bg-slate-300 dark:hover:bg-slate-600 transition-all"
-                                    title="取消排序"
-                                >
-                                    取消
-                                </button>
-                            </div>
-                        ) : (
-                            <button 
-                                onClick={() => setIsSortingPinned(true)}
-                                className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-full transition-colors"
-                                title="排序"
-                            >
-                                <GripVertical size={14} />
-                                <span>排序</span>
-                            </button>
-                        )}
-                    </div>
-                    {isSortingPinned ? (
-                        <DndContext
-                            sensors={sensors}
-                            collisionDetection={closestCorners}
-                            onDragEnd={handlePinnedDragEnd}
-                        >
-                            <SortableContext
-                                items={pinnedLinks.map(link => link.id)}
-                                strategy={rectSortingStrategy}
-                            >
-                                <div className={`grid gap-3 ${
-                                  siteSettings.cardStyle === 'detailed' 
-                                    ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6' 
-                                    : 'grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8'
-                                }`}>
-                                    {pinnedLinks.map(link => (
-                                        <SortableLinkCard key={link.id} link={link} />
-                                    ))}
-                                </div>
-                            </SortableContext>
-                        </DndContext>
-                    ) : (
-                        <div className={`grid gap-3 ${
-                          siteSettings.cardStyle === 'detailed' 
-                            ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6' 
-                            : 'grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8'
-                        }`}>
-                            {pinnedLinks.map(link => renderLinkCard(link))}
-                        </div>
-                    )}
-                </section>
-            )}
-
-            {activeView === 'links' && selectedCategory === 'all' && !searchQuery.trim() && pinnedLinks.length === 0 && (
-              <section className="flex flex-col items-center justify-center py-20 text-slate-400 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-2xl">
-                <Pin size={40} className="opacity-30 mb-4" />
-                <p className="text-base font-medium text-slate-500 dark:text-slate-400">还没有置顶网站</p>
-                <p className="text-sm mt-2">在网站卡片上点击图钉，就能把它放到这里。</p>
-              </section>
-            )}
-
-            {/* 2. Main Grid */}
-            {showMainLinksGrid && (
-              <section>
-
-                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-                     <div className="flex items-center flex-wrap gap-y-2">
-                         <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2 mr-4">
-                             {selectedCategory === 'all' 
-                                ? (searchQuery ? '搜索结果' : '所有链接') 
-                                : (() => {
-                                    const currentCat = categories.find(c => c.id === selectedCategory);
-                                    const primaryCat = currentCat?.parentId 
-                                      ? categories.find(c => c.id === currentCat.parentId) 
-                                      : currentCat;
-                                    
-                                    if (!primaryCat) return '未知分类';
-
-                                    const subCats = categories.filter(c => c.parentId === primaryCat.id);
-                                    
-                                    return (
-                                      <div className="flex items-center gap-3">
-                                        <div className="flex items-center gap-2">
-                                          <Icon name={primaryCat.icon} size={20} className="text-blue-500" />
-                                          <button 
-                                            onClick={() => handleCategoryClick(primaryCat)}
-                                            className={`hover:text-blue-600 transition-colors ${selectedCategory === primaryCat.id ? 'text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400 font-medium'}`}
-                                          >
-                                            {primaryCat.name}
-                                          </button>
-                                          {isCategoryLocked(primaryCat.id) && <Lock size={14} className="text-amber-500" />}
-                                        </div>
-
-                                        {subCats.length > 0 && (
-                                          <>
-                                            <div className="h-4 w-[1px] bg-slate-300 dark:bg-slate-600 mx-1" />
-                                            <div className="flex items-center gap-4 overflow-x-auto no-scrollbar py-1">
-                                              {subCats.map(sub => (
-                                                <button
-                                                  key={sub.id}
-                                                  onClick={() => handleCategoryClick(sub)}
-                                                  className={`text-sm whitespace-nowrap transition-all relative py-1 ${
-                                                    selectedCategory === sub.id 
-                                                      ? 'text-blue-600 dark:text-blue-400 font-bold' 
-                                                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 font-medium'
-                                                  }`}
-                                                >
-                                                  <div className="flex items-center gap-1">
-                                                    {sub.name}
-                                                    {isCategoryLocked(sub.id) && <Lock size={12} className="text-amber-500" />}
-                                                  </div>
-                                                  {selectedCategory === sub.id && (
-                                                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-500 rounded-full animate-in fade-in zoom-in duration-300" />
-                                                  )}
-                                                </button>
-                                              ))}
-                                            </div>
-                                          </>
-                                        )}
-                                      </div>
-                                    );
-                                  })()
-                             }
-                         </h2>
-                         {selectedCategory !== 'all' && (
-                           <span className="px-2 py-0.5 text-xs font-semibold bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300 rounded-full">
-                             {displayedLinks.length}
-                           </span>
-                         )}
-                     </div>
-                     {selectedCategory !== 'all' && !isCategoryLocked(selectedCategory) && (
-                         isSortingMode === selectedCategory ? (
-                             <div className="flex gap-2">
-                                 <button 
-                                     onClick={saveSorting}
-                                     className="flex items-center gap-1 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-medium rounded-full transition-colors"
-                                     title="保存顺序"
-                                 >
-                                     <Save size={14} />
-                                     <span>保存顺序</span>
-                                 </button>
-                                 <button 
-                                     onClick={cancelSorting}
-                                     className="px-3 py-1.5 bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs font-medium rounded-full hover:bg-slate-300 dark:hover:bg-slate-600 transition-all"
-                                     title="取消排序"
-                                 >
-                                     取消
-                                 </button>
-                             </div>
-                         ) : (
-                             <div className="flex gap-2">
-                                 <button 
-                                     onClick={toggleBatchEditMode}
-                                     className={`flex items-center gap-1 px-3 py-1.5 text-white text-xs font-medium rounded-full transition-colors ${
-                                         isBatchEditMode 
-                                             ? 'bg-red-600 hover:bg-red-700' 
-                                             : 'bg-blue-600 hover:bg-blue-700'
-                                     }`}
-                                     title={isBatchEditMode ? "退出批量编辑" : "批量编辑"}
-                                 >
-                                     {isBatchEditMode ? '取消' : '批量编辑'}
-                                 </button>
-                                 {isBatchEditMode ? (
-                                     <>
-                                         <button 
-                                             onClick={handleBatchDelete}
-                                             className="flex items-center gap-1 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-medium rounded-full transition-colors"
-                                             title="批量删除"
-                                         >
-                                             <Trash2 size={14} />
-                                             <span>批量删除</span>
-                                         </button>
-                                          <button
-                                              onClick={handleSelectAll}
-                                             className="flex items-center gap-1 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-medium rounded-full transition-colors"
-                                             title="全选/取消全选"
-                                         >
-                                             <CheckSquare size={14} />
-                                              <span>{selectedLinks.size === displayedLinks.length ? '取消全选' : '全选'}</span>
-                                          </button>
-                                          <button onClick={() => handleBatchAction({ type: 'setPinned', pinned: true })} className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-medium rounded-full transition-colors" title="批量置顶">批量置顶</button>
-                                          <button onClick={handleBatchAddTags} className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium rounded-full transition-colors" title="批量添加标签">加标签</button>
-                                          <button onClick={() => handleBatchAction({ type: 'archive' })} className="px-3 py-1.5 bg-slate-600 hover:bg-slate-700 text-white text-xs font-medium rounded-full transition-colors" title="批量归档">批量归档</button>
-                                          <div className="relative group">
-                                              <button 
-                                                  className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-full transition-colors"
-                                                  title="批量移动"
-                                              >
-                                                  <Upload size={14} />
-                                                  <span>批量移动</span>
-                                              </button>
-                                              <div className="absolute top-full right-0 mt-1 w-56 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 z-20 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 overflow-hidden max-h-[500px] overflow-y-auto no-scrollbar">
-                                                  {(() => {
-                                                    const flattened = [];
-                                                    const parents = categories.filter(c => !c.parentId);
-                                                    
-                                                    for (const parent of parents) {
-                                                      if (parent.id !== selectedCategory) {
-                                                        flattened.push({
-                                                          id: parent.id,
-                                                          displayName: parent.name
-                                                        });
-                                                      }
-                                                      
-                                                      const children = categories.filter(c => c.parentId === parent.id);
-                                                      for (const child of children) {
-                                                        if (child.id !== selectedCategory) {
-                                                          flattened.push({
-                                                            id: child.id,
-                                                            displayName: `${parent.name} / ${child.name}`
-                                                          });
-                                                        }
-                                                      }
-                                                    }
-                                                    
-                                                    return flattened.map(cat => (
-                                                      <button
-                                                          key={cat.id}
-                                                          onClick={() => handleBatchMove(cat.id)}
-                                                          className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-slate-300 hover:bg-blue-50 dark:hover:bg-blue-900/30 border-b border-slate-100 dark:border-slate-700 last:border-0 transition-colors"
-                                                      >
-                                                          {cat.displayName}
-                                                      </button>
-                                                    ));
-                                                  })()}
-                                              </div>
-                                          </div>
-                                     </>
-                                 ) : (
-                                     <button 
-                                         onClick={() => startSorting(selectedCategory)}
-                                         className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-full transition-colors"
-                                         title="排序"
-                                     >
-                                         <GripVertical size={14} />
-                                         <span>排序</span>
-                                     </button>
-                                 )}
-                             </div>
-                         )
-                     )}
-                 </div>
-
-                 {displayedLinks.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-20 text-slate-400 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl">
-                        {isCategoryLocked(selectedCategory) ? (
-                            <>
-                                <Lock size={40} className="text-amber-400 mb-4" />
-                                <p>该目录已锁定</p>
-                                <button onClick={() => setCatAuthModalData(categories.find(c => c.id === selectedCategory) || null)} className="mt-4 px-4 py-2 bg-amber-500 text-white rounded-lg">输入密码解锁</button>
-                            </>
-                        ) : (
-                            <>
-                                <Search size={40} className="opacity-30 mb-4" />
-                                <p>没有找到相关内容</p>
-                                {selectedCategory !== 'all' && (
-                                    <button onClick={() => setIsModalOpen(true)} className="mt-4 text-blue-500 hover:underline">添加一个?</button>
-                                )}
-                            </>
-                        )}
-                    </div>
-                 ) : (
-                    isSortingMode === selectedCategory ? (
-                        <DndContext
-                            sensors={sensors}
-                            collisionDetection={closestCorners}
-                            onDragEnd={handleDragEnd}
-                        >
-                            <SortableContext
-                                items={displayedLinks.map(link => link.id)}
-                                strategy={rectSortingStrategy}
-                            >
-                                <div className={`grid gap-3 ${
-                                  siteSettings.cardStyle === 'detailed' 
-                                    ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6' 
-                                    : 'grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8'
-                                }`}>
-                                    {displayedLinks.map(link => (
-                                        <SortableLinkCard key={link.id} link={link} />
-                                    ))}
-                                </div>
-                            </SortableContext>
-                        </DndContext>
-                    ) : (
-                        <div className={`grid gap-3 ${
-                          siteSettings.cardStyle === 'detailed' 
-                            ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6' 
-                            : 'grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8'
-                        }`}>
-                            {displayedLinks.map(link => renderLinkCard(link))}
-                        </div>
-                    )
-                 )}
-              </section>
-            )}
-
-            {/* 其他目录搜索结果区域 */}
-            {activeView === 'links' && searchQuery.trim() && selectedCategory !== 'all' && (
-              <section className="mt-8 pt-8 border-t-2 border-slate-200 dark:border-slate-700">
-                <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-2 mb-4">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-folder-search">
-                    <circle cx="11" cy="11" r="8"></circle>
-                    <path d="m21 21-4.35-4.35"></path>
-                    <path d="M11 11h.01"></path>
-                  </svg>
-                  其他目录搜索结果
-                  <span className="ml-2 px-2 py-0.5 text-xs font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-300 rounded-full">
-                    {Object.values(otherCategoryResults).flat().length}
-                  </span>
-                </h2>
-
-                {Object.keys(otherCategoryResults).length > 0 ? (
-                  Object.entries(otherCategoryResults).map(([categoryId, links]) => {
-                    const category = categories.find(c => c.id === categoryId);
-                    if (!category) return null;
-
-                    return (
-                      <div key={categoryId} className="mb-6 last:mb-0">
-                        <div className="flex items-center gap-2 mb-3">
-                          <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                            {category.name}
-                          </h3>
-                          <span className="px-2 py-0.5 text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 rounded-full">
-                            {links.length}
-                          </span>
-                        </div>
-
-                        <div className={`grid gap-3 ${
-                          siteSettings.cardStyle === 'detailed' 
-                            ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6' 
-                            : 'grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8'
-                        }`}>
-                          {links.map(link => renderLinkCard(link))}
-                        </div>
-                      </div>
-                    );
-                  })
-                ) : (
-                  <div className="flex flex-col items-center justify-center py-12 text-slate-400 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="opacity-30 mb-4">
-                      <circle cx="11" cy="11" r="8"></circle>
-                      <path d="m21 21-4.35-4.35"></path>
-                    </svg>
-                    <p className="text-sm">其他目录中没有找到相关内容</p>
-                  </div>
-                )}
-              </section>
-            )}
-              </PinnedSitesPage>
-            )}
             </SpatialViewTransition>
+            </React.Suspense>
         </div>
       </main>
 

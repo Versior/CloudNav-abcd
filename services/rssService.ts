@@ -1,10 +1,12 @@
 import { RSS_PRESET_VERSION_KEY, RSS_STATE_KEY } from '../constants/storageKeys.ts';
 import type { RssArticle, RssFeed, RssState } from '../types.ts';
+import { cleanFeedText } from './rssParser.ts';
+import { notifyWorkspaceDataChanged } from './workspaceStorage.ts';
 
 export const DEFAULT_RSS_FEEDS: RssFeed[] = [
   {
     id: 'preset-github',
-    url: 'https://cdn.jsdelivr.net/gh/Hyraze/trending-collection@main/api/daily/all.xml',
+    url: 'https://cdn.jsdelivr.net/gh/Hyraze/trending-collection@main/api/daily/all.json',
     title: 'GitHub 热门项目',
     siteUrl: 'https://github.com/trending',
     preset: true,
@@ -45,7 +47,7 @@ export const DEFAULT_RSS_FEEDS: RssFeed[] = [
 ];
 
 export const DEFAULT_RSS_STATE: RssState = { feeds: DEFAULT_RSS_FEEDS, articles: [] };
-const RSS_PRESET_VERSION = 4;
+const RSS_PRESET_VERSION = 5;
 
 const isHttpUrl = (value: string) => {
   try {
@@ -92,13 +94,21 @@ export const normalizeRssState = (value: unknown): RssState => {
         feedId: typeof article.feedId === 'string' ? article.feedId : '',
         title: typeof article.title === 'string' ? article.title.slice(0, 240) : article.url,
         url: article.url,
-        summary: typeof article.summary === 'string' ? article.summary.slice(0, 360) : undefined,
+        summary: typeof article.summary === 'string' ? cleanFeedText(article.summary).slice(0, 360) : undefined,
+        content: typeof article.content === 'string' ? cleanFeedText(article.content).slice(0, 24000) : undefined,
         author: typeof article.author === 'string' ? article.author.slice(0, 120) : undefined,
         sourceTitle: typeof article.sourceTitle === 'string' ? article.sourceTitle.slice(0, 120) : undefined,
         publishedAt: Number.isFinite(article.publishedAt) ? article.publishedAt : undefined,
         imageUrl: typeof article.imageUrl === 'string' ? article.imageUrl : undefined,
         read: article.read === true,
         starred: article.starred === true,
+        aiSummary: typeof article.aiSummary === 'string' ? article.aiSummary.slice(0, 1200) : undefined,
+        aiBullets: Array.isArray(article.aiBullets) ? article.aiBullets.filter(item => typeof item === 'string').slice(0, 8) : undefined,
+        aiFacts: Array.isArray(article.aiFacts) ? article.aiFacts.filter(item => typeof item === 'string').slice(0, 8) : undefined,
+        aiActions: Array.isArray(article.aiActions) ? article.aiActions.filter(item => typeof item === 'string').slice(0, 6) : undefined,
+        aiEvidence: Array.isArray(article.aiEvidence) ? article.aiEvidence.filter(item => typeof item === 'string').slice(0, 6) : undefined,
+        aiTags: Array.isArray(article.aiTags) ? article.aiTags.filter(item => typeof item === 'string').slice(0, 8) : undefined,
+        aiUpdatedAt: Number.isFinite(article.aiUpdatedAt) ? article.aiUpdatedAt : undefined,
       };
     });
   return { feeds: uniqueFeeds.length ? uniqueFeeds : DEFAULT_RSS_FEEDS, articles };
@@ -126,6 +136,7 @@ export const readRssState = (): RssState => {
     const existingUrls = new Set(migratedFeeds.map(feed => feed.url.toLowerCase()));
     const missingPresets = DEFAULT_RSS_FEEDS.filter(feed => !existingUrls.has(feed.url.toLowerCase()));
     const migrated = { ...normalized, feeds: [...migratedFeeds, ...missingPresets].slice(0, 50) };
+    localStorage.setItem(RSS_STATE_KEY, JSON.stringify(normalizeRssState(migrated)));
     localStorage.setItem(RSS_PRESET_VERSION_KEY, String(RSS_PRESET_VERSION));
     return migrated;
   } catch {
@@ -136,6 +147,7 @@ export const readRssState = (): RssState => {
 export const writeRssState = (state: RssState) => {
   localStorage.setItem(RSS_STATE_KEY, JSON.stringify(normalizeRssState(state)));
   localStorage.setItem(RSS_PRESET_VERSION_KEY, String(RSS_PRESET_VERSION));
+  if (typeof window !== 'undefined') notifyWorkspaceDataChanged();
 };
 
 export interface RssFeedResponse {
@@ -144,8 +156,51 @@ export interface RssFeedResponse {
   fetchedAt: number;
 }
 
+const fetchWithTimeout = async (input: RequestInfo | URL, init: RequestInit = {}, timeoutMs = 12000) => {
+  const controller = new AbortController();
+  const timeout = globalThis.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    globalThis.clearTimeout(timeout);
+  }
+};
+
+export interface RssFeedUpdateResult {
+  feed?: RssFeed;
+  urlChanged?: boolean;
+  error?: string;
+}
+
+export const updateRssFeed = (
+  current: RssFeed,
+  rawUrl: string,
+  rawTitle: string,
+  existingFeeds: RssFeed[],
+): RssFeedUpdateResult => {
+  const url = rawUrl.trim();
+  const title = rawTitle.trim();
+  if (!isHttpUrl(url)) return { error: '请输入 http 或 https 的 RSS 地址' };
+  if (!title) return { error: '请填写订阅名称' };
+  if (existingFeeds.some(feed => feed.id !== current.id && feed.url.toLowerCase() === url.toLowerCase())) {
+    return { error: '这个订阅地址已经存在' };
+  }
+  const urlChanged = current.url.toLowerCase() !== url.toLowerCase();
+  return {
+    urlChanged,
+    feed: {
+      ...current,
+      url,
+      title: title.slice(0, 120),
+      preset: urlChanged ? false : current.preset,
+      lastFetchedAt: undefined,
+      error: undefined,
+    },
+  };
+};
+
 export const fetchRssFeed = async (url: string): Promise<RssFeedResponse> => {
-  const response = await fetch(`/api/rss?url=${encodeURIComponent(url)}`);
+  const response = await fetchWithTimeout(`/api/rss?url=${encodeURIComponent(url)}`);
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(typeof payload?.error === 'string' ? payload.error : 'RSS 获取失败');
   if (!payload || typeof payload !== 'object' || !payload.feed || typeof payload.feed !== 'object' || !Array.isArray(payload.articles)) {
@@ -155,7 +210,7 @@ export const fetchRssFeed = async (url: string): Promise<RssFeedResponse> => {
 };
 
 export const discoverRssFeeds = async (pageUrl: string): Promise<string[]> => {
-  const response = await fetch(`/api/rss?discover=${encodeURIComponent(pageUrl)}`);
+  const response = await fetchWithTimeout(`/api/rss?discover=${encodeURIComponent(pageUrl)}`);
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(typeof payload?.error === 'string' ? payload.error : 'RSS 发现失败');
   return Array.isArray(payload?.feeds) ? payload.feeds.filter((value: unknown): value is string => typeof value === 'string') : [];
@@ -168,6 +223,13 @@ export const mergeRssArticles = (existing: RssArticle[], incoming: RssArticle[],
     feedId,
     read: previous.get(article.id)?.read === true,
     starred: previous.get(article.id)?.starred === true,
+    aiSummary: previous.get(article.id)?.aiSummary,
+    aiBullets: previous.get(article.id)?.aiBullets,
+    aiFacts: previous.get(article.id)?.aiFacts,
+    aiActions: previous.get(article.id)?.aiActions,
+    aiEvidence: previous.get(article.id)?.aiEvidence,
+    aiTags: previous.get(article.id)?.aiTags,
+    aiUpdatedAt: previous.get(article.id)?.aiUpdatedAt,
   }));
   const untouched = existing.filter(article => article.feedId !== feedId || !merged.some(next => next.id === article.id));
   return [...merged, ...untouched]

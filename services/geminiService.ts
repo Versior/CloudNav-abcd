@@ -1,7 +1,8 @@
-import { Category, AIConfig, LinkItem } from "../types";
-import { normalizeOpenAIEndpoint } from './openaiEndpoint';
+import type { Category, AIConfig, LinkItem } from "../types.ts";
+import { normalizeOpenAIEndpoint } from './openaiEndpoint.ts';
+import { buildContentSummaryPrompt, type ContentSummaryKind } from './aiPrompts.ts';
 
-type AITask = 'description' | 'category' | 'test' | 'folder_rename' | 'folder_structure';
+type AITask = 'description' | 'category' | 'test' | 'folder_rename' | 'folder_structure' | 'rss_summary';
 
 const isHtml = (text: string) => /<!doctype\s+html/i.test(text.trim()) || /<html[\s>]/i.test(text.trim());
 
@@ -32,6 +33,19 @@ const parseJsonResponse = (rawText: string, provider: string, endpoint?: string)
 };
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+const fetchWithTimeout = async (input: RequestInfo | URL, init: RequestInit = {}, timeoutMs = 15000) => {
+  const controller = new AbortController();
+  const timeout = globalThis.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error('AI 请求超时');
+    throw error;
+  } finally {
+    globalThis.clearTimeout(timeout);
+  }
+};
 
 const isRateLimitError = (status: number, text: string) =>
   status === 429 || /rate limit|too many requests|quota|超过.*限制|限流/i.test(text);
@@ -111,8 +125,8 @@ const buildPrompts = (task: AITask, body: Record<string, unknown>) => {
   if (task === 'test') return { system: 'You are a connection tester. Reply with exactly OK.', user: 'Reply with exactly: OK' };
   if (task === 'description') {
     return {
-      system: 'You are a helpful assistant that summarizes website bookmarks.',
-      user: `Title: ${body.title}\nURL: ${body.url}\nPlease write a very short description (max 15 words) in Chinese (Simplified) that explains what this website is for. Return ONLY the description text. No quotes.`,
+      system: '你是中文网站资料编辑。只依据标题和网址生成书签描述，不要臆测网站未提供的功能、价格、安全性或服务承诺。只返回描述文本，不要引号、Markdown或解释。',
+      user: `网站标题：${body.title}\n网站网址：${body.url}\n请用简体中文写一条准确、具体、适合列表展示的网站描述。优先说明网站类型、主要用途和适合谁使用；不确定的内容不要补写；不超过 40 个汉字。`,
     };
   }
   if (task === 'folder_rename') {
@@ -150,6 +164,17 @@ Rules:
 5. Avoid duplicating existing folder names unless necessary.
 6. If no structure change is needed, return empty folders and put all ids in keepInParent.`,
     };
+  }
+  if (task === 'rss_summary') {
+    const kind = body.summaryKind === 'website' || body.summaryKind === 'workbench'
+      ? body.summaryKind as ContentSummaryKind
+      : 'rss';
+    return buildContentSummaryPrompt(kind, {
+      title: typeof body.title === 'string' ? body.title : undefined,
+      url: typeof body.url === 'string' ? body.url : undefined,
+      sourceTitle: typeof body.sourceTitle === 'string' ? body.sourceTitle : undefined,
+      summary: typeof body.summary === 'string' ? body.summary : undefined,
+    });
   }
   const categories = (body.categories as Pick<Category, 'id' | 'name'>[] | undefined) || [];
   const catList = categories.map(c => `${c.id}: ${c.name}`).join('\n');
@@ -225,12 +250,48 @@ const parseFolderStructure = (
   };
 };
 
+export interface RssSummaryResult {
+  summary: string;
+  bullets: string[];
+  tags: string[];
+  facts?: string[];
+  actions?: string[];
+  evidence?: string[];
+}
+
+export const parseRssSummaryResponse = (text: string): RssSummaryResult => {
+  const raw = stripCodeFence(text);
+  let data: any;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error('AI 未返回合法的 RSS 摘要 JSON');
+    data = JSON.parse(match[0]);
+  }
+  const summary = String(data?.summary || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+  if (!summary) throw new Error('AI 未返回摘要内容');
+  const cleanList = (value: unknown, max: number, length: number) => Array.isArray(value)
+    ? value.map(item => String(item || '').replace(/\s+/g, ' ').trim().slice(0, length)).filter(Boolean).slice(0, max)
+    : [];
+  const bullets = cleanList(data?.bullets || data?.facts, 5, 60);
+  const facts = cleanList(data?.facts || data?.bullets, 5, 60);
+  const actions = cleanList(data?.actions, 3, 60);
+  const evidence = cleanList(data?.evidence, 4, 80);
+  return {
+    summary,
+    bullets,
+    tags: cleanList(data?.tags, 6, 18),
+    ...(data?.facts || data?.actions || data?.evidence ? { facts, actions, evidence } : {}),
+  };
+};
+
 const callGeminiDirectOnce = async (task: AITask, body: Record<string, unknown>, config: AIConfig) => {
   if (!config.apiKey) throw new Error('Gemini API key is not configured');
   const model = config.model || 'gemini-2.5-flash';
   const prompts = buildPrompts(task, body);
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
-  const response = await fetch(`${endpoint}?key=${encodeURIComponent(config.apiKey)}`, {
+  const response = await fetchWithTimeout(`${endpoint}?key=${encodeURIComponent(config.apiKey)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ contents: [{ parts: [{ text: `${prompts.system}\n${prompts.user}` }] }] }),
@@ -252,7 +313,7 @@ const callOpenAIDirectOnce = async (task: AITask, body: Record<string, unknown>,
   if (!config.apiKey) throw new Error('OpenAI compatible API key is not configured');
   const endpoint = normalizeOpenAIEndpoint(config.baseUrl);
   const prompts = buildPrompts(task, body);
-  const response = await fetch(endpoint, {
+  const response = await fetchWithTimeout(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
     body: JSON.stringify({
@@ -290,12 +351,13 @@ const callDirectAI = async (task: AITask, body: Record<string, unknown>, config:
 
 const callAI = async (task: AITask, body: Record<string, unknown>, config: AIConfig): Promise<string | null> =>
   enqueueAI(async () => {
+    if (config.apiKey && !config.hasApiKey) return callDirectAI(task, body, config);
     try {
       return await withRetry(async () => {
-        const response = await fetch('/api/ai', {
+        const response = await fetchWithTimeout('/api/ai', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ task, ...body, config })
+          body: JSON.stringify({ task, ...body, config: { provider: config.provider, baseUrl: config.baseUrl, model: config.model } })
         });
 
         const rawText = await response.text().catch(() => '');
@@ -378,4 +440,48 @@ export const suggestFolderStructure = async (
   }, config);
   if (!result) throw new Error('AI 未返回文件夹结构');
   return parseFolderStructure(result, compactLinks);
+};
+
+export const summarizeRssArticle = async (
+  article: { title: string; url: string; summary?: string; sourceTitle?: string },
+  config: AIConfig,
+): Promise<RssSummaryResult> => {
+  const result = await callAI('rss_summary', {
+    title: article.title,
+    url: article.url,
+    summary: article.summary || '',
+    sourceTitle: article.sourceTitle || '',
+  }, config);
+  if (!result) throw new Error('AI 未返回 RSS 摘要');
+  return parseRssSummaryResponse(result);
+};
+
+export const summarizeWebsiteCollection = async (
+  collection: { title: string; summary: string; sourceTitle?: string },
+  config: AIConfig,
+): Promise<RssSummaryResult> => {
+  const result = await callAI('rss_summary', {
+    title: collection.title,
+    url: 'https://cloudnav.local/library',
+    summaryKind: 'website',
+    summary: collection.summary,
+    sourceTitle: collection.sourceTitle || 'CloudNav 网站库',
+  }, config);
+  if (!result) throw new Error('AI 未返回网站库摘要');
+  return parseRssSummaryResponse(result);
+};
+
+export const summarizeWorkbench = async (
+  data: { title: string; summary: string; sourceTitle?: string },
+  config: AIConfig,
+): Promise<RssSummaryResult> => {
+  const result = await callAI('rss_summary', {
+    title: data.title,
+    url: 'https://cloudnav.local/workbench',
+    summaryKind: 'workbench',
+    summary: data.summary,
+    sourceTitle: data.sourceTitle || 'CloudNav 工作台',
+  }, config);
+  if (!result) throw new Error('AI 未返回工作台摘要');
+  return parseRssSummaryResponse(result);
 };

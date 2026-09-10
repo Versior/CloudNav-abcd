@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { RSS_PRESET_VERSION_KEY, RSS_STATE_KEY } from '../constants/storageKeys.ts';
-import { DEFAULT_RSS_FEEDS, fetchRssFeed, readRssState } from '../services/rssService.ts';
+import { DEFAULT_RSS_FEEDS, fetchRssFeed, readRssState, updateRssFeed } from '../services/rssService.ts';
 
 test('ships useful Chinese AI and GitHub preset subscriptions', () => {
   const urls = new Set(DEFAULT_RSS_FEEDS.map(feed => feed.url));
-  assert.ok(urls.has('https://cdn.jsdelivr.net/gh/Hyraze/trending-collection@main/api/daily/all.xml'));
+  assert.ok(urls.has('https://cdn.jsdelivr.net/gh/Hyraze/trending-collection@main/api/daily/all.json'));
   assert.ok(urls.has('https://www.qbitai.com/feed'));
   assert.ok(urls.has('https://decemberpei.cyou/rssbox/wechat-jiqizhixin.xml'));
   assert.ok(urls.has('https://www.geekpark.net/rss'));
@@ -42,9 +42,31 @@ test('migrates previously seeded broken presets to reliable sources', () => {
 
   const state = readRssState();
   assert.equal(state.feeds.some(feed => feed.id === 'preset-hot'), false);
-  assert.equal(state.feeds.find(feed => feed.id === 'preset-github')?.url, 'https://cdn.jsdelivr.net/gh/Hyraze/trending-collection@main/api/daily/all.xml');
+  assert.equal(state.feeds.find(feed => feed.id === 'preset-github')?.url, 'https://cdn.jsdelivr.net/gh/Hyraze/trending-collection@main/api/daily/all.json');
   assert.ok(state.feeds.some(feed => feed.id === 'preset-jiqizhixin'));
-  assert.equal(values.get(RSS_PRESET_VERSION_KEY), '4');
+  assert.equal(values.get(RSS_PRESET_VERSION_KEY), '5');
+});
+
+test('updates an RSS subscription without losing its identity or preset state', () => {
+  const current = { id: 'feed-1', url: 'https://example.com/old.xml', title: '旧名称', preset: true, addedAt: 1 };
+  const result = updateRssFeed(current, ' https://example.com/new.xml ', ' 新名称 ', [current]);
+  assert.equal(result.error, undefined);
+  assert.deepEqual(result.feed, {
+    ...current,
+    url: 'https://example.com/new.xml',
+    title: '新名称',
+    preset: false,
+    lastFetchedAt: undefined,
+    error: undefined,
+  });
+  assert.equal(result.urlChanged, true);
+});
+
+test('rejects invalid or duplicate RSS subscription edits', () => {
+  const current = { id: 'feed-1', url: 'https://example.com/old.xml', title: '旧名称', addedAt: 1 };
+  const duplicate = { id: 'feed-2', url: 'https://example.com/other.xml', title: '其他', addedAt: 1 };
+  assert.equal(updateRssFeed(current, 'not-a-url', '名称', [current, duplicate]).error, '请输入 http 或 https 的 RSS 地址');
+  assert.equal(updateRssFeed(current, duplicate.url, '名称', [current, duplicate]).error, '这个订阅地址已经存在');
 });
 
 test('rejects an invalid successful RSS payload instead of returning an undefined feed', async () => {

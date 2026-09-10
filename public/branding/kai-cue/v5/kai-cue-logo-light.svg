@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 360" role="img" aria-labelledby="title">
+  <title id="title">开镜 KAI.CUE</title>
+  <g transform="translate(48 54)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M78 34h70l32 32v92l-32 32H78l-32-32V66z" stroke="#111316" stroke-width="18"/>
+    <path d="M112 78v68" stroke="#E5523D" stroke-width="14"/>
+  </g>
+  <text x="300" y="166" fill="#111316" font-family="Microsoft YaHei, Segoe UI, Arial, sans-serif" font-size="112" font-weight="700" letter-spacing="18">开镜</text>
+  <text x="308" y="226" fill="#E5523D" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="30" font-weight="600" letter-spacing="12">KAI.CUE</text>
+</svg>

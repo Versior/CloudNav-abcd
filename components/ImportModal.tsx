@@ -2,8 +2,10 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useModalA11y } from './useModalA11y';
 import { X, Upload, FileText, ArrowRight, Check, AlertCircle, FolderInput, ListTree, Database } from 'lucide-react';
 import { Category, LinkItem, SearchConfig, AIConfig } from '../types';
+import { READING_DOCUMENTS_KEY, RSS_STATE_KEY } from '../constants/storageKeys';
 import { parseBookmarks } from '../services/bookmarkParser';
 import { normalizeUrl } from '../services/duplicateService';
+import type { WorkbenchToolsState } from '../services/workbenchTools';
 
 interface ImportModalProps {
   isOpen: boolean;
@@ -13,7 +15,18 @@ interface ImportModalProps {
   onImport: (newLinks: LinkItem[], newCategories: Category[]) => void;
   onImportSearchConfig?: (searchConfig: SearchConfig) => void;
   onImportAIConfig?: (aiConfig: AIConfig) => void;
+  onImportWorkbenchTools?: (workbenchTools: WorkbenchToolsState) => void;
 }
+
+type ParsedBackup = {
+  links: LinkItem[];
+  categories: Category[];
+  searchConfig?: SearchConfig;
+  aiConfig?: AIConfig;
+  workbenchTools?: WorkbenchToolsState;
+  readingDocuments?: unknown[];
+  rssState?: unknown;
+};
 
 const ImportModal: React.FC<ImportModalProps> = ({ 
   isOpen, 
@@ -22,7 +35,8 @@ const ImportModal: React.FC<ImportModalProps> = ({
   categories, 
   onImport,
   onImportSearchConfig,
-  onImportAIConfig
+  onImportAIConfig,
+  onImportWorkbenchTools
 }) => {
   const modalRef = useRef<HTMLDivElement>(null);
   useModalA11y(isOpen, onClose, modalRef);
@@ -41,6 +55,9 @@ const ImportModal: React.FC<ImportModalProps> = ({
   const [parsedCategories, setParsedCategories] = useState<Category[]>([]);
   const [parsedSearchConfig, setParsedSearchConfig] = useState<SearchConfig | null>(null);
   const [parsedAIConfig, setParsedAIConfig] = useState<AIConfig | null>(null);
+  const [parsedWorkbenchTools, setParsedWorkbenchTools] = useState<WorkbenchToolsState | null>(null);
+  const [parsedReadingDocuments, setParsedReadingDocuments] = useState<unknown[] | null>(null);
+  const [parsedRssState, setParsedRssState] = useState<unknown | null>(null);
   
   // Options
   const [importMode, setImportMode] = useState<'original' | 'merge'>('original');
@@ -51,7 +68,7 @@ const ImportModal: React.FC<ImportModalProps> = ({
   const jsonFileInputRef = useRef<HTMLInputElement>(null);
 
   // Parse JSON backup file
-  const parseJsonBackup = async (file: File): Promise<{ links: LinkItem[], categories: Category[], searchConfig?: SearchConfig, aiConfig?: AIConfig }> => {
+  const parseJsonBackup = async (file: File): Promise<ParsedBackup> => {
     const text = await file.text();
     const data = JSON.parse(text);
     
@@ -64,7 +81,10 @@ const ImportModal: React.FC<ImportModalProps> = ({
       links: data.links,
       categories: data.categories,
       searchConfig: data.searchConfig,
-      aiConfig: data.aiConfig
+      aiConfig: data.aiConfig,
+      workbenchTools: data.workbenchTools,
+      readingDocuments: Array.isArray(data.readingDocuments) ? data.readingDocuments : undefined,
+      rssState: data.rssState,
     };
   };
 
@@ -77,6 +97,9 @@ const ImportModal: React.FC<ImportModalProps> = ({
     setParsedCategories([]);
     setParsedSearchConfig(null);
     setParsedAIConfig(null);
+    setParsedWorkbenchTools(null);
+    setParsedReadingDocuments(null);
+    setParsedRssState(null);
     setNewLinksCount(0);
     setDuplicateCount(0);
     setNewCategoriesCount(0);
@@ -97,7 +120,7 @@ const ImportModal: React.FC<ImportModalProps> = ({
     setImportType(type);
 
     try {
-        let result: { links: LinkItem[], categories: Category[], searchConfig?: SearchConfig, aiConfig?: AIConfig };
+        let result: ParsedBackup;
         
         if (type === 'html') {
             result = await parseBookmarks(selectedFile);
@@ -129,6 +152,9 @@ const ImportModal: React.FC<ImportModalProps> = ({
         setParsedCategories(uniqueNewCategories);
         setParsedSearchConfig(result.searchConfig || null);
         setParsedAIConfig(result.aiConfig || null);
+        setParsedWorkbenchTools(result.workbenchTools || null);
+        setParsedReadingDocuments(result.readingDocuments || null);
+        setParsedRssState(result.rssState || null);
         setNewLinksCount(uniqueNewLinks.length);
         setDuplicateCount(duplicates);
         setNewCategoriesCount(uniqueNewCategories.length);
@@ -218,6 +244,16 @@ const ImportModal: React.FC<ImportModalProps> = ({
       // Import AI config if available
       if (parsedAIConfig && onImportAIConfig) {
           onImportAIConfig(parsedAIConfig);
+      }
+
+      if (parsedWorkbenchTools && onImportWorkbenchTools) {
+          onImportWorkbenchTools(parsedWorkbenchTools);
+      }
+
+      if (importType === 'json') {
+          if (parsedReadingDocuments) localStorage.setItem(READING_DOCUMENTS_KEY, JSON.stringify(parsedReadingDocuments));
+          if (parsedRssState) localStorage.setItem(RSS_STATE_KEY, JSON.stringify(parsedRssState));
+          window.dispatchEvent(new Event('cloudnav-workspace-data-changed'));
       }
       
       handleClose();

@@ -1,0 +1,11 @@
+name = "cloudnav-abcd-health-cron"
+main = "workers/health-cron.ts"
+compatibility_date = "2026-09-09"
+account_id = "989c75e3477850e506c5353d42a3403e"
+
+[triggers]
+crons = ["0 */6 * * *"]
+
+[[kv_namespaces]]
+binding = "CLOUDNAV_KV"
+id = "7da4b58228ab47be953b250f2ba4ac23"

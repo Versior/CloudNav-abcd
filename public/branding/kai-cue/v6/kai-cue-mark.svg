@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" role="img" aria-label="开镜 mark">
+  <path d="M24 18h56c25 0 44 18 44 43v94c0 25-19 43-44 43H24l38-43V61z" fill="#121416"/>
+  <path d="M216 18h-56c-25 0-44 18-44 43v94c0 25 19 43 44 43h56l-38-43V61z" fill="#121416"/>
+  <path d="M120 0c-10 64-10 152 0 216 10-64 10-152 0-216z" fill="#E5523D"/>
+</svg>

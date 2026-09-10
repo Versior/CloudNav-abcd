@@ -1,7 +1,7 @@
 import { isAuthenticated, jsonResponse, optionsResponse, requireAuth } from '../_shared/auth';
 import { buildStoredData, isVersionConflict, normalizeStoredData } from '../_shared/storageData';
 import { normalizeHealthSchedule } from '../../services/healthSchedule';
-import { appendHistory, createHistorySnapshot, normalizeHistory } from '../../services/historyService';
+import { appendHistory, createHistorySnapshot, getStaleHistoryKeys, normalizeHistory } from '../../services/historyService';
 import { normalizeHealthNotification } from '../../services/healthNotifications';
 
 interface Env {
@@ -62,6 +62,20 @@ const readJson = async <T>(kv: KVNamespace, key: string, fallback: T): Promise<T
     return JSON.parse(value) as T;
   } catch {
     return fallback;
+  }
+};
+
+const cleanupHistorySnapshots = async (kv: KVNamespace, history: unknown) => {
+  try {
+    const listableKv = kv as KVNamespace & {
+      list?: (options?: { prefix?: string; limit?: number }) => Promise<{ keys: Array<{ name: string }> }>;
+    };
+    if (typeof listableKv.list !== 'function') return;
+    const list = await listableKv.list({ prefix: 'app_history:', limit: 1000 });
+    const staleKeys = getStaleHistoryKeys(list.keys.map(item => item.name), history);
+    await Promise.all(staleKeys.map(key => kv.delete(key)));
+  } catch {
+    // 清理失败不应阻断主数据保存；下次写入继续尝试。
   }
 };
 
@@ -257,6 +271,7 @@ export const onRequestPost = async (context: { request: Request; env: Env }) => 
       const history = appendHistory(await readJson(env.CLOUDNAV_KV, 'app_history_index', [] as unknown[]), currentSnapshot);
       await env.CLOUDNAV_KV.put(`app_history:${currentSnapshot.id}`, JSON.stringify(currentData));
       await env.CLOUDNAV_KV.put('app_history_index', JSON.stringify(history));
+      await cleanupHistorySnapshots(env.CLOUDNAV_KV, history);
       const restored = normalizeStoredData(JSON.parse(snapshotRaw));
       const nextData = buildStoredData(restored, currentData.version + 1);
       await env.CLOUDNAV_KV.put('app_data', JSON.stringify(nextData));
@@ -273,6 +288,7 @@ export const onRequestPost = async (context: { request: Request; env: Env }) => 
     const history = appendHistory(await readJson(env.CLOUDNAV_KV, 'app_history_index', [] as unknown[]), historySnapshot);
     await env.CLOUDNAV_KV.put(`app_history:${historySnapshot.id}`, JSON.stringify(currentData));
     await env.CLOUDNAV_KV.put('app_history_index', JSON.stringify(history));
+    await cleanupHistorySnapshots(env.CLOUDNAV_KV, history);
     const nextData = buildStoredData(body, currentData.version + 1);
     await env.CLOUDNAV_KV.put('app_data', JSON.stringify(nextData));
     return jsonResponse({ success: true, version: nextData.version });

@@ -7,6 +7,8 @@ export interface HistorySnapshotInput {
   categories: unknown[];
 }
 
+const HISTORY_KEY_PREFIX = 'app_history:';
+
 export const createHistorySnapshot = (value: HistorySnapshotInput): HistorySnapshotMeta => ({
   id: `v${value.version}-${value.createdAt}`,
   version: Math.max(0, Math.floor(value.version)),
@@ -31,3 +33,9 @@ export const normalizeHistory = (value: unknown): HistorySnapshotMeta[] => {
 };
 
 export const appendHistory = (history: unknown, entry: HistorySnapshotMeta): HistorySnapshotMeta[] => normalizeHistory([entry, ...normalizeHistory(history)]);
+
+export const getStaleHistoryKeys = (keys: unknown, history: unknown): string[] => {
+  if (!Array.isArray(keys)) return [];
+  const retained = new Set(normalizeHistory(history).map(entry => `${HISTORY_KEY_PREFIX}${entry.id}`));
+  return keys.filter((key): key is string => typeof key === 'string' && key.startsWith(HISTORY_KEY_PREFIX) && !retained.has(key));
+};

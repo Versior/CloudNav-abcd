@@ -231,6 +231,138 @@ body {
   background: var(--cn-primary-dark) !important;
 }
 
+/* 网站打开后的异步 AI 摘要：轻量浮层，不阻塞原站，也不嵌入 iframe。 */
+.cloudnav-website-summary-panel {
+  position: fixed;
+  z-index: 80;
+  right: 24px;
+  bottom: 24px;
+  width: min(430px, calc(100vw - 32px));
+  max-height: min(680px, calc(100vh - 112px));
+  overflow: auto;
+  border: 1px solid #cfe1dc;
+  border-radius: 18px;
+  background: rgba(255, 254, 250, .98);
+  color: #173431;
+  box-shadow: 0 22px 60px rgba(14, 48, 44, .2), 0 4px 16px rgba(14, 48, 44, .08);
+}
+
+.cloudnav-website-summary-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 18px 14px;
+  border-bottom: 1px solid #e3ece9;
+}
+
+.cloudnav-website-summary-heading {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.cloudnav-website-summary-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #087f78;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.cloudnav-website-summary-heading strong {
+  overflow: hidden;
+  color: #102b29;
+  font-size: 17px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cloudnav-website-summary-heading small {
+  overflow: hidden;
+  color: #6a8580;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cloudnav-website-summary-header > button {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  color: #66807c;
+}
+
+.cloudnav-website-summary-header > button:hover {
+  border-color: #d5e5e1;
+  background: #f1f7f5;
+  color: #173431;
+}
+
+.cloudnav-website-summary-loading,
+.cloudnav-website-summary-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 16px;
+  padding: 16px;
+  border-radius: 12px;
+  background: #f1f8f6;
+  color: #40645f;
+}
+
+.cloudnav-website-summary-loading svg { flex: 0 0 auto; color: #07857c; }
+.cloudnav-website-summary-loading div { display: grid; gap: 4px; }
+.cloudnav-website-summary-loading strong,
+.cloudnav-website-summary-error strong { color: #173431; font-size: 13px; }
+.cloudnav-website-summary-loading span,
+.cloudnav-website-summary-error p { margin: 0; color: #6a8580; font-size: 12px; line-height: 1.6; }
+
+.cloudnav-website-summary-error {
+  display: block;
+  background: #fff8e9;
+}
+
+.cloudnav-website-summary-error p { margin-top: 6px; }
+.cloudnav-website-summary-error > div { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.cloudnav-website-summary-error button,
+.cloudnav-website-summary-body footer button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #cbded9;
+  border-radius: 8px;
+  background: #fffefa;
+  padding: 7px 10px;
+  color: #1c5d57;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.cloudnav-website-summary-error button:hover,
+.cloudnav-website-summary-body footer button:hover { border-color: #07857c; background: #eff9f6; }
+
+.cloudnav-website-summary-body { padding: 18px; }
+.cloudnav-website-summary-lead { margin: 0; color: #1b3835; font-size: 14px; font-weight: 650; line-height: 1.75; }
+.cloudnav-website-summary-body section { margin-top: 18px; }
+.cloudnav-website-summary-body h3 { margin: 0 0 8px; color: #087f78; font-size: 11px; font-weight: 850; letter-spacing: .1em; text-transform: uppercase; }
+.cloudnav-website-summary-body ul { display: grid; gap: 7px; margin: 0; padding: 0 0 0 18px; color: #45635f; font-size: 13px; line-height: 1.6; }
+.cloudnav-website-summary-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 18px; }
+.cloudnav-website-summary-tags span { display: inline-flex; align-items: center; gap: 4px; border-radius: 999px; background: #e7f3ef; padding: 5px 8px; color: #2a6b63; font-size: 11px; }
+.cloudnav-website-summary-body footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 18px; padding-top: 14px; border-top: 1px solid #e3ece9; color: #78908b; font-size: 11px; }
+
+@media (max-width: 640px) {
+  .cloudnav-website-summary-panel { right: 12px; bottom: 12px; width: calc(100vw - 24px); max-height: calc(100vh - 96px); }
+}
+
 .cloudnav-redesign-root .cloudnav-desktop-content {
   min-width: 0 !important;
   overflow-x: hidden !important;
@@ -635,6 +767,46 @@ body {
 .cloudnav-redesign-root .cloudnav-rss-reader-sheet .cloudnav-rss-ai-panel ul { color: var(--cn-muted) !important; }
 .cloudnav-redesign-root .cloudnav-rss-reader-sheet .cloudnav-rss-ai-panel { border-top-color: var(--cn-line) !important; border-bottom-color: var(--cn-line) !important; background: transparent !important; }
 
+/* RSS source picker: an anchored utility popover, not a full-height sheet over the stream. */
+@media (min-width: 1024px) {
+  .cloudnav-redesign-root .cloudnav-rss-reader-v5 .cloudnav-rss-source-drawer-backdrop {
+    position: absolute !important;
+    inset: 0 !important;
+    background: transparent !important;
+  }
+
+  .cloudnav-redesign-root .cloudnav-rss-reader-v5 .cloudnav-rss-source-drawer {
+    position: absolute !important;
+    top: 88px !important;
+    right: auto !important;
+    bottom: auto !important;
+    left: 0 !important;
+    width: min(320px, calc(100% - 24px)) !important;
+    max-height: min(680px, calc(100vh - 152px)) !important;
+    overflow: hidden !important;
+    border: 1px solid var(--cn-line-strong) !important;
+    border-radius: 16px !important;
+    background: var(--cn-surface) !important;
+    box-shadow: 0 18px 48px rgba(31, 56, 54, .14) !important;
+    padding: 0 !important;
+  }
+
+  .cloudnav-redesign-root .cloudnav-rss-reader-v5 .cloudnav-rss-source-drawer-head {
+    padding: 18px 18px 14px !important;
+  }
+
+  .cloudnav-redesign-root .cloudnav-rss-reader-v5 .cloudnav-rss-source-drawer-body {
+    max-height: calc(min(680px, 100vh - 152px) - 78px) !important;
+    overflow-y: auto !important;
+    padding: 12px 12px 18px !important;
+  }
+
+  .cloudnav-redesign-root .cloudnav-rss-reader-v5 .cloudnav-rss-source-drawer-body > button,
+  .cloudnav-redesign-root .cloudnav-rss-reader-v5 .cloudnav-rss-source-drawer-body .cloudnav-rss-source-item {
+    min-height: 40px !important;
+  }
+}
+
 /* Personal pages reuse one readable split layout. */
 .cloudnav-redesign-root [data-page="inspiration"],
 .cloudnav-redesign-root [data-page="read-later"],
@@ -726,6 +898,38 @@ body {
 .cloudnav-redesign-root .cloudnav-reader-notes textarea,
 .cloudnav-redesign-root .cloudnav-reader-tags { border-color: var(--cn-line-strong) !important; border-radius: var(--cn-radius-sm) !important; background: var(--cn-surface-soft) !important; color: var(--cn-ink) !important; }
 .cloudnav-redesign-root .cloudnav-reader-footer { border-top-color: var(--cn-line) !important; }
+
+/* Reading workspace desktop mode: keep the page shell still and scroll the two reading panes. */
+@media (min-width: 1024px) {
+  .cloudnav-redesign-root [data-page="reading-workspace"] {
+    display: flex !important;
+    height: calc(100vh - 172px) !important;
+    min-height: 0 !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+  }
+
+  .cloudnav-redesign-root [data-page="reading-workspace"] > .cloudnav-reading-header,
+  .cloudnav-redesign-root [data-page="reading-workspace"] > .cloudnav-reading-capture,
+  .cloudnav-redesign-root [data-page="reading-workspace"] > .cloudnav-reading-toolbar {
+    flex: 0 0 auto !important;
+  }
+
+  .cloudnav-redesign-root [data-page="reading-workspace"] > .cloudnav-reading-grid {
+    flex: 1 1 auto !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+  }
+
+  .cloudnav-redesign-root [data-page="reading-workspace"] .cloudnav-reading-list,
+  .cloudnav-redesign-root [data-page="reading-workspace"] .cloudnav-reading-reader {
+    height: 100% !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    overscroll-behavior: contain;
+  }
+}
 
 /* Floating todo is a single useful overlay, not a second page frame. */
 .cloudnav-redesign-root .cloudnav-floating-todo {

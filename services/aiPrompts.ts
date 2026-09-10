@@ -1,4 +1,4 @@
-export type ContentSummaryKind = 'rss' | 'website' | 'workbench';
+export type ContentSummaryKind = 'rss' | 'website' | 'webpage' | 'workbench';
 
 export interface ContentSummaryPromptInput {
   title?: string;
@@ -30,6 +30,23 @@ export const buildContentSummaryPrompt = (kind: ContentSummaryKind, input: Conte
         '',
         '输出 JSON：{"summary":"整体结论","facts":["资料中明确的事实"],"actions":["可执行的使用建议"],"evidence":["支持结论的原文信息；没有时写资料不足"],"tags":["主题标签"]}',
         '要求：简体中文；summary 不超过 120 字；bullets 3-5 条，每条不超过 60 字；tags 最多 6 个，每个不超过 18 字；优先概括主要用途、适合人群、资料中反复出现的主题和明确描述；资料不足时明确写“资料不足”，不要根据域名或标题脑补；不要把推测写成事实。',
+      ].join('\n'),
+    };
+  }
+
+  if (kind === 'webpage') {
+    return {
+      system: '你是中文网页阅读编辑和事实核对助手。只依据用户提供的页面标题、来源、链接和抓取到的正文归纳；明确区分页面事实与推测，不补写正文没有出现的功能、价格、时间或结论。只返回合法 JSON，不要 Markdown，不要英文解释。',
+      user: [
+        '请总结这一个完整网页，帮助读者在打开原文前快速判断重点、可信依据和下一步。',
+        '页面标题：' + title,
+        '来源：' + sourceTitle,
+        '链接：' + url,
+        '抓取到的正文：',
+        summary,
+        '',
+        '输出 JSON：{"summary":"一句话结论","facts":["正文中明确的关键事实"],"actions":["读者可执行的下一步；没有时写资料不足"],"evidence":["支持结论的正文依据；没有时写资料不足"],"tags":["主题标签"]}',
+        '要求：简体中文；summary 不超过 120 字；facts 3-5 条，每条不超过 60 字；actions 最多 3 条，每条不超过 60 字；evidence 最多 4 条，每条不超过 80 字；tags 最多 6 个，每个不超过 18 字；优先保留人物、时间、数字、结论、限制条件和行动影响；正文不足时明确写“资料不足”；不要根据域名、标题或常识脑补；所有事实和证据必须能在输入正文中找到。',
       ].join('\n'),
     };
   }

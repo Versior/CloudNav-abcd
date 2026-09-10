@@ -49,6 +49,33 @@ export const DEFAULT_RSS_FEEDS: RssFeed[] = [
 export const DEFAULT_RSS_STATE: RssState = { feeds: DEFAULT_RSS_FEEDS, articles: [] };
 const RSS_PRESET_VERSION = 5;
 
+export interface RssSourceSummary {
+  id: string;
+  title: string;
+  total: number;
+  unread: number;
+  error?: string;
+}
+
+export const buildRssSourceSummary = (state: RssState): RssSourceSummary[] => [
+  {
+    id: 'all',
+    title: '全部资讯',
+    total: state.articles.length,
+    unread: state.articles.filter(article => !article.read).length,
+  },
+  ...state.feeds.map(feed => {
+    const articles = state.articles.filter(article => article.feedId === feed.id);
+    return {
+      id: feed.id,
+      title: feed.title,
+      total: articles.length,
+      unread: articles.filter(article => !article.read).length,
+      error: feed.error,
+    };
+  }),
+];
+
 const isHttpUrl = (value: string) => {
   try {
     const url = new URL(value);

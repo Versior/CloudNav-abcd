@@ -12,7 +12,7 @@ import {
   normalizeReadLater,
   updateReadLaterStatus,
 } from '../services/readLaterService.ts';
-import { parseGithubRepositoryUrl, normalizeGithubWatchItem } from '../services/githubService.ts';
+import { fetchGithubRepository, parseGithubRepositoryUrl, normalizeGithubWatchItem } from '../services/githubService.ts';
 import { createBackupEnvelope } from '../services/backupService.ts';
 import { searchWorkspace } from '../services/unifiedSearch.ts';
 
@@ -60,6 +60,32 @@ test('github service parses repository urls and keeps safe metadata boundaries',
   assert.equal(item.stars, 0);
   assert.equal(item.description?.length, 280);
   assert.equal(item.lastFetchedAt, 20);
+});
+
+test('github metadata falls back to the public API when the Cloudflare proxy is unavailable', async () => {
+  const originalFetch = globalThis.fetch;
+  const requested: string[] = [];
+  globalThis.fetch = async input => {
+    const url = typeof input === 'string' ? input : input.url;
+    requested.push(url);
+    if (url.startsWith('/api/github?')) return new Response('<html>502 Bad Gateway</html>', { status: 502 });
+    return new Response(JSON.stringify({
+      html_url: 'https://github.com/owner/repo',
+      description: 'repo description',
+      stargazers_count: 42,
+      language: 'TypeScript',
+      pushed_at: '2026-09-10T00:00:00Z',
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+
+  try {
+    const result = await fetchGithubRepository('owner', 'repo');
+    assert.equal(result.description, 'repo description');
+    assert.equal(result.stars, 42);
+    assert.ok(requested.some(url => url === 'https://api.github.com/repos/owner/repo'));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test('backup envelope keeps personal workspace data while normalizing it', () => {

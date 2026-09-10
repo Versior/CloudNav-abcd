@@ -45,17 +45,62 @@ export interface GithubRepositorySnapshot {
   url: string;
 }
 
-export const fetchGithubRepository = async (owner: string, repo: string): Promise<GithubRepositorySnapshot> => {
+const fetchWithTimeout = async (input: RequestInfo | URL, init: RequestInit = {}, timeoutMs = 10000) => {
   const controller = new AbortController();
-  const timeout = globalThis.setTimeout(() => controller.abort(), 10000);
-  let response: Response;
+  const timeout = globalThis.setTimeout(() => controller.abort(), timeoutMs);
   try {
-    response = await fetch(`/api/github?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}`, { signal: controller.signal });
+    return await fetch(input, { ...init, signal: controller.signal });
   } finally {
     globalThis.clearTimeout(timeout);
   }
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(typeof payload?.error === 'string' ? payload.error : 'GitHub 刷新失败');
-  if (!payload?.repository || typeof payload.repository !== 'object') throw new Error('GitHub 返回数据无效');
-  return payload.repository as GithubRepositorySnapshot;
+};
+
+const readGithubError = async (response: Response, fallback: string) => {
+  const payload = await response.json().catch(() => ({})) as { error?: unknown };
+  if (typeof payload.error === 'string' && payload.error.trim()) return payload.error;
+  if (response.status === 403) return 'GitHub API 暂时限流，请稍后重试';
+  if (response.status === 404) return 'GitHub 仓库不存在或无权访问';
+  return fallback;
+};
+
+const toGithubSnapshot = (owner: string, repo: string, value: unknown): GithubRepositorySnapshot => {
+  if (!value || typeof value !== 'object') throw new Error('GitHub 返回数据无效');
+  const payload = value as Record<string, unknown>;
+  return {
+    owner,
+    repo,
+    description: typeof payload.description === 'string' ? payload.description : '',
+    stars: typeof payload.stargazers_count === 'number' ? payload.stargazers_count : typeof payload.stars === 'number' ? payload.stars : undefined,
+    language: typeof payload.language === 'string' ? payload.language : '',
+    pushedAt: typeof payload.pushed_at === 'string' ? payload.pushed_at : typeof payload.pushedAt === 'string' ? payload.pushedAt : '',
+    url: typeof payload.html_url === 'string' ? payload.html_url : typeof payload.url === 'string' ? payload.url : `https://github.com/${owner}/${repo}`,
+  };
+};
+
+export const fetchGithubRepository = async (owner: string, repo: string): Promise<GithubRepositorySnapshot> => {
+  const proxyUrl = `/api/github?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}`;
+  let proxyError: unknown;
+  try {
+    const response = await fetchWithTimeout(proxyUrl);
+    const payload = await response.json().catch(() => ({})) as { repository?: unknown; error?: unknown };
+    if (!response.ok) throw new Error(await readGithubError(new Response(JSON.stringify(payload), { status: response.status }), 'GitHub 刷新失败'));
+    return toGithubSnapshot(owner, repo, payload.repository);
+  } catch (error) {
+    proxyError = error;
+  }
+
+  // Pages Functions can be temporarily unavailable or absent on older deployments.
+  // GitHub's public API supports browser CORS, so keep metadata refresh usable while
+  // the proxy recovers instead of turning a transient 502 into a permanent error.
+  try {
+    const response = await fetchWithTimeout(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`, {
+      headers: { Accept: 'application/vnd.github+json' },
+    });
+    if (!response.ok) throw new Error(await readGithubError(response, 'GitHub 刷新失败'));
+    return toGithubSnapshot(owner, repo, await response.json());
+  } catch (error) {
+    if (error instanceof Error && error.message && error.message !== 'fetch failed') throw error;
+    if (proxyError instanceof Error && proxyError.message && proxyError.message !== 'fetch failed') throw proxyError;
+    throw new Error('GitHub 暂时无法获取信息，请稍后重试');
+  }
 };

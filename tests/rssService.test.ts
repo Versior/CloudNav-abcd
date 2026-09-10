@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { RSS_PRESET_VERSION_KEY, RSS_STATE_KEY } from '../constants/storageKeys.ts';
-import { DEFAULT_RSS_FEEDS, fetchRssFeed, readRssState, updateRssFeed } from '../services/rssService.ts';
+import { DEFAULT_RSS_FEEDS, buildRssSourceSummary, fetchRssFeed, readRssState, updateRssFeed } from '../services/rssService.ts';
 
 test('ships useful Chinese AI and GitHub preset subscriptions', () => {
   const urls = new Set(DEFAULT_RSS_FEEDS.map(feed => feed.url));
@@ -77,4 +77,26 @@ test('rejects an invalid successful RSS payload instead of returning an undefine
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test('builds selectable source summaries with total and unread counts', () => {
+  const summaries = buildRssSourceSummary({
+    feeds: [
+      { id: 'feed-a', url: 'https://a.example/feed.xml', title: '中文 AI', addedAt: 1 },
+      { id: 'feed-b', url: 'https://b.example/feed.xml', title: 'GitHub 热门', addedAt: 1 },
+    ],
+    articles: [
+      { id: 'a1', feedId: 'feed-a', title: 'A', url: 'https://a.example/1', read: false },
+      { id: 'a2', feedId: 'feed-a', title: 'B', url: 'https://a.example/2', read: true },
+      { id: 'b1', feedId: 'feed-b', title: 'C', url: 'https://b.example/1', read: false },
+    ],
+  });
+
+  assert.deepEqual(summaries.map(item => item.id), ['all', 'feed-a', 'feed-b']);
+  assert.equal(summaries[0].total, 3);
+  assert.equal(summaries[0].unread, 2);
+  assert.equal(summaries[1].total, 2);
+  assert.equal(summaries[1].unread, 1);
+  assert.equal(summaries[2].total, 1);
+  assert.equal(summaries[2].unread, 1);
 });

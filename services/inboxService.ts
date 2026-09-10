@@ -20,6 +20,7 @@ export const buildInboxItems = ({ links = [], articles = [], readLater = [], ins
       summary: article.aiSummary || article.summary || article.content,
       url: article.url,
       source: article.sourceTitle,
+      sourceId: article.feedId,
       updatedAt: article.publishedAt || 0,
       read: article.read === true,
       starred: article.starred === true,

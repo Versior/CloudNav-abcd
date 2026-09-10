@@ -172,6 +172,35 @@ test('sync conflict uses a three-way merge base and offline queue', () => {
   assert.match(app, /flushPendingSync/);
 });
 
+test('sync conflict modal is deduplicated and cloud writes are serialized', () => {
+  const app = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
+  assert.match(app, /syncInFlightRef/);
+  assert.match(app, /queuedSyncRef/);
+  assert.match(app, /syncConflictFingerprintRef/);
+  assert.match(app, /syncConflictFingerprintRef\.current === conflictFingerprint/);
+  assert.match(app, /syncConflictOpenRef/);
+  assert.match(app, /replacePendingMutations\(\[\]\)/);
+});
+
+test('opening a website starts an automatic AI summary without delaying the external tab', () => {
+  const app = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
+  const panel = readFileSync(new URL('../components/WebsiteSummaryPanel.tsx', import.meta.url), 'utf8');
+  const service = readFileSync(new URL('../services/websiteSummaryService.ts', import.meta.url), 'utf8');
+  assert.match(app, /openWebsiteWithSummary/);
+  assert.match(app, /window\.open\(link\.url/);
+  assert.match(app, /<WebsiteSummaryPanel/);
+  assert.match(service, /fetchReadableDocument/);
+  assert.match(service, /summarizeWebsitePage/);
+  assert.match(panel, /AI 页面摘要/);
+  assert.match(panel, /重新生成/);
+});
+
+test('server-side AI proxy preserves the webpage summary prompt kind', () => {
+  const api = readFileSync(new URL('../functions/api/ai.ts', import.meta.url), 'utf8');
+  assert.match(api, /summaryKind\?: ['"]rss['"] \| ['"]website['"] \| ['"]webpage['"] \| ['"]workbench['"]/);
+  assert.match(api, /body\.summaryKind === ['"]webpage['"]/);
+});
+
 test('health settings and cron worker include webhook notification delivery', () => {
   const panel = readFileSync(new URL('../components/HealthSchedulePanel.tsx', import.meta.url), 'utf8');
   const worker = readFileSync(new URL('../workers/health-cron.ts', import.meta.url), 'utf8');

@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Archive, BookOpen, Check, Clock3, Download, ExternalLink, FileText, Highlighter,
-  Inbox, Keyboard, Search, Sparkles, Star, Tag, Trash2, Upload, Volume2, X,
+  Archive, BookOpen, Check, Clock3, Download, ExternalLink, FileText, Github, Highlighter,
+  Lightbulb,
+  Inbox, Keyboard, Search, Sparkles, Star, Tag, Trash2, Upload, Volume2, X, Radio,
 } from 'lucide-react';
 import { GITHUB_WATCH_KEY, INSPIRATIONS_KEY, READ_LATER_KEY } from '../constants/storageKeys';
 import type { AIConfig, ReadingDocument, ReadingDocumentStatus } from '../types';
-import { readRssState } from '../services/rssService';
+import { buildRssSourceSummary, readRssState } from '../services/rssService';
 import { normalizeReadLater } from '../services/readLaterService';
 import { normalizeInspirations } from '../services/inspirationService';
 import { normalizeGithubWatch } from '../services/githubService';
@@ -71,6 +72,7 @@ const ReadingWorkspacePage: React.FC<ReadingWorkspacePageProps> = ({ initialId, 
   const [views, setViews] = useState(() => readReadingViews());
   const [status, setStatus] = useState<ReadingDocumentStatus>('inbox');
   const [query, setQuery] = useState('');
+  const [sourceFilter, setSourceFilter] = useState('all');
   const [selectedId, setSelectedId] = useState<string | null>(documents[0]?.id || null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectionText, setSelectionText] = useState('');
@@ -111,7 +113,14 @@ const ReadingWorkspacePage: React.FC<ReadingWorkspacePageProps> = ({ initialId, 
     onNotice?.('过滤视图已保存');
   };
 
-  const visible = useMemo(() => searchReadingDocuments(query, documents.filter(item => item.status === status && !item.deletedAt), 200), [documents, query, status]);
+  const rssState = useMemo(() => readRssState(), [documents]);
+  const sourceSummaries = useMemo(() => buildRssSourceSummary(rssState), [rssState]);
+  const sourceFiltered = useMemo(() => documents.filter(item => {
+    if (sourceFilter === 'all') return true;
+    if (sourceFilter.startsWith('rss:')) return item.feedId === sourceFilter.slice(4);
+    return item.type === sourceFilter;
+  }), [documents, sourceFilter]);
+  const visible = useMemo(() => searchReadingDocuments(query, sourceFiltered.filter(item => item.status === status && !item.deletedAt), 200), [query, sourceFiltered, status]);
   const selected = documents.find(item => item.id === selectedId) || visible[0];
 
   useEffect(() => {
@@ -143,6 +152,15 @@ const ReadingWorkspacePage: React.FC<ReadingWorkspacePageProps> = ({ initialId, 
     setSelectedId(id);
     setSelectionText('');
     requestAnimationFrame(() => readerRef.current?.scrollTo({ top: 0, behavior: 'smooth' }));
+  };
+
+  const handleReaderScroll = (event: React.UIEvent<HTMLElement>) => {
+    if (!selected) return;
+    const element = event.currentTarget;
+    const progress = element.scrollHeight > element.clientHeight ? element.scrollTop / (element.scrollHeight - element.clientHeight) : 0;
+    if (Math.abs(progress - selected.progress) > 0.05) {
+      persist(documents.map(item => item.id === selected.id ? { ...item, progress, unread: false, updatedAt: Date.now() } : item));
+    }
   };
 
   const changeStatus = (nextStatus: ReadingDocumentStatus) => {
@@ -288,6 +306,15 @@ const ReadingWorkspacePage: React.FC<ReadingWorkspacePageProps> = ({ initialId, 
         <div className="cloudnav-reading-header-actions"><button type="button" onClick={exportDocuments} title="导出阅读库"><Download size={16} />导出</button><label title="导入阅读库"><Upload size={16} />导入<input key={importInputKey} type="file" accept="application/json" onChange={readImport} /></label><button type="button" onClick={() => setShowShortcuts(value => !value)} title="快捷键"><Keyboard size={16} /></button></div>
       </header>
 
+      <div data-reading-region="source-rail" data-sources="rss" className="cloudnav-source-rail cloudnav-reading-source-rail" aria-label="阅读来源">
+        <div className="cloudnav-source-rail-label"><BookOpen size={15} /><strong>阅读来源</strong><span>{sourceFiltered.filter(item => item.status === status && !item.deletedAt).length}</span></div>
+        <div className="cloudnav-source-rail-list">
+          <button type="button" className={`cloudnav-source-option ${sourceFilter === 'all' ? 'is-active' : ''}`} onClick={() => setSourceFilter('all')} aria-pressed={sourceFilter === 'all'}><span className="cloudnav-source-option-icon"><Inbox size={14} /></span><span>全部内容</span><small>{documents.filter(item => item.status === status && !item.deletedAt).length}</small></button>
+          {sourceSummaries.slice(1).map(source => <button type="button" key={source.id} className={`cloudnav-source-option ${sourceFilter === source.id ? 'is-active' : ''} ${source.error ? 'has-error' : ''}`} onClick={() => setSourceFilter(source.id)} aria-pressed={sourceFilter === source.id}><span className="cloudnav-source-option-icon"><Radio size={14} /></span><span>{source.title}</span><small>{source.unread ? `${source.unread} 未读` : `${source.total} 篇`}</small></button>)}
+          {(['article', 'note', 'github'] as const).map(kind => <button type="button" key={kind} className={`cloudnav-source-option ${sourceFilter === kind ? 'is-active' : ''}`} onClick={() => setSourceFilter(kind)} aria-pressed={sourceFilter === kind}><span className="cloudnav-source-option-icon">{kind === 'article' ? <FileText size={14} /> : kind === 'note' ? <Lightbulb size={14} /> : <Github size={14} />}</span><span>{kind === 'article' ? '网页文章' : kind === 'note' ? '灵感笔记' : 'GitHub'}</span><small>{documents.filter(item => item.type === kind && item.status === status && !item.deletedAt).length}</small></button>)}
+        </div>
+      </div>
+
       <form className="cloudnav-reading-capture" onSubmit={addUrl}><input value={newTitle} onChange={event => setNewTitle(event.target.value)} placeholder="标题" aria-label="阅读标题" /><input value={newUrl} onChange={event => setNewUrl(event.target.value)} placeholder="粘贴网址，加入 Inbox" aria-label="阅读网址" /><button type="submit" disabled={isCapturing}><Inbox size={15} />{isCapturing ? '抓取正文…' : '加入 Inbox'}</button></form>
 
       <div className="cloudnav-reading-toolbar"><label className="cloudnav-search-field"><Search size={16} /><input data-reading-search value={query} onChange={event => setQuery(event.target.value)} placeholder="搜索正文、高亮、笔记、作者和标签" /></label><div className="cloudnav-segmented">{(Object.keys(STATUS_LABELS) as ReadingDocumentStatus[]).map(value => <button key={value} type="button" className={status === value ? 'is-active' : ''} onClick={() => setStatus(value)}>{STATUS_LABELS[value]} <span>{documents.filter(item => item.status === value && !item.deletedAt).length}</span></button>)}</div><button type="button" className="cloudnav-reading-view-save" onClick={saveView}><Tag size={14} />保存视图</button>{views.length > 0 && <div className="cloudnav-reading-saved-views">{views.slice(-4).map(view => <button type="button" key={view.id} onClick={() => { const match = view.query.match(/status:(inbox|later|archive)/); if (match) setStatus(match[1] as ReadingDocumentStatus); setQuery(view.query.replace(/status:(inbox|later|archive)/, '').trim()); }}>{view.name}</button>)}</div>}{selectedIds.size > 0 && <div className="cloudnav-reading-bulk"><button type="button" onClick={() => runBatch('later')}><Clock3 size={14} />稍后</button><button type="button" onClick={() => runBatch('archive')}><Archive size={14} />归档</button><button type="button" onClick={() => runBatch('delete')}><Trash2 size={14} />删除</button></div>}</div>
@@ -298,13 +325,13 @@ const ReadingWorkspacePage: React.FC<ReadingWorkspacePageProps> = ({ initialId, 
           {visible.length === 0 ? <div className="cloudnav-empty-state"><FileText size={30} /><strong>这里还没有内容</strong><span>粘贴网址或从 RSS、扩展和分享入口保存。</span></div> : visible.map(item => <article key={item.id} className={`cloudnav-reading-card ${selected?.id === item.id ? 'is-active' : ''} ${item.unread ? 'is-unread' : ''}`} onClick={() => selectDocument(item.id)}><input type="checkbox" checked={selectedIds.has(item.id)} onChange={() => toggleSelected(item.id)} onClick={event => event.stopPropagation()} aria-label={`选择 ${item.title}`} /><div className="cloudnav-reading-card-copy"><div className="cloudnav-reading-card-meta"><span>{item.source || item.type.toUpperCase()}</span>{item.progress > 0 && <span>{Math.round(item.progress * 100)}%</span>}</div><h2>{item.title}</h2><p>{item.summary || item.content || '暂无正文，打开原文阅读。'}</p><small>{item.author || item.url}</small></div>{item.starred && <Star size={15} className="is-starred" fill="currentColor" />}</article>)}
         </aside>
 
-        <article ref={readerRef} className="cloudnav-reading-reader" aria-label="阅读详情">
+        <article ref={readerRef} className="cloudnav-reading-reader" aria-label="阅读详情" onScroll={handleReaderScroll}>
           {selected ? <>
             <div className="cloudnav-reader-actions"><span className="cloudnav-reader-status"><span className={`cloudnav-status-dot ${selected.unread ? 'is-unread' : ''}`} />{STATUS_LABELS[selected.status]}</span><div><button type="button" onClick={summarize} title="生成 AI 摘要" disabled={isSummarizing}><Sparkles size={16} />{isSummarizing ? '整理中' : 'AI 摘要'}</button><button type="button" onClick={toggleStar} title="收藏"><Star size={16} fill={selected.starred ? 'currentColor' : 'none'} /></button><button type="button" onClick={speak} title="朗读"><Volume2 size={16} /></button><button type="button" onClick={() => onOpenUrl?.(selected.url)} title="打开原文"><ExternalLink size={16} /></button><button type="button" onClick={() => setSelectedId(null)} title="关闭阅读"><X size={16} /></button></div></div>
             <div className="cloudnav-reader-heading"><div className="cloudnav-reading-card-meta"><span>{selected.source || selected.type.toUpperCase()}</span>{selected.author && <span>{selected.author}</span>}</div><h2>{selected.title}</h2><p>{selected.url}</p></div>
             {selectionText && <div className="cloudnav-highlight-popover"><Highlighter size={15} />已选中 {selectionText.length} 字<button type="button" onClick={highlight}>保存高亮</button></div>}
             {selected.aiSummary && <div className="cloudnav-reader-ai-summary"><Sparkles size={15} /><span><strong>AI 摘要</strong>{selected.aiSummary}</span></div>}
-            <div className="cloudnav-reader-body" onMouseUp={() => { const text = window.getSelection()?.toString().trim() || ''; if (text) setSelectionText(text); }} onScroll={event => { const element = event.currentTarget; const progress = element.scrollHeight > element.clientHeight ? element.scrollTop / (element.scrollHeight - element.clientHeight) : 0; if (Math.abs(progress - selected.progress) > 0.05) persist(documents.map(item => item.id === selected.id ? { ...item, progress, unread: false, updatedAt: Date.now() } : item)); }}>
+            <div className="cloudnav-reader-body" onMouseUp={() => { const text = window.getSelection()?.toString().trim() || ''; if (text) setSelectionText(text); }}>
               {(selected.content || selected.summary || '暂无正文。打开原文获取完整内容。').split(/\n{2,}|(?<=[。！？.!?])\s+(?=\S)/).filter(Boolean).map((paragraph, index) => <p key={`${selected.id}-paragraph-${index}`}>{paragraph}</p>)}
             </div>
             <section className="cloudnav-reader-notes"><div className="cloudnav-reader-section-title"><strong><Tag size={15} />文档笔记</strong><button type="button" onClick={saveNote}><Check size={14} />保存</button></div><textarea value={noteDraft} onChange={event => setNoteDraft(event.target.value)} placeholder="记录这篇内容对你的意义…" /><input className="cloudnav-reader-tags" value={tagDraft} onChange={event => setTagDraft(event.target.value)} placeholder="标签，用逗号分隔" aria-label="文档标签" /><div className="cloudnav-reader-section-title"><strong><Highlighter size={15} />高亮 {selected.highlights.length}</strong></div>{selected.highlights.length === 0 ? <small>选中正文后保存第一条高亮。</small> : selected.highlights.map(item => <blockquote key={item.id}>“{item.quote}”{item.note && <footer>{item.note}</footer>}</blockquote>)}</section>

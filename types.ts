@@ -265,6 +265,7 @@ export interface UnifiedInboxItem {
   summary?: string;
   url?: string;
   source?: string;
+  sourceId?: string;
   updatedAt: number;
   read: boolean;
   starred: boolean;

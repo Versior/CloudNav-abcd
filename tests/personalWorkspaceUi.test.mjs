@@ -41,3 +41,24 @@ test('workspace pages use a flat desktop three-column reading surface instead of
   assert.match(css, /grid-template-columns:\s*190px\s+minmax\(360px, 1fr\)\s+minmax\(320px, \.86fr\)/);
   assert.doesNotMatch(page, /iframe/);
 });
+
+test('desktop reading workspace keeps the reader visible while the queue and article scroll independently', () => {
+  const page = read('components/ReadingWorkspacePage.tsx');
+  const redesign = read('styles/cloudnav-redesign.css');
+  assert.match(page, /className="cloudnav-reading-reader"[^>]*onScroll=\{handleReaderScroll\}/);
+  assert.doesNotMatch(page, /className="cloudnav-reader-body"[^>]*onScroll=/);
+  assert.match(redesign, /\[data-page="reading-workspace"\][\s\S]*?height: calc\(100vh - 172px\) !important;/);
+  assert.match(redesign, /\.cloudnav-reading-grid \{[\s\S]*?min-height: 0 !important;[\s\S]*?overflow: hidden !important;/);
+  assert.match(redesign, /\.cloudnav-reading-reader \{[\s\S]*?height: 100% !important;[\s\S]*?overflow-y: auto !important;/);
+});
+
+test('desktop RSS, inbox, and reading surfaces expose the same selectable source rail', () => {
+  const rss = read('components/RssReaderPage.tsx');
+  const inbox = read('components/InboxPage.tsx');
+  const reader = read('components/ReadingWorkspacePage.tsx');
+  for (const page of [rss, inbox, reader]) {
+    assert.match(page, /buildRssSourceSummary/);
+    assert.match(page, /data-[^>]*sources/);
+    assert.match(page, /sourceFilter/);
+  }
+});

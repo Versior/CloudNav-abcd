@@ -81,6 +81,22 @@ test('RSS reader v5 is a single-flow desktop stream with independent drawers', (
   assert.match(css, /position: fixed/);
 });
 
+test('spatial page transitions release transform so the fixed RSS reader stays viewport anchored', () => {
+  const css = read('index.css');
+  assert.match(css, /@keyframes cloudnav-spatial-forward[\s\S]*?to \{ opacity: 1; transform: none; \}/);
+  assert.match(css, /@keyframes cloudnav-spatial-backward[\s\S]*?to \{ opacity: 1; transform: none; \}/);
+});
+
+test('RSS source picker is a compact page-anchored popover instead of a full-height floating sheet', () => {
+  const css = read('index.css');
+  const redesign = read('styles/cloudnav-redesign.css');
+  assert.match(css, /cloudnav-rss-reader-v5[\s\S]*?cloudnav-rss-source-drawer \{[\s\S]*?position: absolute;[\s\S]*?top: 88px;[\s\S]*?max-height: min\(680px, calc\(100vh - 152px\)\)/);
+  assert.match(redesign, /cloudnav-rss-source-drawer \{[\s\S]*?position: absolute !important;/);
+  assert.match(redesign, /cloudnav-rss-source-drawer \{[\s\S]*?border-radius: 16px !important;/);
+  assert.match(redesign, /cloudnav-rss-source-drawer \{[\s\S]*?max-height: min\(680px, calc\(100vh - 152px\)\)/);
+  assert.doesNotMatch(css, /cloudnav-rss-source-drawer \{ left: 224px; width: min\(340px/);
+});
+
 test('workbench is a desktop-first command surface without entry-card grids', () => {
   const page = read('components/HomeDashboard.tsx');
   assert.match(page, /data-workbench-layout=["']desktop-command-surface["']/);

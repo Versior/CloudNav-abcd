@@ -1,12 +1,12 @@
 import React, { useMemo, useState } from 'react';
-import { Archive, Check, ExternalLink, Inbox, Search, Sparkles, Star } from 'lucide-react';
+import { Archive, Check, Clock3, ExternalLink, Github, Globe2, Inbox, Lightbulb, Radio, Search, Sparkles, Star } from 'lucide-react';
 import type { LinkItem, RssArticle, UnifiedInboxItem } from '../types';
 import { GITHUB_WATCH_KEY, INSPIRATIONS_KEY, READ_LATER_KEY } from '../constants/storageKeys';
 import { normalizeGithubWatch } from '../services/githubService';
 import { normalizeInspirations } from '../services/inspirationService';
 import { buildInboxItems, getInboxKindLabel } from '../services/inboxService';
 import { normalizeReadLater, updateReadLaterStatus } from '../services/readLaterService';
-import { normalizeRssState, readRssState, writeRssState } from '../services/rssService';
+import { buildRssSourceSummary, normalizeRssState, readRssState, writeRssState } from '../services/rssService';
 import { readWorkspaceList, WORKSPACE_DATA_CHANGED_EVENT, writeWorkspaceList } from '../services/workspaceStorage';
 
 interface InboxPageProps {
@@ -26,9 +26,14 @@ const getSourceData = (links: LinkItem[]) => buildInboxItems({
 
 const InboxPage: React.FC<InboxPageProps> = ({ links, onOpenUrl, onCaptureRss, onMarkLinkDone }) => {
   const [items, setItems] = useState<UnifiedInboxItem[]>(() => getSourceData(links));
+  const [rssState, setRssState] = useState(() => readRssState());
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<'all' | 'unread' | 'starred'>('all');
-  const reload = () => setItems(getSourceData(links));
+  const [sourceFilter, setSourceFilter] = useState('all');
+  const reload = () => {
+    setItems(getSourceData(links));
+    setRssState(readRssState());
+  };
 
   React.useEffect(() => {
     const handler = () => reload();
@@ -41,10 +46,14 @@ const InboxPage: React.FC<InboxPageProps> = ({ links, onOpenUrl, onCaptureRss, o
     return items.filter(item => {
       if (filter === 'unread' && item.read) return false;
       if (filter === 'starred' && !item.starred) return false;
+      if (sourceFilter.startsWith('rss:') && (item.kind !== 'rss' || item.sourceId !== sourceFilter.slice(4))) return false;
+      if (sourceFilter !== 'all' && !sourceFilter.startsWith('rss:') && item.kind !== sourceFilter) return false;
       if (!normalized) return true;
       return [item.title, item.summary, item.source].filter(Boolean).join(' ').toLocaleLowerCase().includes(normalized);
     });
-  }, [filter, items, query]);
+  }, [filter, items, query, sourceFilter]);
+
+  const sourceSummaries = useMemo(() => buildRssSourceSummary(rssState), [rssState]);
 
   const markDone = (item: UnifiedInboxItem) => {
     if (item.kind === 'rss') {
@@ -76,6 +85,15 @@ const InboxPage: React.FC<InboxPageProps> = ({ links, onOpenUrl, onCaptureRss, o
 
   return <section data-page="inbox" className="cloudnav-workspace-page cloudnav-inbox-page">
     <header className="cloudnav-page-header"><div><div className="cloudnav-eyebrow"><Inbox size={14} /> UNIFIED INBOX</div><h1>统一收件箱</h1><p>把资讯、稍后阅读、灵感与项目更新汇成一条可处理的信息流。</p></div><div className="cloudnav-reading-stat"><strong>{items.filter(item => !item.read).length}</strong><span>待处理</span></div></header>
+
+    <div data-inbox-region="source-rail" data-sources="rss" className="cloudnav-source-rail cloudnav-inbox-source-rail" aria-label="收件箱订阅源">
+      <div className="cloudnav-source-rail-label"><Inbox size={15} /><strong>内容来源</strong><span>{items.length}</span></div>
+      <div className="cloudnav-source-rail-list">
+        <button type="button" className={`cloudnav-source-option ${sourceFilter === 'all' ? 'is-active' : ''}`} onClick={() => setSourceFilter('all')} aria-pressed={sourceFilter === 'all'}><span className="cloudnav-source-option-icon"><Inbox size={14} /></span><span>全部内容</span><small>{items.length}</small></button>
+        {sourceSummaries.slice(1).map(source => <button type="button" key={source.id} className={`cloudnav-source-option ${sourceFilter === `rss:${source.id}` ? 'is-active' : ''} ${source.error ? 'has-error' : ''}`} onClick={() => setSourceFilter(`rss:${source.id}`)} aria-pressed={sourceFilter === `rss:${source.id}`}><span className="cloudnav-source-option-icon"><Radio size={14} /></span><span>{source.title}</span><small>{source.unread ? `${source.unread} 未读` : `${source.total} 篇`}</small></button>)}
+        {(['website', 'read-later', 'inspiration', 'github'] as const).map(kind => <button type="button" key={kind} className={`cloudnav-source-option ${sourceFilter === kind ? 'is-active' : ''}`} onClick={() => setSourceFilter(kind)} aria-pressed={sourceFilter === kind}><span className="cloudnav-source-option-icon">{kind === 'website' ? <Globe2 size={14} /> : kind === 'read-later' ? <Clock3 size={14} /> : kind === 'inspiration' ? <Lightbulb size={14} /> : <Github size={14} />}</span><span>{getInboxKindLabel(kind)}</span><small>{items.filter(item => item.kind === kind).length}</small></button>)}
+      </div>
+    </div>
     <div className="cloudnav-workspace-toolbar"><label className="cloudnav-search-field"><Search size={16} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="搜索所有内容" /></label><div className="cloudnav-segmented"><button className={filter === 'all' ? 'is-active' : ''} onClick={() => setFilter('all')}>全部</button><button className={filter === 'unread' ? 'is-active' : ''} onClick={() => setFilter('unread')}>待处理</button><button className={filter === 'starred' ? 'is-active' : ''} onClick={() => setFilter('starred')}>重点</button></div></div>
     <div className="cloudnav-inbox-stream">{visible.length === 0 ? <div className="cloudnav-empty-state"><Inbox size={30} /><strong>收件箱是空的</strong><span>新 RSS、灵感和稍后阅读内容会自动出现在这里。</span></div> : visible.map(item => <article key={item.id} className={`cloudnav-inbox-item ${item.read ? 'is-read' : ''}`}><div className="cloudnav-inbox-kind">{getInboxKindLabel(item.kind)}</div><div className="min-w-0 flex-1"><h2>{item.title}</h2><p>{item.summary || '暂无摘要，打开来源查看完整内容。'}</p><small>{item.source || 'CloudNav'} · {item.updatedAt ? new Date(item.updatedAt).toLocaleString('zh-CN') : '时间未知'}</small></div><div className="cloudnav-inbox-actions">{item.url && <button title="打开来源" onClick={() => onOpenUrl?.(item.url!)}><ExternalLink size={16} /></button>}{item.kind === 'rss' && onCaptureRss && <button title="记入灵感" onClick={() => capture(item)}><Sparkles size={16} /></button>}<button title="标记处理" onClick={() => markDone(item)}>{item.read ? <Archive size={16} /> : <Check size={16} />}</button>{item.starred && <Star size={15} className="is-starred" />}</div></article>)}</div>
   </section>;

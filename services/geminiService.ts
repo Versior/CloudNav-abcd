@@ -166,7 +166,7 @@ Rules:
     };
   }
   if (task === 'rss_summary') {
-    const kind = body.summaryKind === 'website' || body.summaryKind === 'workbench'
+    const kind = body.summaryKind === 'website' || body.summaryKind === 'webpage' || body.summaryKind === 'workbench'
       ? body.summaryKind as ContentSummaryKind
       : 'rss';
     return buildContentSummaryPrompt(kind, {
@@ -468,6 +468,21 @@ export const summarizeWebsiteCollection = async (
     sourceTitle: collection.sourceTitle || 'CloudNav 网站库',
   }, config);
   if (!result) throw new Error('AI 未返回网站库摘要');
+  return parseRssSummaryResponse(result);
+};
+
+export const summarizeWebsitePage = async (
+  page: { title: string; url: string; summary: string; sourceTitle?: string },
+  config: AIConfig,
+): Promise<RssSummaryResult> => {
+  const result = await callAI('rss_summary', {
+    title: page.title,
+    url: page.url,
+    summaryKind: 'webpage',
+    summary: page.summary,
+    sourceTitle: page.sourceTitle || '网页正文',
+  }, config);
+  if (!result) throw new Error('AI 未返回页面摘要');
   return parseRssSummaryResponse(result);
 };
 

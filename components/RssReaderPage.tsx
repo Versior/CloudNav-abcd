@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import type { AIConfig, RssArticle, RssFeed, RssState } from '../types';
 import {
-  buildOpml, chooseInitialRssArticle, discoverRssFeeds, fetchRssFeed, formatRssTime, getRssFeedViewState,
+  buildOpml, buildRssSourceSummary, chooseInitialRssArticle, discoverRssFeeds, fetchRssFeed, formatRssTime, getRssFeedViewState,
   mergeRssArticles, parseOpml, readRssState, updateRssFeed, writeRssState,
 } from '../services/rssService';
 import { summarizeRssArticle } from '../services/geminiService';
@@ -123,6 +123,8 @@ const RssReaderPage: React.FC<RssReaderPageProps> = ({ onSaveArticle, onSaveToRe
 
   const unreadCount = useMemo(() => rssState.articles.filter(article => !article.read).length, [rssState.articles]);
   const starredCount = useMemo(() => rssState.articles.filter(article => article.starred).length, [rssState.articles]);
+  const sourceSummaries = useMemo(() => buildRssSourceSummary(rssState), [rssState]);
+  const sourceFilter = selectedFeedId;
   const selectedFeed = rssState.feeds.find(feed => feed.id === selectedFeedId);
   const visibleArticles = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -338,6 +340,15 @@ const RssReaderPage: React.FC<RssReaderPageProps> = ({ onSaveArticle, onSaveToRe
   return (
     <section data-rss-view="reader" data-rss-layout="focus-flow" data-layout-version="reader-v5" className="cloudnav-rss-reader cloudnav-rss-reader-v5">
       <header className="cloudnav-rss-v5-header"><div><span className="cloudnav-rss-v5-kicker">READING DESK</span><h1>资讯阅读台</h1><p>先扫读文章流，需要深入时再打开独立阅读层。</p></div><div className="cloudnav-rss-header-actions"><button type="button" className="cloudnav-quiet-button" onClick={generateDigest} disabled={isDigestLoading}><Bot size={15} />{isDigestLoading ? '整理中…' : '今日 AI 简报'}</button><button type="button" className="cloudnav-quiet-button" onClick={refreshAll}><RefreshCw size={15} />刷新</button><button type="button" className="cloudnav-primary-button" onClick={showAddFeed && !editingFeedId ? () => setShowAddFeed(false) : openAddFeed}><Plus size={15} />添加订阅</button></div></header>
+
+      <div data-rss-region="source-rail" data-sources="rss" className="cloudnav-source-rail cloudnav-rss-source-rail" aria-label="RSS 订阅源">
+        <div className="cloudnav-source-rail-label"><Rss size={15} /><strong>订阅源</strong><span>{rssState.feeds.length}</span></div>
+        <div className="cloudnav-source-rail-list">
+          {sourceSummaries.map(source => <button type="button" key={source.id} className={`cloudnav-source-option ${sourceFilter === source.id ? 'is-active' : ''} ${source.error ? 'has-error' : ''}`} onClick={() => { setSelectedFeedId(source.id); setArticleFilter('all'); }} aria-pressed={sourceFilter === source.id}>
+            <span className="cloudnav-source-option-icon">{source.id === 'all' ? <Globe2 size={14} /> : <Radio size={14} />}</span><span>{source.title}</span><small>{source.unread ? `${source.unread} 未读` : `${source.total} 篇`}</small>
+          </button>)}
+        </div>
+      </div>
       <div className="cloudnav-rss-v5-stats" aria-label="资讯概览"><span><strong>{rssState.feeds.length}</strong><small>订阅源</small></span><span><strong>{unreadCount}</strong><small>未读文章</small></span><span><strong>{starredCount}</strong><small>稍后阅读</small></span><span className="cloudnav-rss-v5-stats-note">{selectedFeedId === 'all' ? '全部资讯' : selectedFeed?.title || '当前订阅'} · {visibleArticles.length} 篇</span></div>
       {digest && <div className="cloudnav-rss-digest" data-rss-ai-summary><Bot size={17} /><div><strong>今日 AI 简报</strong><p>{digest}</p></div><button type="button" onClick={() => setDigest('')} aria-label="关闭简报"><X size={14} /></button></div>}
       {notice && <div className={`cloudnav-rss-notice ${notice.tone === 'error' ? 'is-error' : ''}`}><AlertCircle size={15} />{notice.text}<button type="button" onClick={() => setNotice(null)} aria-label="关闭提示"><X size={14} /></button></div>}

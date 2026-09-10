@@ -54,6 +54,7 @@ import PinnedSitesPage from './components/PinnedSitesPage';
 import PinnedSitesEmptyState from './components/PinnedSitesEmptyState';
 import DesktopLibraryPage from './components/DesktopLibraryPage';
 import TopWeather from './components/TopWeather';
+import WebsiteSummaryPanel, { type WebsiteSummaryPanelState } from './components/WebsiteSummaryPanel';
 import { readWorkspaceList, WORKSPACE_DATA_CHANGED_EVENT, writeWorkspaceList } from './services/workspaceStorage';
 import type { QuickCaptureInput } from './components/QuickCaptureModal';
 import { addReadLater, normalizeReadLater } from './services/readLaterService';
@@ -233,6 +234,12 @@ const readLocalDashboardConfig = (): DashboardConfig => {
   }
 };
 
+const createSyncConflictFingerprint = (
+  version: number,
+  localSnapshot: { links: LinkItem[]; categories: Category[] },
+  cloudSnapshot: { links: LinkItem[]; categories: Category[] },
+) => JSON.stringify({ version, local: localSnapshot, cloud: cloudSnapshot });
+
 function App() {
   const { showToast } = useToast();
   const { snapshot: bootstrapSnapshot, refresh: refreshBootstrap } = useAppBootstrap();
@@ -313,6 +320,50 @@ function App() {
 
   // AI Config State
   const [aiConfig, setAiConfig] = useState<AIConfig>(() => readLocalAIConfig());
+  const [websiteSummary, setWebsiteSummary] = useState<WebsiteSummaryPanelState | null>(null);
+  const websiteSummaryRequestRef = useRef(0);
+
+  const openWebsiteWithSummary = async (link: LinkItem, options: { openExternal?: boolean } = {}) => {
+    const openExternal = options.openExternal !== false;
+    if (openExternal) {
+      // 先开站点，再异步抓取正文，避免 AI 请求拖慢用户真正想打开的页面。
+      window.open(link.url, '_blank', 'noopener,noreferrer');
+      recordVisit(link.id);
+    }
+
+    const requestId = ++websiteSummaryRequestRef.current;
+    const panelLink = { id: link.id, title: link.title, url: link.url, description: link.description };
+    // 摘要模块按需加载，首页打开网站时不会把 AI 依赖塞进首包。
+    const { getCachedWebsiteSummary, summarizeWebsite } = await import('./services/websiteSummaryService');
+    const cached = getCachedWebsiteSummary(link.url);
+    if (cached) {
+      setWebsiteSummary({ link: panelLink, status: 'ready', result: cached });
+      return;
+    }
+
+    if (!aiConfig.apiKey && !aiConfig.hasApiKey) {
+      setWebsiteSummary({
+        link: panelLink,
+        status: 'error',
+        error: '请先在设置 → AI 中配置 API Key，网站仍已正常打开。',
+      });
+      return;
+    }
+
+    setWebsiteSummary({ link: panelLink, status: 'loading' });
+    try {
+      const result = await summarizeWebsite(link, aiConfig);
+      if (requestId !== websiteSummaryRequestRef.current) return;
+      setWebsiteSummary({ link: panelLink, status: 'ready', result });
+    } catch (error) {
+      if (requestId !== websiteSummaryRequestRef.current) return;
+      setWebsiteSummary({
+        link: panelLink,
+        status: 'error',
+        error: error instanceof Error ? error.message : '页面读取失败，请稍后重试。',
+      });
+    }
+  };
 
   // Site Settings State
   const [siteSettings, setSiteSettings] = useState(() => {
@@ -353,6 +404,10 @@ function App() {
   const cloudVersionRef = useRef(0);
   const cloudBaseRef = useRef<{ links: LinkItem[]; categories: Category[] }>({ links: localInitialData.links, categories: localInitialData.categories });
   const syncTimerRef = useRef<number | null>(null);
+  const syncInFlightRef = useRef(false);
+  const queuedSyncRef = useRef<{ links: LinkItem[]; categories: Category[] } | null>(null);
+  const syncConflictFingerprintRef = useRef<string | null>(null);
+  const syncConflictOpenRef = useRef(false);
   const [extensionToken, setExtensionToken] = useState('');
   const [requiresAuth, setRequiresAuth] = useState<boolean | null>(null); // null表示未检查，true表示需要认证，false表示不需要
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
@@ -552,9 +607,18 @@ function App() {
   };
 
   const syncToCloud = async (newLinks: LinkItem[], newCategories: Category[], baseVersion = cloudVersionRef.current, workspace = readWorkspaceSnapshot()) => {
-    if (!navigator.onLine) {
-      await queueOfflineMutation(newLinks, newCategories);
+    if (syncInFlightRef.current) {
+      queuedSyncRef.current = { links: newLinks, categories: newCategories };
       return false;
+    }
+    syncInFlightRef.current = true;
+    if (!navigator.onLine) {
+      try {
+        await queueOfflineMutation(newLinks, newCategories);
+        return false;
+      } finally {
+        syncInFlightRef.current = false;
+      }
     }
     setSyncStatus('saving');
     try {
@@ -579,18 +643,37 @@ function App() {
                 if (cloudData && Array.isArray(cloudData.links)) {
                     cloudVersionRef.current = typeof cloudData.version === 'number' ? cloudData.version : cloudVersionRef.current;
                     const localSnapshot = { links: newLinks, categories: newCategories };
-                    const mergeResult = mergeThreeWay(cloudBaseRef.current, localSnapshot, { links: cloudData.links, categories: cloudData.categories || [] });
+                    const cloudSnapshot = { links: cloudData.links as LinkItem[], categories: (cloudData.categories || []) as Category[] };
+                    const conflictFingerprint = createSyncConflictFingerprint(cloudVersionRef.current, localSnapshot, cloudSnapshot);
+                    if (syncConflictFingerprintRef.current === conflictFingerprint) {
+                      setSyncStatus('error');
+                      return false;
+                    }
+                    syncConflictFingerprintRef.current = conflictFingerprint;
+                    syncConflictOpenRef.current = true;
+                    queuedSyncRef.current = null;
+                    const mergeResult = mergeThreeWay(cloudBaseRef.current, localSnapshot, cloudSnapshot);
                     setSyncConflictPreview({
                       links: mergeResult.linkConflicts,
                       categories: mergeResult.categoryConflicts,
                     });
                     setSyncConflictResolve({
-                        useLocal: () => syncToCloud(localSnapshot.links, localSnapshot.categories),
+                        useLocal: () => {
+                          syncConflictOpenRef.current = false;
+                          syncConflictFingerprintRef.current = null;
+                          void replacePendingMutations([]);
+                          void syncToCloud(localSnapshot.links, localSnapshot.categories);
+                        },
                         useCloud: () => {
+                             syncConflictOpenRef.current = false;
+                             syncConflictFingerprintRef.current = null;
                              void replacePendingMutations([]);
-                             applyCloudData(cloudData.links, cloudData.categories || [], cloudData.version, cloudData.workspace);
+                             applyCloudData(cloudSnapshot.links, cloudSnapshot.categories, cloudData.version, cloudData.workspace);
                         },
                         merge: () => {
+                            syncConflictOpenRef.current = false;
+                            syncConflictFingerprintRef.current = null;
+                            void replacePendingMutations([]);
                             updateData(mergeResult.data.links, mergeResult.data.categories);
                         },
                     });
@@ -614,6 +697,8 @@ function App() {
         if (typeof result.version === 'number') cloudVersionRef.current = result.version;
 
         cloudBaseRef.current = { links: newLinks, categories: newCategories };
+        syncConflictFingerprintRef.current = null;
+        syncConflictOpenRef.current = false;
         if (result.workspace) writeWorkspaceSnapshot(normalizeWorkspaceSnapshot(result.workspace), false);
         await replacePendingMutations([]);
         setPendingSyncCount(0);
@@ -626,6 +711,13 @@ function App() {
         await queueOfflineMutation(newLinks, newCategories);
         setSyncStatus('error');
         return false;
+    } finally {
+      syncInFlightRef.current = false;
+      if (!syncConflictOpenRef.current && navigator.onLine) {
+        const queued = queuedSyncRef.current;
+        queuedSyncRef.current = null;
+        if (queued) window.setTimeout(() => void syncToCloud(queued.links, queued.categories), 0);
+      }
     }
   };
 
@@ -2688,7 +2780,7 @@ function App() {
            { id: 'github', title: '打开 GitHub 追踪', description: '查看正在关注的仓库', keywords: ['github', '仓库', '项目', '追踪'], icon: <Github size={14} />, group: 'action', run: openGithub },
           { id: 'theme', title: darkMode ? '切换到浅色模式' : '切换到深色模式', keywords: ['theme', 'dark', 'light', '主题'], icon: darkMode ? <Sun size={14} /> : <Moon size={14} />, group: 'action', run: toggleTheme },
         ]}
-        onOpenLink={(link) => { recordVisit(link.id); window.open(link.url, '_blank'); }}
+         onOpenLink={(link) => { void openWebsiteWithSummary(link); }}
         onSelectCategory={(categoryId) => openLinksView(categoryId)}
           onOpenInbox={() => { openLinksView(INBOX_ID); setOrganizeIndex(0); setIsOrganizeMode(true); }}
         />
@@ -3249,7 +3341,7 @@ function App() {
                  onWorkbenchToolsChange={updateWorkbenchTools}
                  aiConfig={aiConfig}
                 onOpenInbox={() => { openLinksView(INBOX_ID); setOrganizeIndex(0); setIsOrganizeMode(true); }}
-                onClickLink={(link) => { recordVisit(link.id); window.open(link.url, '_blank'); }}
+                 onClickLink={(link) => { void openWebsiteWithSummary(link); }}
                 onSelectCategory={(categoryId) => {
                   const category = categories.find(c => c.id === categoryId);
                   if (category) handleCategoryClick(category);
@@ -3326,7 +3418,7 @@ function App() {
                 aiConfig={aiConfig}
                 onSearch={setSearchQuery}
                 onAdd={() => { if (!authToken) setIsAuthOpen(true); else { setEditingLink(undefined); setIsModalOpen(true); } }}
-                onOpen={(link) => { recordVisit(link.id); window.open(link.url, '_blank', 'noopener,noreferrer'); }}
+                onOpen={(link) => { void openWebsiteWithSummary(link); }}
                  onDetails={(link) => { setDetailsOrigin('right'); setSelectedLinkId(link.id); }}
                  onEdit={(link) => { setEditingLink(link); setIsModalOpen(true); }}
                  onDelete={(link) => handleDeleteLink(link.id)}
@@ -3411,7 +3503,7 @@ function App() {
           {isSyncConflict && (
             <SyncConflictModal
               isOpen={true}
-               onClose={() => { setIsSyncConflict(false); setSyncConflictResolve(null); setSyncConflictPreview(null); }}
+               onClose={() => { syncConflictOpenRef.current = false; setIsSyncConflict(false); setSyncConflictResolve(null); setSyncConflictPreview(null); }}
                onUseLocal={() => { syncConflictResolve?.useLocal(); setIsSyncConflict(false); setSyncConflictResolve(null); setSyncConflictPreview(null); }}
                onUseCloud={() => { syncConflictResolve?.useCloud(); setIsSyncConflict(false); setSyncConflictResolve(null); setSyncConflictPreview(null); }}
                onMerge={() => { syncConflictResolve?.merge(); setIsSyncConflict(false); setSyncConflictResolve(null); setSyncConflictPreview(null); }}
@@ -3428,6 +3520,17 @@ function App() {
             onSettings={() => setIsSettingsModalOpen(true)}
           />
           <InstallPrompt />
+
+          <WebsiteSummaryPanel
+            state={websiteSummary}
+            onClose={() => { websiteSummaryRequestRef.current += 1; setWebsiteSummary(null); }}
+            onRetry={() => {
+              if (websiteSummary) void openWebsiteWithSummary(websiteSummary.link as LinkItem, { openExternal: false });
+            }}
+            onOpen={() => {
+              if (websiteSummary) window.open(websiteSummary.link.url, '_blank', 'noopener,noreferrer');
+            }}
+          />
 
           {qrCodeModal.isOpen && (
             <QRCodeModal

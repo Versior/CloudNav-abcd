@@ -213,7 +213,7 @@ export const onRequestPost = async (context: { request: Request; env: Env }) => 
       existingNames?: string[];
       summary?: string;
       sourceTitle?: string;
-      summaryKind?: 'rss' | 'website' | 'workbench';
+      summaryKind?: 'rss' | 'website' | 'webpage' | 'workbench';
       config?: AIConfig;
     };
 
@@ -255,7 +255,7 @@ export const onRequestPost = async (context: { request: Request; env: Env }) => 
     }
 
     if (task === 'rss_summary') {
-      const kind: ContentSummaryKind = body.summaryKind === 'website' || body.summaryKind === 'workbench' ? body.summaryKind : 'rss';
+      const kind: ContentSummaryKind = body.summaryKind === 'website' || body.summaryKind === 'webpage' || body.summaryKind === 'workbench' ? body.summaryKind : 'rss';
       const prompt = buildContentSummaryPrompt(kind, {
         title: body.title,
         url: body.url,

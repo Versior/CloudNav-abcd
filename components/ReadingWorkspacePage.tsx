@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Archive, BookOpen, Check, Clock3, Download, ExternalLink, FileText, Github, Highlighter,
   Lightbulb,
-  Inbox, Keyboard, Search, Sparkles, Star, Tag, Trash2, Upload, Volume2, X, Radio,
+  Inbox, Keyboard, Plus, Search, Sparkles, Star, Tag, Trash2, Upload, Volume2, X, Radio,
 } from 'lucide-react';
 import { GITHUB_WATCH_KEY, INSPIRATIONS_KEY, READ_LATER_KEY } from '../constants/storageKeys';
 import type { AIConfig, ReadingDocument, ReadingDocumentStatus } from '../types';
@@ -85,6 +85,7 @@ const ReadingWorkspacePage: React.FC<ReadingWorkspacePageProps> = ({ initialId, 
   const [isCapturing, setIsCapturing] = useState(false);
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [showSources, setShowSources] = useState(false);
+  const [showCapture, setShowCapture] = useState(false);
   const [immersive, setImmersive] = useState(false);
   const readerRef = useRef<HTMLElement>(null);
 
@@ -252,6 +253,7 @@ const ReadingWorkspacePage: React.FC<ReadingWorkspacePageProps> = ({ initialId, 
       setSelectedId(added?.id || null);
       setNewTitle('');
       setNewUrl('');
+      setShowCapture(false);
       onNotice?.('已加入阅读 Inbox');
     } catch {
       onNotice?.('请输入有效的 http 或 https 地址');
@@ -317,7 +319,7 @@ const ReadingWorkspacePage: React.FC<ReadingWorkspacePageProps> = ({ initialId, 
     <section data-page="reading-workspace" data-layout-version="reading-workspace-v2" className="cloudnav-reading-workspace cloudnav-reading-workspace-v2">
       <header className="cloudnav-reading-header-v2">
         <div className="cloudnav-reading-title-block"><div className="cloudnav-eyebrow"><BookOpen size={14} /> READING WORKSPACE</div><h1>阅读台</h1><p>把值得读的内容留下来，安静地读完，再把重点沉淀下来。</p><div className="cloudnav-reading-stats-v2"><span><strong>{documents.filter(item => item.status === 'inbox' && !item.deletedAt).length}</strong> Inbox</span><span><strong>{documents.filter(item => item.unread && !item.deletedAt).length}</strong> 未读</span><span><strong>{documents.filter(item => item.starred && !item.deletedAt).length}</strong> 收藏</span></div></div>
-        <div className="cloudnav-reading-header-actions"><button type="button" onClick={exportDocuments} title="导出阅读库"><Download size={16} />导出</button><label title="导入阅读库"><Upload size={16} />导入<input key={importInputKey} type="file" accept="application/json" onChange={readImport} /></label><button type="button" onClick={() => setShowShortcuts(value => !value)} title="快捷键"><Keyboard size={16} /></button></div>
+        <div className="cloudnav-reading-header-actions"><button type="button" className="cloudnav-reading-capture-toggle" onClick={() => setShowCapture(value => !value)} aria-expanded={showCapture}><Plus size={16} />添加到 Inbox</button><button type="button" onClick={exportDocuments} title="导出阅读库"><Download size={16} />导出</button><label title="导入阅读库"><Upload size={16} />导入<input key={importInputKey} type="file" accept="application/json" onChange={readImport} /></label><button type="button" onClick={() => setShowShortcuts(value => !value)} title="快捷键"><Keyboard size={16} /></button></div>
       </header>
 
       <div className="cloudnav-reading-controls-v2">
@@ -330,7 +332,7 @@ const ReadingWorkspacePage: React.FC<ReadingWorkspacePageProps> = ({ initialId, 
         {showSources && <div id="reading-source-popover" className="cloudnav-reading-source-popover" role="dialog" aria-label="选择阅读来源"><div className="cloudnav-reading-source-popover-head"><div><span className="cloudnav-eyebrow">SOURCES</span><strong>选择来源</strong></div><button type="button" onClick={() => setShowSources(false)} aria-label="关闭来源选择"><X size={16} /></button></div><div className="cloudnav-reading-source-options">{sourceOptions.map(option => <button key={option.id} type="button" className={sourceFilter === option.id ? 'is-active' : ''} onClick={() => { setSourceFilter(option.id); setShowSources(false); }} aria-pressed={sourceFilter === option.id}><span className="cloudnav-reading-source-icon">{option.kind === 'all' ? <Inbox size={15} /> : option.kind === 'rss' ? <Radio size={15} /> : option.kind === 'article' ? <FileText size={15} /> : option.kind === 'note' ? <Lightbulb size={15} /> : <Github size={15} />}</span><span>{option.title}</span><small>{option.unread ? `${option.unread} 未读` : `${option.count} 条`}</small></button>)}</div></div>}
       </div>
 
-      <form className="cloudnav-reading-capture cloudnav-reading-capture-v2" onSubmit={addUrl}><span className="cloudnav-reading-capture-label"><Inbox size={15} />快速收集</span><input value={newTitle} onChange={event => setNewTitle(event.target.value)} placeholder="标题" aria-label="阅读标题" /><input value={newUrl} onChange={event => setNewUrl(event.target.value)} placeholder="粘贴网址，加入 Inbox" aria-label="阅读网址" /><button type="submit" disabled={isCapturing}><Inbox size={15} />{isCapturing ? '抓取正文…' : '加入 Inbox'}</button></form>
+      {showCapture && <form className="cloudnav-reading-capture cloudnav-reading-capture-v2" onSubmit={addUrl}><span className="cloudnav-reading-capture-label"><Inbox size={15} />快速收集</span><input value={newTitle} onChange={event => setNewTitle(event.target.value)} placeholder="标题" aria-label="阅读标题" /><input value={newUrl} onChange={event => setNewUrl(event.target.value)} placeholder="粘贴网址，加入 Inbox" aria-label="阅读网址" /><button type="submit" disabled={isCapturing}><Inbox size={15} />{isCapturing ? '抓取正文…' : '加入 Inbox'}</button></form>}
 
       <div className={`cloudnav-reading-grid-v2 ${immersive ? 'is-immersive' : ''}`}>
         {!immersive && <aside data-reading-region="queue" className="cloudnav-reading-list cloudnav-reading-queue-v2" aria-label="阅读队列"><div className="cloudnav-reading-list-head cloudnav-reading-list-head-v2"><div><span className="cloudnav-eyebrow">QUEUE</span><strong>{visible.length} 条内容</strong></div><button type="button" onClick={() => setSelectedIds(new Set(visible.map(item => item.id)))}>全选</button></div>{visible.length === 0 ? <div className="cloudnav-empty-state"><FileText size={30} /><strong>这里还没有内容</strong><span>粘贴网址或从 RSS、扩展和分享入口保存。</span></div> : visible.map(item => <article key={item.id} className={`cloudnav-reading-card cloudnav-reading-card-v2 ${selected?.id === item.id ? 'is-active' : ''} ${item.unread ? 'is-unread' : ''}`} onClick={() => selectDocument(item.id)}><input type="checkbox" checked={selectedIds.has(item.id)} onChange={() => toggleSelected(item.id)} onClick={event => event.stopPropagation()} aria-label={`选择 ${item.title}`} /><div className="cloudnav-reading-card-copy"><div className="cloudnav-reading-card-meta"><span>{item.source || item.type.toUpperCase()}</span>{item.progress > 0 && <span>{Math.round(item.progress * 100)}%</span>}</div><h2>{item.title}</h2><p>{item.summary || item.content || '暂无正文，打开原文阅读。'}</p><small>{item.author || item.url}</small></div>{item.starred && <Star size={15} className="is-starred" fill="currentColor" />}</article>)}</aside>}

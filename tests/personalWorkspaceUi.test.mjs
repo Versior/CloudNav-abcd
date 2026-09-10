@@ -62,6 +62,9 @@ test('reading workspace v2 removes the horizontal source rail and exposes a focu
   assert.match(page, /沉浸阅读|显示队列/);
   assert.match(css, /cloudnav-reading-grid-v2/);
   assert.match(css, /cloudnav-reading-source-popover/);
+  assert.match(page, /showCapture/);
+  assert.match(page, /cloudnav-reading-capture-toggle/);
+  assert.match(css, /cloudnav-reading-search-v2 \{ flex: 0 1 380px/);
   assert.doesNotMatch(page, /cloudnav-reading-source-rail/);
 });
 

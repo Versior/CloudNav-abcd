@@ -1159,3 +1159,20 @@ body {
   .cloudnav-redesign-root .cloudnav-reading-grid-v2 .cloudnav-reading-reader { min-height: 680px !important; height: auto !important; padding: 0 22px 50px !important; overflow: visible !important; }
   .cloudnav-redesign-root .cloudnav-reading-source-options { grid-template-columns: 1fr !important; }
 }
+
+/* Reading workspace v2 compact pass: keep the reading surface, remove header noise. */
+.cloudnav-redesign-root .cloudnav-reading-header-v2 { align-items: center !important; padding: 0 0 12px !important; }
+.cloudnav-redesign-root .cloudnav-reading-title-block { display: flex !important; align-items: center !important; gap: 16px !important; min-width: 0 !important; }
+.cloudnav-redesign-root .cloudnav-reading-title-block > .cloudnav-eyebrow,
+.cloudnav-redesign-root .cloudnav-reading-title-block > p { display: none !important; }
+.cloudnav-redesign-root .cloudnav-reading-title-block h1 { margin: 0 !important; font-size: clamp(1.75rem, 2.4vw, 2.2rem) !important; letter-spacing: -.045em !important; }
+.cloudnav-redesign-root .cloudnav-reading-stats-v2 { margin: 0 !important; border-left: 1px solid var(--cn-line) !important; padding-left: 16px !important; }
+.cloudnav-redesign-root .cloudnav-reading-header-actions .cloudnav-reading-capture-toggle { border-color: var(--cn-primary-dark) !important; background: var(--cn-primary) !important; color: #fff !important; }
+.cloudnav-redesign-root .cloudnav-reading-header-actions .cloudnav-reading-capture-toggle:hover { border-color: var(--cn-primary-dark) !important; background: var(--cn-primary-dark) !important; color: #fff !important; }
+.cloudnav-redesign-root .cloudnav-reading-search-v2 { flex: 0 1 380px !important; max-width: 420px !important; }
+.cloudnav-redesign-root .cloudnav-reading-capture-v2 { margin-top: 8px !important; padding: 8px 0 !important; }
+
+@media (max-width: 1023px) {
+  .cloudnav-redesign-root .cloudnav-reading-title-block { flex-wrap: wrap !important; gap: 10px 14px !important; }
+  .cloudnav-redesign-root .cloudnav-reading-stats-v2 { border-left: 0 !important; padding-left: 0 !important; }
+}

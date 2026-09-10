@@ -1479,6 +1479,13 @@ body {
   .cloudnav-floating-todo { right: 12px; bottom: 76px; width: min(360px, calc(100vw - 24px)); }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .cloudnav-floating-todo,
+  .cloudnav-floating-todo * {
+    transition: none !important;
+  }
+}
+
 /* Layout-v6 readability: stronger contrast, slightly larger copy, and clear hierarchy. */
 @media (min-width: 1024px) {
   .cloudnav-command-v2 .cloudnav-desktop-content {

@@ -11,6 +11,8 @@ interface WebDavConfig {
   username?: string;
   password?: string;
   enabled?: boolean;
+  /** 云端保留的备份份数：默认 1（只留最新一份），0 = 不清理。 */
+  retention?: number;
 }
 
 type Operation = 'check' | 'upload' | 'download' | 'list';
@@ -131,30 +133,90 @@ const decodeXml = (value: string) =>
     .replace(/&#39;/g, "'")
     .replace(/&amp;/g, '&');
 
-/** 从 PROPFIND 的 multistatus 里取出备份文件名（兼容绝对/相对 href 与 d:/D: 前缀）。 */
-const extractBackupFilenames = (xml: string) => {
-  const names = new Set<string>();
-  const hrefRe = /<[dD]:href[^>]*>([\s\S]*?)<\/[dD]:href>/g;
+/**
+ * 从 PROPFIND 的 multistatus 里解析出备份文件（兼容绝对/相对 href、d:/D: 前缀、
+ * 以及不返回 getlastmodified 的服务端）。按修改时间倒序。
+ */
+const parseBackupEntries = (xml: string) => {
+  const entries: { name: string; mtime: number }[] = [];
+  const seen = new Set<string>();
+  const responseRe = /<[dD]:response[^>]*>([\s\S]*?)<\/[dD]:response>/g;
 
-  let match: RegExpExecArray | null;
-  while ((match = hrefRe.exec(xml))) {
-    let href = decodeXml(match[1].trim());
+  let block: RegExpExecArray | null;
+  while ((block = responseRe.exec(xml))) {
+    const chunk = block[1];
+    const hrefMatch = chunk.match(/<[dD]:href[^>]*>([\s\S]*?)<\/[dD]:href>/);
+    if (!hrefMatch) continue;
+
+    let href = decodeXml(hrefMatch[1].trim());
     if (!href) continue;
-
     try {
       href = new URL(href, 'https://placeholder.invalid/').pathname;
     } catch {
       // 保持原样
     }
 
-    let base = href;
-    try { base = decodeURIComponent(href); } catch { /* keep */ }
-    base = base.replace(/\/+$/, '').split('/').pop() || '';
+    let decoded = href;
+    try { decoded = decodeURIComponent(href); } catch { /* keep */ }
+    const base = decoded.replace(/\/+$/, '').split('/').pop() || '';
+    if (!BACKUP_FILENAME_RE.test(base) || seen.has(base)) continue;
+    seen.add(base);
 
-    if (BACKUP_FILENAME_RE.test(base)) names.add(base);
+    const mtimeMatch = chunk.match(/<[dD]:getlastmodified[^>]*>([\s\S]*?)<\/[dD]:getlastmodified>/);
+    const parsed = mtimeMatch ? Date.parse(decodeXml(mtimeMatch[1].trim())) : NaN;
+    entries.push({ name: base, mtime: Number.isFinite(parsed) ? parsed : 0 });
   }
 
-  return [...names].sort().reverse();
+  // 时间戳文件名本身可比较，作为 mtime 缺失时的兜底
+  return entries.sort((a, b) => (b.mtime - a.mtime) || b.name.localeCompare(a.name));
+};
+
+const extractBackupFilenames = (xml: string) => parseBackupEntries(xml).map(entry => entry.name);
+
+const DEFAULT_DOWNLOAD_NAMES = new Set(['navix_backup.json', 'cloudnav_backup.json']);
+
+const remoteHeaders = (authHeader: string, extra: Record<string, string> = {}) => ({
+  Authorization: authHeader,
+  'User-Agent': 'CloudNav/1.0',
+  Accept: '*/*',
+  ...extra,
+});
+
+/** PROPFIND Depth:1 列出云端备份，按时间倒序。 */
+const listRemoteBackups = async (baseUrl: URL, authHeader: string) => {
+  const response = await fetch(baseUrl.toString(), {
+    method: 'PROPFIND',
+    headers: remoteHeaders(authHeader, { Depth: '1' }),
+    redirect: 'manual',
+  });
+
+  if (response.status !== 207 && !response.ok) {
+    throw new Error(describeUpstreamFailure(response.status, baseUrl.hostname));
+  }
+
+  return parseBackupEntries(await response.text());
+};
+
+/**
+ * 保留最新 keep 份备份，其余删除（keep<=0 表示不清理）。
+ * 只删匹配备份文件名规则的文件，其它文件一律不碰。
+ */
+const applyRetention = async (baseUrl: URL, authHeader: string, keep: number) => {
+  if (!Number.isFinite(keep) || keep <= 0) return { keep, deleted: [] as string[] };
+
+  const entries = await listRemoteBackups(baseUrl, authHeader);
+  const deleted: string[] = [];
+
+  for (const entry of entries.slice(keep, keep + 50)) {
+    const response = await fetch(new URL(entry.name, baseUrl).toString(), {
+      method: 'DELETE',
+      headers: remoteHeaders(authHeader),
+      redirect: 'manual',
+    });
+    if (response.ok || response.status === 204) deleted.push(entry.name);
+  }
+
+  return { keep, deleted };
 };
 
 export const onRequestOptions = async () => optionsResponse();
@@ -247,18 +309,38 @@ export const onRequestPost = async (context: { request: Request; env: Env }) => 
     }
 
     if (operation === 'download') {
-      if (!response.ok) {
+      let target = response;
+      let servedName = finalFilename;
+
+      // 默认文件名不存在时，回退到云端最新的一份备份：
+      // 这样「只保留最新一份」的清理策略不会让恢复功能失效。
+      if (!response.ok && response.status === 404 && DEFAULT_DOWNLOAD_NAMES.has(finalFilename)) {
+        const newest = (await listRemoteBackups(baseUrl, authHeader).catch(() => []))[0];
+        if (newest) {
+          servedName = newest.name;
+          target = await fetch(new URL(newest.name, baseUrl).toString(), {
+            method: 'GET',
+            headers: remoteHeaders(authHeader),
+            redirect: 'manual',
+          });
+        }
+      }
+
+      if (!target.ok) {
         return jsonResponse({
           success: false,
-          status: response.status,
-          error: response.status === 404
+          status: target.status,
+          error: target.status === 404
             ? 'Backup file not found'
-            : describeUpstreamFailure(response.status, baseUrl.hostname),
-        }, { status: response.status === 404 ? 404 : 502 });
+            : describeUpstreamFailure(target.status, baseUrl.hostname),
+        }, { status: target.status === 404 ? 404 : 502 });
       }
 
       try {
-        const data = await response.json();
+        const data = await target.json();
+        if (servedName !== finalFilename) {
+          return jsonResponse({ ...data, _servedFrom: servedName });
+        }
         return jsonResponse(data);
       } catch {
         return jsonResponse({ error: 'Backup file is not valid JSON' }, { status: 502 });
@@ -285,6 +367,24 @@ export const onRequestPost = async (context: { request: Request; env: Env }) => 
         status: response.status,
         error: describeUpstreamFailure(response.status, baseUrl.hostname),
       }, { status: 502 });
+    }
+
+    if (operation === 'upload') {
+      // 上传成功后按保留策略清理旧备份（默认只留最新 1 份）
+      const keep = Number.isFinite(Number(config.retention)) ? Number(config.retention) : 1;
+      let retention: { keep: number; deleted: string[]; error?: string };
+
+      try {
+        retention = await applyRetention(baseUrl, authHeader, keep);
+      } catch (err: any) {
+        retention = { keep, deleted: [], error: err?.message || String(err) };
+      }
+
+      return jsonResponse({
+        success: response.ok || response.status === 207 || response.status === 201 || response.status === 204,
+        status: response.status,
+        retention,
+      });
     }
 
     return jsonResponse({

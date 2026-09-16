@@ -18,15 +18,20 @@ Cloudflare **免费版账号上限是 5 个 cron 触发器**（报错：
 - PUT 文件名默认 `cloudnav_backup.json`（覆盖式 → 云端始终只有最新一份）
 - 上传后按 `keep` 清理旧备份（默认只留最新 1 份）
 - 结果写入 KV `auto_backup_state`
+- 顺带做**数据历史裁剪**：`app_history:v*` 只保留最新 `historyKeep` 份，
+  并同步清理 `app_history_index` 里的对应条目（历史快照一份约 2.3 MB，
+  30 份就是 ~64 MB，是 KV 最大的占用来源）
 
 ## 配置（KV `auto_backup_config`）
 
 ```json
-{ "enabled": true, "hourUtc": 20, "keep": 1, "filename": "cloudnav_backup.json" }
+{ "enabled": true, "hourUtc": 20, "keep": 1, "historyKeep": 5, "filename": "cloudnav_backup.json" }
 ```
 
 - `hourUtc`：每天执行的 UTC 小时，默认 20 = 北京时间 04:00
 - `keep`：云端保留份数，默认 1（只留最新一份），0 = 不清理
+- `historyKeep`：KV 数据历史保留份数，默认 5；0 = 不裁剪。
+  注意它与 `enabled` 无关（属于 KV 占用的日常维护）
 - `filename`：支持 `{date}` / `{ts}` 占位符；不填则覆盖同一个文件
 
 ## 部署

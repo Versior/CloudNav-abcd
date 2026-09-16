@@ -75,6 +75,14 @@ async function runBackup(env, { force = false, trigger = 'auto' } = {}) {
 
   try {
     const config = (await readJson(env.CLOUDNAV_KV, 'auto_backup_config')) || {};
+
+    // 数据历史裁剪与"是否开启备份"无关：它是控制 KV 占用的日常维护
+    // （历史快照一份约 2.3 MB，30 份就是 ~64 MB）。historyKeep=0 可关闭。
+    try {
+      result.history = await trimHistory(env, Number(config.historyKeep ?? env.HISTORY_KEEP ?? 5));
+    } catch (error) {
+      result.historyError = String(error?.message || error);
+    }
     if (config.enabled === false) return { ...result, skipped: '自动备份已关闭' };
 
     const webdav = (await readJson(env.CLOUDNAV_KV, 'webdav_config')) || {};
@@ -88,6 +96,33 @@ async function runBackup(env, { force = false, trigger = 'auto' } = {}) {
     const hash = await sha256Hex(dataRaw);
     const previous = (await readJson(env.CLOUDNAV_KV, 'auto_backup_state')) || {};
 
+
+/**
+ * 裁剪 KV 里的数据历史（app_history:v*）：保留最新 keep 份，
+ * 同时把 app_history_index 里对应条目一并去掉，避免界面列出已删除的版本。
+ * keep <= 0 表示不清理。
+ */
+async function trimHistory(env, keep) {
+  if (!Number.isFinite(keep) || keep <= 0) return { keep, deleted: [] };
+  const listed = await env.CLOUDNAV_KV.list({ prefix: 'app_history:v', limit: 1000 });
+  const keys = listed.keys.map((k) => k.name).sort();
+  if (keys.length <= keep) return { keep, deleted: [], remaining: keys.length };
+  const doomed = keys.slice(0, keys.length - keep);
+  const retainedIds = new Set(keys.slice(keys.length - keep).map((name) => name.slice('app_history:'.length)));
+  const index = (await readJson(env.CLOUDNAV_KV, 'app_history_index')) || [];
+  if (Array.isArray(index)) {
+    const nextIndex = index.filter((entry) => entry && retainedIds.has(entry.id));
+    if (nextIndex.length !== index.length) {
+      await env.CLOUDNAV_KV.put('app_history_index', JSON.stringify(nextIndex));
+    }
+  }
+  const deleted = [];
+  for (const key of doomed) {
+    await env.CLOUDNAV_KV.delete(key);
+    deleted.push(key);
+  }
+  return { keep, deleted, remaining: keep };
+}
     if (!force && previous.lastHash === hash) {
       await env.CLOUDNAV_KV.put('auto_backup_state', JSON.stringify({
         ...previous, lastCheckedAt: startedAt, lastResult: 'skipped-unchanged',

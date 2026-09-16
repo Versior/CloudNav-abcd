@@ -1,0 +1,17 @@
+name = "cloudnav-dav"
+main = "worker.js"
+compatibility_date = "2025-12-01"
+workers_dev = false
+
+# WebDAV endpoint for CloudNav cloud backup (Cloudflare-edge reachable, KV-backed).
+routes = [
+  { pattern = "dav.006680.xyz", custom_domain = true }
+]
+
+[[kv_namespaces]]
+binding = "DAV_KV"
+id = "7f69e06432e64778912f5058faad144d"
+
+[vars]
+DAV_USER = "cloudnav"
+# DAV_PASS is stored as a Worker secret: wrangler secret put DAV_PASS

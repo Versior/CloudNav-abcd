@@ -15,6 +15,9 @@ Cloudflare **免费版账号上限是 5 个 cron 触发器**（报错：
 
 - 读 KV：`app_data`（数据本体）、`webdav_config`（地址/账号）、`auto_backup_config`（开关）
 - **数据未变化时跳过**（对 `app_data` 取 SHA-256 与上次比对），避免无意义覆盖与额外操作量
+  · 计算指纹前会剔除易变字段 `workspace.workbenchTools.weather`——客户端天气挂件
+    每 30 分钟就会改写它并触发一次全量云同步，否则"未变化"永远不成立
+    （可用 `ignoreWeather: false` 关闭该行为）
 - PUT 文件名默认 `cloudnav_backup.json`（覆盖式 → 云端始终只有最新一份）
 - 上传后按 `keep` 清理旧备份（默认只留最新 1 份）
 - 结果写入 KV `auto_backup_state`

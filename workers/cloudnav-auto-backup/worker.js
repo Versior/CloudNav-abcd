@@ -69,34 +69,26 @@ const nextOccurrence = (hourUtc, from = Date.now()) => {
   return next > from ? next : next + 24 * 60 * 60 * 1000;
 };
 
-async function runBackup(env, { force = false, trigger = 'auto' } = {}) {
-  const startedAt = new Date().toISOString();
-  const result = { trigger, startedAt, ok: false };
-
+/**
+ * 判断"数据是否变化"时要忽略的字段。
+ * 客户端的工作台天气组件每 30 分钟写入一次 workspace.workbenchTools.weather
+ * （它每 30 分钟会触发一次全量云同步），这会让 app_data 看起来一直在变。
+ * 备份只关心真实数据，因此计算指纹前先剔除这些易变字段。
+ */
+const stableForHash = (raw, ignoreWeather = true) => {
+  if (!ignoreWeather) return raw;
   try {
-    const config = (await readJson(env.CLOUDNAV_KV, 'auto_backup_config')) || {};
-
-    // 数据历史裁剪与"是否开启备份"无关：它是控制 KV 占用的日常维护
-    // （历史快照一份约 2.3 MB，30 份就是 ~64 MB）。historyKeep=0 可关闭。
-    try {
-      result.history = await trimHistory(env, Number(config.historyKeep ?? env.HISTORY_KEEP ?? 5));
-    } catch (error) {
-      result.historyError = String(error?.message || error);
+    const data = JSON.parse(raw);
+    const tools = data?.workspace?.workbenchTools;
+    if (tools && typeof tools === 'object' && 'weather' in tools) {
+      const { weather, ...rest } = tools;
+      data.workspace.workbenchTools = rest;
     }
-    if (config.enabled === false) return { ...result, skipped: '自动备份已关闭' };
-
-    const webdav = (await readJson(env.CLOUDNAV_KV, 'webdav_config')) || {};
-    if (!webdav.enabled || !webdav.url || !webdav.username || !webdav.password) {
-      return { ...result, skipped: 'WebDAV 未配置或未启用' };
-    }
-
-    const dataRaw = await env.CLOUDNAV_KV.get('app_data');
-    if (!dataRaw) return { ...result, skipped: 'KV 里没有 app_data' };
-
-    const hash = await sha256Hex(dataRaw);
-    const previous = (await readJson(env.CLOUDNAV_KV, 'auto_backup_state')) || {};
-
-
+    return JSON.stringify(data);
+  } catch {
+    return raw;
+  }
+};
 /**
  * 裁剪 KV 里的数据历史（app_history:v*）：保留最新 keep 份，
  * 同时把 app_history_index 里对应条目一并去掉，避免界面列出已删除的版本。
@@ -123,6 +115,36 @@ async function trimHistory(env, keep) {
   }
   return { keep, deleted, remaining: keep };
 }
+
+
+async function runBackup(env, { force = false, trigger = 'auto' } = {}) {
+  const startedAt = new Date().toISOString();
+  const result = { trigger, startedAt, ok: false };
+
+  try {
+    const config = (await readJson(env.CLOUDNAV_KV, 'auto_backup_config')) || {};
+
+    // 数据历史裁剪与"是否开启备份"无关：它是控制 KV 占用的日常维护
+    // （历史快照一份约 2.3 MB，30 份就是 ~64 MB）。historyKeep=0 可关闭。
+    try {
+      result.history = await trimHistory(env, Number(config.historyKeep ?? env.HISTORY_KEEP ?? 5));
+    } catch (error) {
+      result.historyError = String(error?.message || error);
+    }
+    if (config.enabled === false) return { ...result, skipped: '自动备份已关闭' };
+
+    const webdav = (await readJson(env.CLOUDNAV_KV, 'webdav_config')) || {};
+    if (!webdav.enabled || !webdav.url || !webdav.username || !webdav.password) {
+      return { ...result, skipped: 'WebDAV 未配置或未启用' };
+    }
+
+    const dataRaw = await env.CLOUDNAV_KV.get('app_data');
+    if (!dataRaw) return { ...result, skipped: 'KV 里没有 app_data' };
+
+    // 忽略天气等易变字段：否则每 30 分钟的天气更新会让"数据未变化"永远不成立
+    const hash = await sha256Hex(stableForHash(dataRaw, config.ignoreWeather !== false));
+    const previous = (await readJson(env.CLOUDNAV_KV, 'auto_backup_state')) || {};
+
     if (!force && previous.lastHash === hash) {
       await env.CLOUDNAV_KV.put('auto_backup_state', JSON.stringify({
         ...previous, lastCheckedAt: startedAt, lastResult: 'skipped-unchanged',

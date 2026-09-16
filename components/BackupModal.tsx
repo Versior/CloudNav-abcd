@@ -44,8 +44,15 @@ const BackupModal: React.FC<BackupModalProps> = ({
   const handleTestConnection = async () => {
     setIsTesting(true);
     setTestResult(null);
-    const success = await checkWebDavConnection(config);
-    setTestResult(success ? 'success' : 'fail');
+    const result = await checkWebDavConnection(config);
+    setTestResult(result.success ? 'success' : 'fail');
+    if (result.success) {
+        setSyncStatus('idle');
+        setStatusMsg('');
+    } else {
+        setSyncStatus('error');
+        setStatusMsg(result.error || '连接失败，请检查 WebDAV 地址、账号与应用密码。');
+    }
     setIsTesting(false);
   };
 
@@ -59,13 +66,13 @@ const BackupModal: React.FC<BackupModalProps> = ({
   const handleBackupToCloud = async () => {
     setSyncStatus('uploading');
     setStatusMsg('正在上传...');
-    const success = await uploadBackup(config, { links, categories, searchConfig });
-    if (success) {
+    const result = await uploadBackup(config, { links, categories, searchConfig });
+    if (result.success) {
         setSyncStatus('success');
         setStatusMsg('备份成功！');
     } else {
         setSyncStatus('error');
-        setStatusMsg('上传失败:请检查 WebDAV 地址(须 https 公网)、用户名/密码是否正确。');
+        setStatusMsg(result.error || '上传失败:请检查 WebDAV 地址(须 https 公网)、用户名/密码是否正确。');
     }
   };
 
@@ -78,7 +85,7 @@ const BackupModal: React.FC<BackupModalProps> = ({
         setStatusMsg(`备份成功！文件名: ${result.filename}`);
     } else {
         setSyncStatus('error');
-        setStatusMsg('上传失败:请检查 WebDAV 地址(须 https 公网)、用户名/密码是否正确。');
+        setStatusMsg(result.error || '上传失败:请检查 WebDAV 地址(须 https 公网)、用户名/密码是否正确。');
     }
   };
 
@@ -87,9 +94,10 @@ const BackupModal: React.FC<BackupModalProps> = ({
 
     setSyncStatus('downloading');
     setStatusMsg('正在下载...');
-    const data = await downloadBackup(config, filename);
-    
-    if (data) {
+    const result = await downloadBackup(config, filename);
+    const data = result.data;
+
+    if (result.success && data) {
         onRestore(data.links, data.categories);
         // 恢复搜索配置（如果存在）
         if (data.searchConfig) {
@@ -103,14 +111,18 @@ const BackupModal: React.FC<BackupModalProps> = ({
         setStatusMsg('恢复成功！');
     } else {
         setSyncStatus('error');
-        setStatusMsg('下载失败或文件格式错误。');
+        setStatusMsg(result.error || '下载失败或文件格式错误。');
     }
   };
 
   const handleListBackups = async () => {
     setLoadingList(true);
-    const files = await listBackups(config);
-    setBackupList(files);
+    const result = await listBackups(config);
+    setBackupList(result.files);
+    if (!result.success) {
+        setSyncStatus('error');
+        setStatusMsg(result.error || '无法读取云端备份列表。');
+    }
     setLoadingList(false);
   };
 

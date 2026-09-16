@@ -114,3 +114,50 @@ export const listBackups = async (_config: WebDavConfig): Promise<WebDavListResu
     }
     return { success: false, files: [], error: result?.error || '无法读取备份列表' };
 };
+/* ------------------------------------------------------------------ *
+ * 自动备份（服务端每天执行，见 workers/cloudnav-auto-backup）
+ * 开关与状态存在 KV 的 auto_backup_config / auto_backup_state 里
+ * ------------------------------------------------------------------ */
+
+export interface AutoBackupConfig {
+    enabled: boolean;
+    /** 每天执行的 UTC 小时（0-23），默认 20 = 北京时间 04:00 */
+    hourUtc: number;
+    /** 云端保留份数，默认 1（只留最新一份），0 = 不清理 */
+    keep: number;
+}
+
+export interface AutoBackupState {
+    lastRunAt?: string;
+    lastCheckedAt?: string;
+    lastBytes?: number;
+    lastFilename?: string;
+    lastDeleted?: string[];
+    lastResult?: string;
+}
+
+export const getAutoBackupStatus = async (): Promise<{ config: AutoBackupConfig | null; state: AutoBackupState | null }> => {
+    try {
+        const response = await fetch('/api/storage?getConfig=autoBackup');
+        if (!response.ok) return { config: null, state: null };
+        const data = await response.json();
+        return { config: data?.config ?? null, state: data?.state ?? null };
+    } catch (e) {
+        console.error('Failed to fetch auto-backup status', e);
+        return { config: null, state: null };
+    }
+};
+
+export const saveAutoBackupConfig = async (config: Partial<AutoBackupConfig>): Promise<boolean> => {
+    try {
+        const response = await fetch('/api/storage', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ saveConfig: 'autoBackup', config })
+        });
+        return response.ok;
+    } catch (e) {
+        console.error('Failed to save auto-backup config', e);
+        return false;
+    }
+};

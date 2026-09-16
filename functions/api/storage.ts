@@ -20,6 +20,26 @@ interface WebDavConfig {
   enabled?: boolean;
 }
 
+/** 每日自动备份（由 workers/cloudnav-auto-backup 读取并执行） */
+interface AutoBackupConfig {
+  enabled: boolean;
+  /** 每天执行的 UTC 小时（0-23），默认 20 = 北京时间 04:00 */
+  hourUtc: number;
+  /** 云端保留份数，默认 1（只留最新一份），0 = 不清理 */
+  keep: number;
+}
+
+interface AutoBackupState {
+  lastRunAt?: string;
+  lastCheckedAt?: string;
+  lastBytes?: number;
+  lastFilename?: string;
+  lastDeleted?: string[];
+  lastResult?: string;
+}
+
+const DEFAULT_AUTO_BACKUP: AutoBackupConfig = { enabled: true, hourUtc: 20, keep: 1 };
+
 const sanitizeAiConfig = (config: AIConfig = {}, env?: Env) => ({
   provider: config.provider || 'gemini',
   apiKey: '',
@@ -110,6 +130,12 @@ export const onRequestGet = async (context: { env: Env; request: Request }) => {
       return jsonResponse(sanitizeWebDavConfig(webDavConfig));
     }
 
+    if (getConfig === 'autoBackup') {
+      const config = await readJson<AutoBackupConfig>(env.CLOUDNAV_KV, 'auto_backup_config', DEFAULT_AUTO_BACKUP);
+      const state = await readJson<AutoBackupState | null>(env.CLOUDNAV_KV, 'auto_backup_state', null);
+      return jsonResponse({ config, state });
+    }
+
     const data = await env.CLOUDNAV_KV.get('app_data');
     return jsonResponse(data ? JSON.parse(data) : { links: [], categories: [] });
   } catch {
@@ -153,6 +179,22 @@ export const onRequestPost = async (context: { request: Request; env: Env }) => 
       const next = mergeWebDavConfig(existing, body.config || {});
       await env.CLOUDNAV_KV.put('webdav_config', JSON.stringify(next));
       return jsonResponse({ success: true, config: sanitizeWebDavConfig(next) });
+    }
+
+    if (body.saveConfig === 'autoBackup') {
+      const existing = await readJson<AutoBackupConfig>(env.CLOUDNAV_KV, 'auto_backup_config', DEFAULT_AUTO_BACKUP);
+      const incoming = (body.config || {}) as Partial<AutoBackupConfig>;
+      const next: AutoBackupConfig = {
+        enabled: incoming.enabled !== undefined ? !!incoming.enabled : existing.enabled,
+        hourUtc: Number.isInteger(incoming.hourUtc) && (incoming.hourUtc as number) >= 0 && (incoming.hourUtc as number) <= 23
+          ? (incoming.hourUtc as number)
+          : existing.hourUtc,
+        keep: Number.isFinite(Number(incoming.keep)) && Number(incoming.keep) >= 0
+          ? Math.floor(Number(incoming.keep))
+          : existing.keep,
+      };
+      await env.CLOUDNAV_KV.put('auto_backup_config', JSON.stringify(next));
+      return jsonResponse({ success: true, config: next });
     }
 
     if (body.saveConfig === 'website') {

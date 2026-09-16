@@ -13,7 +13,8 @@
  * 鉴权：HTTP Basic（DAV_USER / DAV_PASS），未配置密码时拒绝所有请求。
  */
 
-const MAX_PUT_BYTES = 8 * 1024 * 1024;
+// 与 CloudNav 备份请求体上限保持一致（一份备份实测约 2.3 MB）
+const MAX_PUT_BYTES = 16 * 1024 * 1024;
 const LIST_LIMIT = 1000;
 
 const normalizePath = (raw) => {

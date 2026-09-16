@@ -1,0 +1,26 @@
+name = "cloudnav-auto-backup"
+main = "worker.js"
+compatibility_date = "2025-12-01"
+workers_dev = false
+
+# 手动触发/查看状态用的入口（token 保护）
+routes = [{ pattern = "autobackup.006680.xyz", custom_domain = true }]
+
+# 不用 Cron Trigger：免费版账号 cron 配额（5 个）已用满，
+# 改用 Durable Object 的 alarm 自续期实现"每天一次"。
+[[durable_objects.bindings]]
+name = "AUTO_BACKUP_SCHEDULER"
+class_name = "AutoBackupScheduler"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["AutoBackupScheduler"]
+
+[[kv_namespaces]]
+binding = "CLOUDNAV_KV"
+id = "7da4b58228ab47be953b250f2ba4ac23"
+
+[vars]
+BACKUP_FILENAME = "cloudnav_backup.json"
+KEEP_BACKUPS = "1"
+# RUN_TOKEN 用 wrangler secret put 设置（手动触发/查看状态用）

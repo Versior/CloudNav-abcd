@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useModalA11y } from './useModalA11y';
 import { X, Cloud, Download, Upload, CheckCircle2, AlertCircle, RefreshCw, Save } from 'lucide-react';
 import { Category, LinkItem, WebDavConfig, SearchConfig, AIConfig } from '../types';
-import { checkWebDavConnection, uploadBackup, uploadBackupWithTimestamp, downloadBackup, listBackups } from '../services/webDavService';
+import { checkWebDavConnection, uploadBackup, uploadBackupWithTimestamp, downloadBackup, listBackups, getAutoBackupStatus, saveAutoBackupConfig } from '../services/webDavService';
+import type { AutoBackupConfig, AutoBackupState } from '../services/webDavService';
 import { generateBookmarkHtml, downloadHtmlFile } from '../services/exportService';
 
 interface BackupModalProps {
@@ -32,14 +33,42 @@ const BackupModal: React.FC<BackupModalProps> = ({
   const [testResult, setTestResult] = useState<'success' | 'fail' | null>(null);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'uploading' | 'downloading' | 'success' | 'error'>('idle');
   const [statusMsg, setStatusMsg] = useState('');
+  const [autoBackup, setAutoBackup] = useState<AutoBackupConfig | null>(null);
+  const [autoBackupState, setAutoBackupState] = useState<AutoBackupState | null>(null);
+  const [autoBackupSaving, setAutoBackupSaving] = useState(false);
 
   useEffect(() => {
     if(isOpen) {
         setConfig(webDavConfig);
         setTestResult(null);
         setSyncStatus('idle');
+        getAutoBackupStatus().then(({ config: ac, state }) => {
+            setAutoBackup(ac || { enabled: true, hourUtc: 20, keep: 1 });
+            setAutoBackupState(state);
+        });
     }
   }, [isOpen, webDavConfig]);
+
+  const handleToggleAutoBackup = async (enabled: boolean) => {
+    const base = autoBackup || { enabled: true, hourUtc: 20, keep: 1 };
+    const next = { ...base, enabled };
+    setAutoBackup(next);
+    setAutoBackupSaving(true);
+    const ok = await saveAutoBackupConfig({ enabled });
+    setAutoBackupSaving(false);
+    if (ok) {
+        const { state } = await getAutoBackupStatus();
+        setAutoBackupState(state);
+        setSyncStatus('success');
+        setStatusMsg(enabled
+            ? `已开启每日自动备份（UTC ${next.hourUtc}:00，云端保留最新 ${next.keep} 份）`
+            : '已关闭每日自动备份');
+    } else {
+        setAutoBackup(base);
+        setSyncStatus('error');
+        setStatusMsg('自动备份设置保存失败，请稍后重试。');
+    }
+  };
 
   const handleTestConnection = async () => {
     setIsTesting(true);
@@ -333,6 +362,39 @@ const BackupModal: React.FC<BackupModalProps> = ({
                     </div>
                 )}
             </section>
+
+            <hr className="border-slate-200 dark:border-slate-700" />
+
+            {/* Section 2.4: 自动备份 */}
+            <div className="rounded-xl border border-slate-200 dark:border-slate-700 p-3">
+                <label className="flex items-center justify-between gap-3 cursor-pointer">
+                    <span className="text-sm font-medium text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                        <Cloud size={14} /> 每天自动备份
+                    </span>
+                    <input
+                        type="checkbox"
+                        className="w-4 h-4 accent-blue-500"
+                        checked={autoBackup?.enabled ?? true}
+                        disabled={!config.enabled || autoBackupSaving}
+                        onChange={(ev) => handleToggleAutoBackup(ev.target.checked)}
+                    />
+                </label>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 leading-relaxed">
+                    由服务端每天执行一次（UTC {autoBackup?.hourUtc ?? 20}:00 = 北京 {(autoBackup?.hourUtc ?? 20) + 8}:00），
+                    数据没有变化时会自动跳过；云端只保留最新 {autoBackup?.keep ?? 1} 份，
+                    文件名固定为 cloudnav_backup.json，因此「从 WebDAV 恢复」拿到的永远是最新那份。
+                </p>
+                {autoBackupState?.lastRunAt && (
+                    <p className="text-xs text-slate-400 mt-1">
+                        上次自动备份：{new Date(autoBackupState.lastRunAt).toLocaleString()}
+                        {typeof autoBackupState.lastBytes === 'number' ? ` · ${Math.round(autoBackupState.lastBytes / 1024)} KB` : ''}
+                        {autoBackupState.lastResult === 'skipped-unchanged' ? ' · 数据未变化，已跳过' : ''}
+                    </p>
+                )}
+                {!config.enabled && (
+                    <p className="text-xs text-amber-500 mt-1">请先填写并保存 WebDAV 配置。</p>
+                )}
+            </div>
 
             <hr className="border-slate-200 dark:border-slate-700" />
 

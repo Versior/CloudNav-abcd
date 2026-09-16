@@ -20,7 +20,12 @@ type Operation = 'check' | 'upload' | 'download' | 'list';
 /** Backup file names produced by this app: cloudnav_backup_*.json / navix_backup.json. */
 const BACKUP_FILENAME_RE = /^(?:cloudnav|navix)_backup(?:_[0-9T_:-]+)?\.json$/;
 
-const MAX_REQUEST_BYTES = 1024 * 1024;
+/**
+ * 备份是把整份数据（链接/分类/workspace）放进请求体的，实测一份约 2.3 MB，
+ * 原来的 1 MiB 上限会直接把上传打成 413。这里放宽到 16 MiB，
+ * 并与 WebDAV 服务端的单文件上限保持一致（Cloudflare Workers 请求体上限为 100 MB）。
+ */
+const MAX_REQUEST_BYTES = 16 * 1024 * 1024;
 
 const isPrivateHostname = (hostname: string) => {
   const normalized = hostname.toLowerCase();

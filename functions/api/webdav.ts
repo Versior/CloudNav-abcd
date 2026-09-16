@@ -104,7 +104,8 @@ const describeUpstreamFailure = (status: number, host: string) => {
 };
 
 const readWebDavConfig = async (env: Env) => {
-  const value = await env.CLOUDNAV_KV.get('webdav_config');
+  // cacheTtl 取下限 30s：KV 读本身有边缘缓存，改配置后最长要等这么久才生效
+  const value = await env.CLOUDNAV_KV.get('webdav_config', { cacheTtl: 30 });
   const config = value ? JSON.parse(value) as WebDavConfig : {};
 
   if (!config.enabled || !config.url || !config.username || !config.password) {

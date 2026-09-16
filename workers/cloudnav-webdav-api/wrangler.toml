@@ -1,0 +1,16 @@
+name = "cloudnav-webdav-api"
+main = "worker.js"
+compatibility_date = "2025-12-01"
+workers_dev = false
+
+# 只接管线上站点的 /api/webdav，其余路径仍由 Pages 提供；删除该 route 即可回滚。
+routes = [
+  { pattern = "nav.006680.xyz/api/webdav", zone_name = "006680.xyz" }
+]
+
+[[kv_namespaces]]
+binding = "CLOUDNAV_KV"
+id = "7da4b58228ab47be953b250f2ba4ac23"
+
+[vars]
+# PASSWORD 用 wrangler secret put 设置为与 Pages 生产环境相同的值

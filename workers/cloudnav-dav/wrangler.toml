@@ -3,14 +3,16 @@ main = "worker.js"
 compatibility_date = "2025-12-01"
 workers_dev = false
 
-# WebDAV endpoint for CloudNav cloud backup (Cloudflare-edge reachable, KV-backed).
+# WebDAV endpoint for CloudNav cloud backup (Cloudflare-edge reachable, R2-backed).
 routes = [
   { pattern = "dav.006680.xyz", custom_domain = true }
 ]
 
-[[kv_namespaces]]
-binding = "DAV_KV"
-id = "7f69e06432e64778912f5058faad144d"
+# R2 而非 KV：KV 读有 ≥30s 边缘缓存且 list() 最终一致，
+# 「刚上传就恢复」会读回旧内容；R2 读写强一致。
+[[r2_buckets]]
+binding = "DAV_BUCKET"
+bucket_name = "cloudnav-dav"
 
 [vars]
 DAV_USER = "cloudnav"

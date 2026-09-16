@@ -1,34 +1,20 @@
 /**
- * cloudnav-dav — 最小可用的 WebDAV 服务端（Cloudflare Worker + KV）
+ * cloudnav-dav — 最小可用的 WebDAV 服务端（Cloudflare Worker + R2）
  *
  * 用途：给 CloudNav / NaviX 的「云端备份」提供一个 Cloudflare 边缘可达的 WebDAV 目标。
  * 背景：坚果云（dav.jianguoyun.com）走 cloudflarelb 回源国内，Cloudflare 边缘回源被拒，
  *       任何从 Workers/Pages Functions 发起的请求都会得到 520，无法从代码层修复。
  *
+ * 为什么用 R2 而不是 KV：KV 的读有 ≥30 秒的边缘缓存（cacheTtl 下限 30），
+ * list() 也是最终一致的——「刚上传就恢复」可能读回旧内容。R2 读写强一致，
+ * 且 list() 立即反映写入。
+ *
  * 支持方法：OPTIONS / PROPFIND(Depth 0|1) / GET / HEAD / PUT / DELETE / MKCOL
  * 鉴权：HTTP Basic（DAV_USER / DAV_PASS），未配置密码时拒绝所有请求。
  */
 
-// KV 的 list() 是最终一致的：刚 PUT 完立刻 PROPFIND 可能看不到新文件。
-// 因此额外维护一个索引键，让「查看历史备份」立即可见（list() 结果做并集兜底）。
-const INDEX_KEY = "dav:__index__";
-
-async function readIndex(env) {
-  try {
-    const raw = await env.DAV_KV.get(INDEX_KEY);
-    const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed.filter((x) => typeof x === "string") : [];
-  } catch {
-    return [];
-  }
-}
-
-async function writeIndex(env, paths) {
-  await env.DAV_KV.put(INDEX_KEY, JSON.stringify(paths.slice(0, 500)));
-}
-
-const PREFIX = "dav:";
 const MAX_PUT_BYTES = 8 * 1024 * 1024;
+const LIST_LIMIT = 1000;
 
 const normalizePath = (raw) => {
   let path = raw || "/";
@@ -38,12 +24,19 @@ const normalizePath = (raw) => {
   return path;
 };
 
-const kvKey = (path) => PREFIX + normalizePath(path);
+/** WebDAV 路径 -> R2 对象键（目录以 "/" 结尾，对象键不带前导斜杠）。 */
+const objectKey = (path) => (path === "/" ? "" : path.replace(/^\//, ""));
+
+/** 列出某个集合时的 R2 前缀。 */
+const listPrefix = (path) => (path === "/" ? "" : path.replace(/^\//, ""));
 
 const xmlEscape = (value) =>
   String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-const httpDate = (ms) => new Date(ms || Date.now()).toUTCString();
+const httpDate = (value) => {
+  const date = value instanceof Date ? value : new Date(value || Date.now());
+  return Number.isNaN(date.getTime()) ? new Date().toUTCString() : date.toUTCString();
+};
 
 const unauthorized = () =>
   new Response("Unauthorized", {
@@ -77,37 +70,32 @@ const propstat = (inner, status) =>
 
 const collectionProps = () => propstat("<D:resourcetype><D:collection/></D:resourcetype>", "200 OK");
 
-const fileProps = (size, mtime) =>
+const fileProps = (size, modified) =>
   propstat(
     `<D:resourcetype/>` +
       `<D:getcontentlength>${size}</D:getcontentlength>` +
-      `<D:getlastmodified>${httpDate(mtime)}</D:getlastmodified>` +
+      `<D:getlastmodified>${httpDate(modified)}</D:getlastmodified>` +
       `<D:getcontenttype>application/json</D:getcontenttype>`,
     "200 OK"
   );
 
 async function handlePropfind(request, env, path) {
   const depth = (request.headers.get("Depth") || "1").trim();
-  const isDir = path.endsWith("/");
+  const isCollection = path.endsWith("/");
   const responses = [];
 
-  if (isDir) {
+  if (isCollection) {
     responses.push(`<D:response><D:href>${xmlEscape(path)}</D:href>${collectionProps()}</D:response>`);
 
     if (depth !== "0") {
-      const listed = await env.DAV_KV.list({ prefix: kvKey(path) });
-      const candidates = new Set();
-      for (const entry of listed.keys) {
-        const rest = entry.name.slice(kvKey(path).length);
-        if (rest) candidates.add(path + rest);
-      }
-      for (const indexed of await readIndex(env)) {
-        if (indexed.startsWith(path) && indexed.length > path.length) candidates.add(indexed);
-      }
-
+      const prefix = listPrefix(path);
+      const listed = await env.DAV_BUCKET.list({ prefix, limit: LIST_LIMIT });
       const seenDirs = new Set();
-      for (const href of [...candidates].sort()) {
-        const rest = href.slice(path.length);
+
+      for (const object of listed.objects) {
+        const rest = object.key.slice(prefix.length);
+        if (!rest) continue;
+
         const slash = rest.indexOf("/");
         if (slash >= 0) {
           const dirName = rest.slice(0, slash + 1);
@@ -116,24 +104,17 @@ async function handlePropfind(request, env, path) {
           responses.push(`<D:response><D:href>${xmlEscape(path + dirName)}</D:href>${collectionProps()}</D:response>`);
           continue;
         }
-        const meta = await env.DAV_KV.getWithMetadata(kvKey(href), { type: "arrayBuffer" });
-        if (!meta.value) continue;
+
         responses.push(
-          `<D:response><D:href>${xmlEscape(href)}</D:href>${fileProps(
-            meta.value.byteLength,
-            meta.metadata?.mtime
-          )}</D:response>`
+          `<D:response><D:href>${xmlEscape(path + rest)}</D:href>${fileProps(object.size, object.uploaded)}</D:response>`
         );
       }
     }
   } else {
-    const found = await env.DAV_KV.getWithMetadata(kvKey(path), { type: "arrayBuffer" });
-    if (!found.value) return new Response("Not Found", { status: 404 });
+    const object = await env.DAV_BUCKET.head(objectKey(path));
+    if (!object) return new Response("Not Found", { status: 404 });
     responses.push(
-      `<D:response><D:href>${xmlEscape(path)}</D:href>${fileProps(
-        found.value.byteLength,
-        found.metadata?.mtime
-      )}</D:response>`
+      `<D:response><D:href>${xmlEscape(path)}</D:href>${fileProps(object.size, object.uploaded)}</D:response>`
     );
   }
 
@@ -172,15 +153,16 @@ export default {
 
         case "GET":
         case "HEAD": {
-          const found = await env.DAV_KV.getWithMetadata(kvKey(path), { type: "arrayBuffer" });
-          if (!found.value) return new Response("Not Found", { status: 404 });
+          if (path.endsWith("/")) return new Response("Method Not Allowed", { status: 405 });
+          const object = await env.DAV_BUCKET.get(objectKey(path));
+          if (!object) return new Response("Not Found", { status: 404 });
           const headers = {
             "Content-Type": "application/json; charset=utf-8",
-            "Content-Length": String(found.value.byteLength),
-            "Last-Modified": httpDate(found.metadata?.mtime),
-            ETag: `"${found.value.byteLength}-${found.metadata?.mtime || 0}"`,
+            "Content-Length": String(object.size),
+            "Last-Modified": httpDate(object.uploaded),
+            ETag: object.httpEtag || `"${object.size}-${object.uploaded?.getTime?.() || 0}"`,
           };
-          return new Response(request.method === "HEAD" ? null : found.value, { status: 200, headers });
+          return new Response(request.method === "HEAD" ? null : object.body, { status: 200, headers });
         }
 
         case "PUT": {
@@ -188,23 +170,19 @@ export default {
           if (declared > MAX_PUT_BYTES) return new Response("Payload Too Large", { status: 413 });
           const body = await request.arrayBuffer();
           if (body.byteLength > MAX_PUT_BYTES) return new Response("Payload Too Large", { status: 413 });
-          const existed = await env.DAV_KV.get(kvKey(path), { type: "arrayBuffer" });
-          await env.DAV_KV.put(kvKey(path), body, { metadata: { mtime: Date.now() } });
 
-          const index = await readIndex(env);
-          if (!index.includes(path)) await writeIndex(env, [path, ...index]);
-
+          const existed = await env.DAV_BUCKET.head(objectKey(path));
+          await env.DAV_BUCKET.put(objectKey(path), body, {
+            httpMetadata: { contentType: "application/json; charset=utf-8" },
+            customMetadata: { mtime: String(Date.now()) },
+          });
           return new Response(null, { status: existed ? 204 : 201 });
         }
 
         case "DELETE": {
-          const existed = await env.DAV_KV.get(kvKey(path), { type: "arrayBuffer" });
+          const existed = await env.DAV_BUCKET.head(objectKey(path));
           if (!existed) return new Response("Not Found", { status: 404 });
-          await env.DAV_KV.delete(kvKey(path));
-
-          const index = await readIndex(env);
-          if (index.includes(path)) await writeIndex(env, index.filter((entry) => entry !== path));
-
+          await env.DAV_BUCKET.delete(objectKey(path));
           return new Response(null, { status: 204 });
         }
 
@@ -212,7 +190,10 @@ export default {
           return new Response(null, { status: 201 });
 
         default:
-          return new Response("Method Not Allowed", { status: 405, headers: { Allow: "OPTIONS, GET, HEAD, PUT, DELETE, PROPFIND, MKCOL" } });
+          return new Response("Method Not Allowed", {
+            status: 405,
+            headers: { Allow: "OPTIONS, GET, HEAD, PUT, DELETE, PROPFIND, MKCOL" },
+          });
       }
     } catch (error) {
       return new Response(`WebDAV error: ${error?.message || error}`, { status: 500 });

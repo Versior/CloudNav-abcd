@@ -214,3 +214,90 @@
 
 /* 表格头在卡片视图下隐藏（线上同样隐藏） */
 .cloudnav-redesign-root .cloudnav-library-row-head { display: none !important; }
+
+/* ---------- 顶栏 ----------
+   线上 topbar 规则多数是“窄屏收窄”，在 1440 桌面端不该隐藏元素。
+   这里只保留桌面必须的排列，其余形态交给 Tailwind 响应式类。 */
+.cloudnav-redesign-root .cloudnav-topbar {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 12px !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  flex-wrap: nowrap !important;
+  overflow: visible !important;
+}
+
+.cloudnav-redesign-root .cloudnav-topbar-primary {
+  display: flex !important;
+  flex: 1 1 auto !important;
+  align-items: center !important;
+  gap: 10px !important;
+  min-width: 0 !important;
+  overflow: visible !important;
+}
+
+.cloudnav-redesign-root .cloudnav-topbar-search-group {
+  display: flex !important;
+  flex: 1 1 auto !important;
+  align-items: center !important;
+  gap: 8px !important;
+  min-width: 0 !important;
+  overflow: visible !important;
+}
+
+.cloudnav-redesign-root .cloudnav-topbar-tools {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 8px !important;
+  flex: 0 0 auto !important;
+  white-space: nowrap !important;
+}
+
+/* 桌面端不要把站内/站外切换、视图切换、退出文字藏起来 */
+@media (min-width: 1024px) {
+  .cloudnav-redesign-root .cloudnav-topbar-search-mode,
+  .cloudnav-redesign-root .cloudnav-topbar-view-mode {
+    display: flex !important;
+  }
+  .cloudnav-redesign-root .cloudnav-topbar-auth button span,
+  .cloudnav-redesign-root .cloudnav-topbar-capture > button:last-child span {
+    display: inline !important;
+  }
+  .cloudnav-redesign-root .cloudnav-top-weather-copy small {
+    display: block !important;
+  }
+}
+
+/* 「记录 / 添加」按钮组在桌面端必须可见（线上被窄屏规则隐藏） */
+@media (min-width: 1024px) {
+  .cloudnav-redesign-root .cloudnav-topbar-capture {
+    display: flex !important;
+  }
+  .cloudnav-redesign-root .cloudnav-topbar-capture [data-quick-capture-trigger] {
+    display: flex !important;
+  }
+  .cloudnav-redesign-root .cloudnav-topbar-auth {
+    display: flex !important;
+  }
+}
+
+/* 线上样式把实心按钮的 background 清成 transparent，导致白字不可见。
+   这里把顶栏主操作按钮的填充色钉回来。 */
+.cloudnav-redesign-root .cloudnav-topbar-capture > button:last-child {
+  background: var(--cn-primary, #087f78) !important;
+  color: #fff !important;
+  border: 0 !important;
+}
+.cloudnav-redesign-root .cloudnav-topbar-capture > button:last-child:hover {
+  background: var(--cn-primary-dark, #075f5a) !important;
+}
+
+/* 「记录」次要按钮 */
+.cloudnav-redesign-root .cloudnav-topbar-capture [data-quick-capture-trigger] {
+  background: #ecfdf9 !important;
+  color: #0f766e !important;
+  border: 1px solid #99f6e4 !important;
+}

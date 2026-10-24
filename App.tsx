@@ -3008,14 +3008,14 @@ function App() {
       <main className="cloudnav-desktop-main flex-1 flex flex-col h-full bg-slate-50 dark:bg-slate-900 overflow-hidden relative">
         
         {/* Header */}
-        <header className="cloudnav-desktop-header h-16 px-4 lg:px-8 flex items-center justify-between bg-white/80 dark:bg-slate-800/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-700 sticky top-0 z-10 shrink-0">
-          <div className="flex items-center gap-4 flex-1">
+        <header className="cloudnav-desktop-header cloudnav-topbar h-16 px-4 lg:px-8 flex items-center justify-between bg-white/80 dark:bg-slate-800/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-700 sticky top-0 z-10 shrink-0">
+          <div className="cloudnav-topbar-primary flex items-center gap-4 flex-1">
             <button onClick={() => setSidebarOpen(true)} className="lg:hidden p-2 -ml-2 text-slate-600 dark:text-slate-300">
               <Menu size={24} />
             </button>
 
             {/* 搜索模式切换 + 搜索框 */}
-            <div className="flex items-center gap-3 flex-1 min-w-0">
+            <div className="cloudnav-topbar-search-group flex items-center gap-3 flex-1 min-w-0">
               {/* 移动端搜索图标 - 仅在手机端显示，平板端隐藏 */}
               <button 
                 onClick={() => {
@@ -3033,7 +3033,7 @@ function App() {
 
               {/* 搜索模式切换 - 平板端和桌面端显示，手机端隐藏 */}
               <div className="hidden sm:hidden md:flex lg:flex items-center gap-2 flex-shrink-0">
-                <div className="flex items-center bg-slate-100 dark:bg-slate-700 rounded-full p-1">
+                <div className="cloudnav-topbar-search-mode flex items-center bg-slate-100 dark:bg-slate-700 rounded-full p-1">
                   <button
                     onClick={() => handleSearchModeChange('internal')}
                     className={`px-3 py-1 text-xs font-medium rounded-full transition-all flex items-center justify-center min-h-[24px] min-w-[40px] ${
@@ -3221,11 +3221,11 @@ function App() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="cloudnav-topbar-tools flex items-center gap-2">
             <TopWeather value={workbenchTools} onChange={updateWorkbenchTools} />
 
             {/* 视图切换控制器 - 移动端：搜索框展开时隐藏，桌面端始终显示 */}
-            <div className={`${isMobileSearchOpen ? 'hidden' : 'flex'} lg:flex items-center bg-slate-100 dark:bg-slate-700 rounded-full p-1`}>
+            <div className={`cloudnav-topbar-view-mode ${isMobileSearchOpen ? 'hidden' : 'flex'} lg:flex items-center bg-slate-100 dark:bg-slate-700 rounded-full p-1`}>
               <button
                 onClick={() => handleViewModeChange('simple')}
                 className={`px-3 py-1 text-xs font-medium rounded-full transition-all ${
@@ -3277,7 +3277,7 @@ function App() {
             </div>
 
             {/* 添加按钮 - 移动端：搜索框展开时隐藏，桌面端始终显示 */}
-            <div className={`${isMobileSearchOpen ? 'hidden' : 'flex'}`}>
+            <div className={`cloudnav-topbar-capture cloudnav-topbar-secondary-action ${isMobileSearchOpen ? 'hidden' : 'flex'}`}>
               <button
                 onClick={() => openInspiration()}
                 className="mr-1 hidden items-center gap-2 rounded-full border border-teal-200 bg-teal-50 px-3 py-2 text-sm font-medium text-teal-700 hover:bg-teal-100 lg:flex"

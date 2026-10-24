@@ -23,7 +23,8 @@ test('desktop library view replaces the old all-links grid with a directory and 
   const page = readFileSync(new URL('../components/DesktopLibraryPage.tsx', import.meta.url), 'utf8');
   assert.match(source, /<DesktopLibraryPage/);
   assert.match(page, /data-layout=["']desktop-library["']/);
-  assert.match(page, /data-library-view=["']rows["']/);
+  // 线上 2026-09-21 起网站库为 bento 卡片视图（旧的行视图已下线）
+  assert.match(page, /data-library-view=["']bento["']/);
   assert.doesNotMatch(page, /grid-cols-/);
 });
 

@@ -156,7 +156,11 @@ const BentoLinkCard: React.FC<{
     <article
       className={`cloudnav-bento-card cloudnav-library-card is-clickable ${selected ? 'is-selected' : ''} ${isBroken ? 'is-broken' : ''}`}
       data-library-card={link.id}
+      role="button"
+      tabIndex={0}
+      aria-label={`打开 ${link.title}`}
       onClick={() => onOpen(link)}
+      onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen(link); } }}
       onContextMenu={event => onContextMenu(event, link)}
     >
       <div className="cloudnav-bento-card__actions">

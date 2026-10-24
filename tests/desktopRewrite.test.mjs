@@ -8,9 +8,11 @@ test('desktop link library is a true work surface, not the old tag grid', () => 
   const page = read('components/DesktopLibraryPage.tsx');
   const app = read('App.tsx');
   assert.match(page, /data-layout=["']desktop-library["']/);
-  assert.match(page, /data-library-view=["']rows["']/);
-  assert.doesNotMatch(page, /grid-cols-/);
+  // 线上 2026-09-21 起网站库为 bento 卡片视图（旧的行视图已下线）
+  assert.match(page, /data-library-view=["']bento["']/);
   assert.doesNotMatch(page, /cloudnav-library-directory-nav/);
+  assert.match(page, /cloudnav-library-grid/);
+  assert.match(page, /cloudnav-bento-card/);
   assert.match(page, /cloudnav-library-results/);
   assert.doesNotMatch(page, /<a href=\{link\.url\}[^>]*onClick=\{\(\) => onOpen\(link\)\}/);
   assert.match(page, /aria-label=\{`打开 \$\{link\.title\}`\}/);

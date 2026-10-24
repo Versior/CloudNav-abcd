@@ -1,5 +1,5 @@
-import { clearSessionCookie, createExtensionToken, createSessionCookie, isAuthenticated, jsonResponse, optionsResponse, verifyPassword } from '../_shared/auth';
-import { getLoginRateLimitDecision, getLoginRateLimitKey } from '../../services/authSecurity';
+import { bumpTokenVersion, clearSessionCookie, createExtensionToken, createSessionCookie, isAuthenticated, jsonResponse, optionsResponse, verifyPassword } from '../_shared/auth.ts';
+import { getLoginRateLimitDecision, getLoginRateLimitKey } from '../../services/authSecurity.ts';
 
 interface Env {
   PASSWORD: string;
@@ -25,6 +25,8 @@ export const onRequestPost = async (context: { request: Request; env: Env }) => 
     const body = await request.json() as { password?: string; action?: string };
 
     if (body.action === 'logout') {
+      // Revoke every previously issued cookie and extension token, not just this browser's cookie.
+      await bumpTokenVersion(env);
       return jsonResponse({ success: true }, {
         headers: { 'Set-Cookie': clearSessionCookie() },
       });

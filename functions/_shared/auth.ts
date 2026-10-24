@@ -1,12 +1,41 @@
 interface SessionPayload {
   exp: number;
   scope?: 'session' | 'extension';
+  ver?: number;
 }
 
 export interface AuthEnv {
   PASSWORD: string;
   SESSION_SECRET?: string;
+  CLOUDNAV_KV?: KVNamespace;
 }
+
+const TOKEN_VERSION_KEY = 'auth_token_version';
+
+/**
+ * Session revocation counter. Bumping it invalidates every previously issued
+ * session cookie and extension token without needing a key rotation.
+ * Records written before this existed have no `ver`; treat them as 0 so that
+ * an unchanged KV value keeps existing logins working.
+ */
+export const readTokenVersion = async (env: AuthEnv): Promise<number> => {
+  if (!env.CLOUDNAV_KV) return 0;
+  try {
+    const raw = await env.CLOUDNAV_KV.get(TOKEN_VERSION_KEY);
+    const value = Number(raw);
+    return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+  } catch {
+    return 0;
+  }
+};
+
+export const bumpTokenVersion = async (env: AuthEnv): Promise<number> => {
+  const next = (await readTokenVersion(env)) + 1;
+  if (env.CLOUDNAV_KV) {
+    await env.CLOUDNAV_KV.put(TOKEN_VERSION_KEY, String(next));
+  }
+  return next;
+};
 
 const COOKIE_NAME = 'cloudnav_session';
 const SESSION_TTL_SECONDS = 7 * 24 * 60 * 60;
@@ -82,7 +111,12 @@ const verifyToken = async (token: string, env: AuthEnv, scope?: SessionPayload['
   try {
     const decoded = JSON.parse(base64UrlDecodeString(payload)) as SessionPayload;
     if (typeof decoded.exp !== 'number' || decoded.exp <= Math.floor(Date.now() / 1000)) return false;
-    return scope ? decoded.scope === scope : true;
+    if (scope && decoded.scope !== scope) return false;
+    // Revocation check: a token minted before the last bump is no longer valid.
+    const currentVersion = await readTokenVersion(env);
+    const tokenVersion = typeof decoded.ver === 'number' ? decoded.ver : 0;
+    if (tokenVersion < currentVersion) return false;
+    return true;
   } catch {
     return false;
   }
@@ -107,6 +141,7 @@ export const createSessionCookie = async (env: AuthEnv) => {
   const payload: SessionPayload = {
     exp: Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS,
     scope: 'session',
+    ver: await readTokenVersion(env),
   };
   const encodedPayload = base64UrlEncodeString(JSON.stringify(payload));
   const signature = await sign(encodedPayload, env);
@@ -117,6 +152,7 @@ export const createExtensionToken = async (env: AuthEnv) => {
   const payload: SessionPayload = {
     exp: Math.floor(Date.now() / 1000) + EXTENSION_TTL_SECONDS,
     scope: 'extension',
+    ver: await readTokenVersion(env),
   };
   const encodedPayload = base64UrlEncodeString(JSON.stringify(payload));
   const signature = await sign(encodedPayload, env);

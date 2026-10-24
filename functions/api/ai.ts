@@ -1,4 +1,4 @@
-import { jsonResponse, optionsResponse, requireAuth } from '../_shared/auth';
+import { jsonResponse, optionsResponse, requireAuth } from '../_shared/auth.ts';
 import { normalizeOpenAIEndpoint } from '../../services/openaiEndpoint.ts';
 import { buildContentSummaryPrompt, type ContentSummaryKind } from '../../services/aiPrompts.ts';
 

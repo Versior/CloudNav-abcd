@@ -1,5 +1,5 @@
-import { corsHeaders, jsonResponse, optionsResponse, requireAuth } from '../_shared/auth';
-import { assertSafeExternalUrl, fetchWithSafeRedirects } from '../_shared/urlSafety';
+import { corsHeaders, jsonResponse, optionsResponse, requireAuth } from '../_shared/auth.ts';
+import { assertSafeExternalUrl, fetchWithSafeRedirects } from '../_shared/urlSafety.ts';
 
 const REQUEST_TIMEOUT_MS = 10_000;
 const MAX_HTML_BYTES = 512_000;

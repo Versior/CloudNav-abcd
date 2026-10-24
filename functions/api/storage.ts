@@ -1,8 +1,8 @@
-import { isAuthenticated, jsonResponse, optionsResponse, requireAuth } from '../_shared/auth';
-import { buildStoredData, isVersionConflict, normalizeStoredData } from '../_shared/storageData';
-import { normalizeHealthSchedule } from '../../services/healthSchedule';
-import { appendHistory, createHistorySnapshot, getStaleHistoryKeys, normalizeHistory } from '../../services/historyService';
-import { normalizeHealthNotification } from '../../services/healthNotifications';
+import { isAuthenticated, jsonResponse, optionsResponse, requireAuth } from '../_shared/auth.ts';
+import { buildStoredData, isVersionConflict, normalizeStoredData } from '../_shared/storageData.ts';
+import { normalizeHealthSchedule } from '../../services/healthSchedule.ts';
+import { appendHistory, createHistorySnapshot, getStaleHistoryKeys, normalizeHistory } from '../../services/historyService.ts';
+import { normalizeHealthNotification } from '../../services/healthNotifications.ts';
 
 interface Env {
   CLOUDNAV_KV: KVNamespace;
@@ -120,12 +120,26 @@ export const onRequestGet = async (context: { env: Env; request: Request }) => {
       return jsonResponse({ icon: cachedIcon || null, cached: !!cachedIcon });
     }
 
+    // website/search config used to be readable without auth, which leaked the
+    // site title and search backend to anyone. They are view configuration, so
+    // they are now exposed through a reduced public projection instead of the
+    // full stored object. Everything else in these two records needs auth.
     if (getConfig === 'website') {
       const websiteConfig = await env.CLOUDNAV_KV.get('website_config');
-      return jsonResponse(websiteConfig ? JSON.parse(websiteConfig) : { passwordExpiryDays: 7 });
+      const parsed = websiteConfig ? JSON.parse(websiteConfig) : {};
+      const publicView = {
+        title: parsed.title,
+        navTitle: parsed.navTitle,
+        favicon: parsed.favicon,
+        cardStyle: parsed.cardStyle,
+      };
+      if (await isAuthenticated(request, env)) return jsonResponse(parsed);
+      return jsonResponse(publicView);
     }
 
     if (getConfig === 'search') {
+      const authErrorForSearch = await requireAuth(request, env);
+      if (authErrorForSearch) return authErrorForSearch;
       const searchConfig = await env.CLOUDNAV_KV.get('search_config');
       return jsonResponse(searchConfig ? JSON.parse(searchConfig) : {});
     }

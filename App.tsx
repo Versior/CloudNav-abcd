@@ -1127,6 +1127,8 @@ function App() {
             }),
         ]);
 
+        // search config 属于登录后的视图配置，未登录时服务端会返回 401。
+        // 这时静默使用本地缓存的搜索设置，不把它当成错误。
         if (searchConfigRes?.ok) {
             const searchConfigData = await searchConfigRes.json();
             // 检查搜索配置是否有效（包含必要的字段）
@@ -1139,6 +1141,19 @@ function App() {
                 }
                 localStorage.setItem(SEARCH_CONFIG_KEY, JSON.stringify(searchConfigData));
                 hasLoadedSearchConfig = true;
+            }
+        } else if (searchConfigRes && searchConfigRes.status === 401) {
+            try {
+                const cached = localStorage.getItem(SEARCH_CONFIG_KEY);
+                if (cached) {
+                    const cachedConfig = JSON.parse(cached);
+                    if (cachedConfig.mode) setSearchMode(cachedConfig.mode);
+                    if (Array.isArray(cachedConfig.externalSources)) setExternalSearchSources(cachedConfig.externalSources);
+                    if (cachedConfig.selectedSource) setSelectedSearchSource(cachedConfig.selectedSource);
+                    hasLoadedSearchConfig = true;
+                }
+            } catch (error) {
+                console.warn('Failed to read cached search config.', error);
             }
         }
 

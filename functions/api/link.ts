@@ -1,5 +1,11 @@
-import { jsonResponse, optionsResponse, requireAuth } from '../_shared/auth';
-import { assertSafeExternalUrl, fetchWithSafeRedirects, isPrivateHostname } from '../_shared/urlSafety';
+import { jsonResponse, optionsResponse, requireAuth } from '../_shared/auth.ts';
+
+const createLinkId = () => (
+  typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+);
+import { assertSafeExternalUrl, fetchWithSafeRedirects, isPrivateHostname } from '../_shared/urlSafety.ts';
 
 interface Env {
   CLOUDNAV_KV: KVNamespace;
@@ -291,7 +297,7 @@ export const onRequestPost = async (context: { request: Request; env: Env }) => 
     }
 
     const newLink = {
-      id: Date.now().toString(),
+      id: createLinkId(),
       title: body.title,
       url: body.url,
       description: body.description || '',

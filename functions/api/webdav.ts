@@ -1,5 +1,5 @@
-import { jsonResponse, optionsResponse, requireAuth } from '../_shared/auth';
-import { isPrivateHostname } from '../_shared/urlSafety';
+import { jsonResponse, optionsResponse, requireAuth } from '../_shared/auth.ts';
+import { isPrivateHostname } from '../_shared/urlSafety.ts';
 
 interface Env {
   CLOUDNAV_KV: KVNamespace;

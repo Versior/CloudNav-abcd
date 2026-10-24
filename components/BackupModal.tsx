@@ -16,6 +16,18 @@ import { readReadingDocuments } from '../services/readingStorage';
 import { readRssState } from '../services/rssService';
 import type { WorkbenchToolsState } from '../services/workbenchTools';
 
+import {
+  buildBundle,
+  describeResult,
+  fetchRemoteMeta,
+  readPolicy,
+  restoreBundle,
+  syncBackup,
+  writePolicy,
+  type R2BackupBundle,
+  type R2BackupMode,
+  type R2BackupPolicy,
+} from '../services/r2BackupService';
 interface BackupModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -57,6 +69,10 @@ const BackupModal: React.FC<BackupModalProps> = ({
   const [syncStatus, setSyncStatus] = useState<'idle' | 'uploading' | 'downloading' | 'success' | 'error'>('idle');
   const [statusMsg, setStatusMsg] = useState('');
   const [recoverySnapshots, setRecoverySnapshots] = useState<RecoverySnapshot[]>([]);
+  const [r2Policy, setR2Policy] = useState<R2BackupPolicy>(() => readPolicy());
+  const [r2Meta, setR2Meta] = useState<{ bundleHash?: string; updatedAt?: number } | null>(null);
+  const [r2Busy, setR2Busy] = useState(false);
+  const [r2Msg, setR2Msg] = useState('');
 
   useEffect(() => {
     if(isOpen) {
@@ -64,6 +80,8 @@ const BackupModal: React.FC<BackupModalProps> = ({
         setTestResult(null);
         setSyncStatus('idle');
         try { setRecoverySnapshots(normalizeRecoverySnapshots(JSON.parse(localStorage.getItem(RECOVERY_SNAPSHOTS_KEY) || '[]'))); } catch { setRecoverySnapshots([]); }
+        setR2Policy(readPolicy());
+        void refreshR2Meta();
     }
   }, [isOpen, webDavConfig]);
 
@@ -73,6 +91,86 @@ const BackupModal: React.FC<BackupModalProps> = ({
     const success = await checkWebDavConnection(config);
     setTestResult(success ? 'success' : 'fail');
     setIsTesting(false);
+  };
+
+  // ---- R2 云备份 ----------------------------------------------------------
+  const currentPayload = () => ({
+    links,
+    categories,
+    searchConfig,
+    aiConfig,
+    workbenchTools,
+    ...readWorkspacePayload(),
+  });
+
+  const currentBundle = (): R2BackupBundle<ReturnType<typeof currentPayload>> => {
+    const latest = recoverySnapshots[0];
+    return buildBundle(
+      latest
+        ? { current: { hash: latest.id, createdAt: latest.createdAt, data: currentPayload() }, rollback: null }
+        : { current: null, rollback: null },
+    );
+  };
+
+  const refreshR2Meta = async () => {
+    if (!authToken) { setR2Meta(null); return; }
+    try {
+      setR2Meta(await fetchRemoteMeta());
+    } catch {
+      setR2Meta(null);
+    }
+  };
+
+  const handleR2Sync = async () => {
+    if (!authToken) { setR2Msg('请先登录后再同步 R2'); return; }
+    setR2Busy(true);
+    setR2Msg('正在检查 R2…');
+    try {
+      const result = await syncBackup(currentBundle(), r2Policy, r2Meta?.bundleHash);
+      setR2Msg(describeResult(result, r2Policy.mode));
+      setR2Policy(readPolicy());
+      await refreshR2Meta();
+    } catch (error) {
+      setR2Msg(error instanceof Error ? error.message : 'R2 同步失败');
+    } finally {
+      setR2Busy(false);
+    }
+  };
+
+  const handleR2Restore = async () => {
+    if (!authToken) { setR2Msg('请先登录后再恢复 R2'); return; }
+    if (!confirm('确定要从 R2 恢复吗？这将覆盖当前的本地数据。')) return;
+    setR2Busy(true);
+    setR2Msg('正在读取 R2 备份…');
+    try {
+      const bundle = await restoreBundle<Record<string, unknown>>();
+      const generation = bundle.current || bundle.rollback;
+      if (!generation) throw new Error('R2 中没有可恢复版本');
+      const data = generation.data as Record<string, any>;
+      if (!Array.isArray(data.links) || !Array.isArray(data.categories)) {
+        throw new Error('备份文件格式不正确');
+      }
+      onRestore(data.links, data.categories, undefined, data.workbenchTools);
+      if (data.inspirations) localStorage.setItem(INSPIRATIONS_KEY, JSON.stringify(data.inspirations));
+      if (data.readLater) localStorage.setItem(READ_LATER_KEY, JSON.stringify(data.readLater));
+      if (data.githubWatch) localStorage.setItem(GITHUB_WATCH_KEY, JSON.stringify(data.githubWatch));
+      if (data.readingDocuments) localStorage.setItem(READING_DOCUMENTS_KEY, JSON.stringify(data.readingDocuments));
+      if (data.rssState) localStorage.setItem(RSS_STATE_KEY, JSON.stringify(data.rssState));
+      if (data.searchConfig) onRestoreSearchConfig(data.searchConfig);
+      if (data.aiConfig) onRestoreAIConfig(data.aiConfig);
+      window.dispatchEvent(new Event('cloudnav-workspace-data-changed'));
+      setR2Msg('R2 最新版本已恢复');
+    } catch (error) {
+      setR2Msg(error instanceof Error ? error.message : 'R2 恢复失败');
+    } finally {
+      setR2Busy(false);
+    }
+  };
+
+  const handleR2ModeChange = (mode: R2BackupMode) => {
+    const next = { ...r2Policy, mode };
+    setR2Policy(next);
+    writePolicy(next);
   };
 
   const handleSaveConfig = () => {
@@ -196,6 +294,50 @@ const BackupModal: React.FC<BackupModalProps> = ({
 
         <div className="flex-1 overflow-y-auto p-6 space-y-8">
             
+            {/* Section 0: R2 云备份 */}
+            <section className="space-y-3">
+                <div className="flex items-center justify-between">
+                    <h4 className="font-medium text-slate-800 dark:text-slate-200">R2 备份</h4>
+                    <div className="flex items-center gap-1 rounded-lg bg-slate-100 dark:bg-slate-700 p-1">
+                        <button
+                            type="button"
+                            onClick={() => handleR2ModeChange('manual')}
+                            className={`px-3 py-1 text-xs rounded-md transition-colors ${r2Policy.mode === 'manual' ? 'bg-white dark:bg-slate-600 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-600 dark:text-slate-300'}`}
+                        >手动</button>
+                        <button
+                            type="button"
+                            onClick={() => handleR2ModeChange('daily')}
+                            className={`px-3 py-1 text-xs rounded-md transition-colors ${r2Policy.mode === 'daily' ? 'bg-white dark:bg-slate-600 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-600 dark:text-slate-300'}`}
+                        >每日</button>
+                    </div>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {r2Policy.mode === 'daily'
+                        ? '每日模式下，24 小时内只上传一次；内容未变化时不会重复上传。'
+                        : '手动模式下，每次点击都会在内容变化时上传。'}
+                    {r2Meta?.updatedAt ? ` 最近远端备份：${new Date(r2Meta.updatedAt).toLocaleString('zh-CN', { hour12: false })}` : ' 尚无远端备份。'}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                    <button
+                        type="button"
+                        onClick={handleR2Sync}
+                        disabled={r2Busy || !authToken}
+                        className="px-3 py-2 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+                    >
+                        <Cloud size={14} />{r2Busy ? '处理中…' : '同步到 R2'}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={handleR2Restore}
+                        disabled={r2Busy || !authToken}
+                        className="px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 flex items-center gap-2"
+                    >
+                        <Download size={14} />从 R2 恢复
+                    </button>
+                </div>
+                {!authToken && <p className="text-xs text-amber-600 dark:text-amber-400">请先登录后再同步或恢复 R2。</p>}
+                {r2Msg && <p className="text-xs text-slate-600 dark:text-slate-300">{r2Msg}</p>}
+            </section>
             {/* Section 1: WebDAV Configuration */}
             <section className="space-y-4">
                 <div className="flex items-center justify-between">

@@ -1,0 +1,216 @@
+/* ==========================================================================
+   线上布局基准覆盖
+   --------------------------------------------------------------------------
+   数值全部来自线上 2026-09-21 版本的实测计算样式（1440×900 视口）：
+     desktop-content  x=248 y=72 w=1192
+     library-grid     4 列 × 258.75px，gap 16
+     library-results  padding 18px
+     library-header   height 72, display flex, justify space-between, align center
+   线上产物里的 !important 规则与 Tailwind 响应式类互相踩踏，这里按实测值钉死。
+   ========================================================================== */
+
+/* ---------- 桌面端骨架 ---------- */
+@media (min-width: 1024px) {
+  .cloudnav-redesign-root .cloudnav-desktop-sidebar {
+    position: relative !important;
+    inset: auto !important;
+    transform: none !important;
+    width: 248px !important;
+    min-width: 248px !important;
+    flex: 0 0 248px !important;
+    height: 100vh !important;
+    overflow: hidden !important;
+  }
+}
+
+@media (max-width: 1023px) {
+  .cloudnav-redesign-root .cloudnav-desktop-sidebar {
+    position: fixed !important;
+    left: 0 !important;
+    top: 0 !important;
+    bottom: 0 !important;
+    width: 248px !important;
+  }
+  .cloudnav-redesign-root .cloudnav-desktop-sidebar.translate-x-0 { transform: translateX(0) !important; }
+  .cloudnav-redesign-root .cloudnav-desktop-sidebar:not(.translate-x-0) { transform: translateX(-100%) !important; }
+}
+
+.cloudnav-redesign-root .cloudnav-desktop-main {
+  min-width: 0 !important;
+  flex: 1 1 auto !important;
+  height: 100vh !important;
+  overflow: hidden !important;
+}
+
+.cloudnav-redesign-root .cloudnav-desktop-content {
+  min-height: 0 !important;
+  flex: 1 1 auto !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  scrollbar-gutter: stable !important;
+  padding: 0 !important;
+}
+
+.cloudnav-redesign-root .cloudnav-desktop-header {
+  flex: 0 0 72px !important;
+  height: 72px !important;
+  min-height: 72px !important;
+  position: relative !important;
+  z-index: 10 !important;
+}
+
+/* ---------- 页面 ---------- */
+.cloudnav-redesign-root .cloudnav-page-container { display: contents; }
+
+.cloudnav-redesign-root .cloudnav-library-page {
+  display: flex !important;
+  width: auto !important;
+  max-width: none !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  padding: 22px 24px 32px !important;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+/* 页面头部：左侧标题 + 右侧操作按钮，横向排列 */
+.cloudnav-redesign-root .cloudnav-library-header {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 16px !important;
+  height: 72px !important;
+  min-height: 72px !important;
+  margin: 0 0 16px !important;
+  padding: 0 !important;
+  border-bottom: 0 !important;
+}
+
+.cloudnav-redesign-root .cloudnav-library-header h1 {
+  margin: 0 !important;
+  font-size: 1.65rem !important;
+  font-weight: 800 !important;
+  letter-spacing: -.03em !important;
+  color: var(--cn-ink, #17211f) !important;
+}
+
+.cloudnav-redesign-root .cloudnav-library-header-actions {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 8px !important;
+}
+
+/* 命令行：搜索框 + 计数 + 批量选择，横向 */
+.cloudnav-redesign-root .cloudnav-library-commandline {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 12px !important;
+  min-height: 52px !important;
+  margin: 0 0 16px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+}
+
+.cloudnav-redesign-root .cloudnav-library-search {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  flex: 1 1 auto !important;
+  max-width: 720px !important;
+  padding: 0 12px !important;
+  height: 40px !important;
+  border: 1px solid var(--ui-line, #e2e7ef) !important;
+  border-radius: 10px !important;
+  background: #fff !important;
+}
+
+.cloudnav-redesign-root .cloudnav-library-search input {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  border: 0 !important;
+  outline: 0 !important;
+  background: transparent !important;
+  font-size: 13px !important;
+}
+
+/* 工作区与结果区：线上都是干净的白底，无边框卡片外壳 */
+.cloudnav-redesign-root .cloudnav-library-workspace {
+  display: flex !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  flex: 1 1 auto !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+}
+
+.cloudnav-redesign-root .cloudnav-library-results {
+  display: flex !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  flex-direction: column !important;
+  padding: 0 !important;
+  border: 1px solid var(--ui-line, #e2e7ef) !important;
+  border-radius: 12px !important;
+  background: #fff !important;
+}
+
+.cloudnav-redesign-root .cloudnav-library-results-head {
+  display: flex !important;
+  align-items: flex-end !important;
+  justify-content: space-between !important;
+  gap: 12px !important;
+  padding: 18px 18px 12px !important;
+}
+
+.cloudnav-redesign-root .cloudnav-library-results-head h2 {
+  margin: 2px 0 0 !important;
+  font-size: 1rem !important;
+  font-weight: 800 !important;
+  letter-spacing: -.02em !important;
+  color: #183234 !important;
+}
+
+.cloudnav-redesign-root .cloudnav-library-row-list {
+  display: flex !important;
+  min-height: 0 !important;
+  flex: 1 1 auto !important;
+  padding: 0 18px 18px !important;
+  overflow: visible !important;
+}
+
+/* 网格：线上实测 4 列 258.75px。
+   线上另一条 auto-fill 规则带 !important 且后置，这里用更高特异性压回固定列数。 */
+.cloudnav-redesign-root .cloudnav-library-page .cloudnav-library-grid.cloudnav-library-grid,
+.cloudnav-redesign-root .cloudnav-stagger-grid.cloudnav-library-grid {
+  display: grid !important;
+  width: 100% !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: 16px !important;
+  align-content: start !important;
+}
+
+@media (max-width: 1280px) {
+  .cloudnav-redesign-root .cloudnav-library-page .cloudnav-library-grid.cloudnav-library-grid { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+}
+@media (max-width: 900px) {
+  .cloudnav-redesign-root .cloudnav-library-page .cloudnav-library-grid.cloudnav-library-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+}
+@media (max-width: 620px) {
+  .cloudnav-redesign-root .cloudnav-library-page .cloudnav-library-grid.cloudnav-library-grid { grid-template-columns: minmax(0, 1fr) !important; }
+}
+
+.cloudnav-redesign-root .cloudnav-stagger-grid-shell,
+.cloudnav-redesign-root .cloudnav-stagger-grid { display: contents !important; }
+.cloudnav-redesign-root .cloudnav-stagger-item { min-width: 0 !important; }
+
+/* 表格头在卡片视图下隐藏（线上同样隐藏） */
+.cloudnav-redesign-root .cloudnav-library-row-head { display: none !important; }

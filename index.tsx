@@ -5,7 +5,9 @@ import AppErrorBoundary from './components/AppErrorBoundary';
 import { ToastProvider } from './components/Toast';
 import './index.css';
 import './styles/cloudnav-redesign.css';
-import './styles/cloudnav-redesign.css';
+import './styles/live-theme.css';
+import './styles/live-cloudnav.css';
+import './styles/live-overrides.css';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {

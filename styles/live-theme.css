@@ -1,0 +1,65 @@
+/* 线上 2026-09-21 设计令牌（从线上 DOM 计算样式取得） */
+:root {
+  --ui-radius: 14px;
+  --ui-surface: #fff;
+  --ui-line: #e2e7ef;
+  --ui-shadow: 0 3px 10px #20345005, 0 1px 2px #20345005;
+  --ui-muted: #627188;
+  --ui-bg: #f4f6fa;
+  --page-accent: #087f78;
+
+  --cloud-shell: #f1f3f1;
+  --cloud-main: #f7f8f6;
+  --cloud-sidebar: #222a2f;
+  --cloud-sidebar-soft: #1d252a;
+  --cloud-sidebar-raised: #303a40;
+  --cloud-sidebar-text: #c4cfce;
+  --cloud-accent: #2f6b67;
+  --cloud-accent-deep: #255652;
+  --cloud-accent-soft: #e5f1ef;
+  --cloud-line: #dce3e1;
+
+  --cloudnav-header-height: 72px;
+  --cloudnav-motion-fast: .14s;
+  --cloudnav-motion-standard: .24s;
+  --cloudnav-motion-slow: .36s;
+  --cloudnav-ease-out: cubic-bezier(.22, 1, .36, 1);
+
+  --cn-bg: #f2f4f1;
+  --cn-surface: #fffefa;
+  --cn-surface-soft: #f7f8f5;
+  --cn-ink: #17211f;
+  --cn-ink-strong: #10201e;
+  --cn-muted: #536864;
+  --cn-faint: #71847f;
+  --cn-line: #d7e0dc;
+  --cn-line-strong: #c2d0ca;
+  --cn-primary: #087f78;
+  --cn-primary-dark: #075f5a;
+  --cn-primary-soft: #e1f1ee;
+  --cn-accent: #c85a12;
+  --cn-accent-soft: #fff0e2;
+  --cn-danger: #b3262e;
+  --cn-danger-soft: #fff0f0;
+  --cn-sidebar: #162725;
+  --cn-sidebar-ink: #f1f7f4;
+  --cn-sidebar-muted: #a4b8b2;
+  --cn-radius: 8px;
+  --cn-radius-sm: 5px;
+  --cn-focus: 0 0 0 3px rgba(8, 127, 120, .2);
+  --cn-float-shadow: 0 14px 34px rgba(18, 37, 33, .16);
+  --cn-motion: .16s ease;
+}
+
+/* cloudnav-* 系列回落到线上实际取值 */
+:root {
+  --cloudnav-surface: #fff;
+  --cloudnav-border: #e2e7ef;
+  --cloudnav-text: #17211f;
+  --cloudnav-muted: #627188;
+  --cloudnav-faint: #8b98ad;
+  --cloudnav-accent: #087f78;
+  --cloudnav-radius: 14px;
+  --cloudnav-shadow: 0 3px 10px #20345005, 0 1px 2px #20345005;
+  --cloudnav-card-min-height: 152px;
+}

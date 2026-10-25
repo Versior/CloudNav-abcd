@@ -317,7 +317,7 @@ const ReadingWorkspacePage: React.FC<ReadingWorkspacePageProps> = ({ initialId, 
 
   return (
     <section data-page="reading-workspace" data-layout-version="reading-workspace-v2" className="cloudnav-reading-workspace cloudnav-reading-workspace-v2">
-      <header className="cloudnav-reading-header-v2">
+      <header className="cloudnav-reading-header cloudnav-reading-header-v2">
         <div className="cloudnav-reading-title-block"><div className="cloudnav-eyebrow"><BookOpen size={14} /> READING WORKSPACE</div><h1>阅读台</h1><p>把值得读的内容留下来，安静地读完，再把重点沉淀下来。</p><div className="cloudnav-reading-stats-v2"><span><strong>{documents.filter(item => item.status === 'inbox' && !item.deletedAt).length}</strong> Inbox</span><span><strong>{documents.filter(item => item.unread && !item.deletedAt).length}</strong> 未读</span><span><strong>{documents.filter(item => item.starred && !item.deletedAt).length}</strong> 收藏</span></div></div>
         <div className="cloudnav-reading-header-actions"><button type="button" className="cloudnav-reading-capture-toggle" onClick={() => setShowCapture(value => !value)} aria-expanded={showCapture}><Plus size={16} />添加到 Inbox</button><button type="button" onClick={exportDocuments} title="导出阅读库"><Download size={16} />导出</button><label title="导入阅读库"><Upload size={16} />导入<input key={importInputKey} type="file" accept="application/json" onChange={readImport} /></label><button type="button" onClick={() => setShowShortcuts(value => !value)} title="快捷键"><Keyboard size={16} /></button></div>
       </header>

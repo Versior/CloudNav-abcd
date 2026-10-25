@@ -83,7 +83,7 @@ const InboxPage: React.FC<InboxPageProps> = ({ links, onOpenUrl, onCaptureRss, o
     if (article) onCaptureRss(article);
   };
 
-  return <section data-page="inbox" className="cloudnav-workspace-page cloudnav-inbox-page">
+  return <section data-page="inbox" className="cloudnav-single-screen cloudnav-workspace-page cloudnav-inbox-page">
     <header className="cloudnav-page-header"><div><div className="cloudnav-eyebrow"><Inbox size={14} /> UNIFIED INBOX</div><h1>统一收件箱</h1><p>把资讯、稍后阅读、灵感与项目更新汇成一条可处理的信息流。</p></div><div className="cloudnav-reading-stat"><strong>{items.filter(item => !item.read).length}</strong><span>待处理</span></div></header>
 
     <div data-inbox-region="source-rail" data-sources="rss" className="cloudnav-source-rail cloudnav-inbox-source-rail" aria-label="收件箱订阅源">

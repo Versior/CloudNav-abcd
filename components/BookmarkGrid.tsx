@@ -14,12 +14,15 @@ interface SortableCardProps {
   draggable?: boolean;
   onOpen: (link: LinkItem) => void;
   onEdit: (link: LinkItem) => void;
-
   onToggleSelect?: (id: string) => void;
   onContextMenu?: (event: React.MouseEvent, link: LinkItem) => void;
 }
 
-/** 单个可拖拽卡片：仅手动排序时挂载拖拽能力。 */
+/**
+ * 单个可拖拽卡片。
+ * 拖拽监听挂在外层；同时把 activatorRef 传给卡片内的把手，
+ * 这样按住把手也能拖动（否则把手只是装饰，点它没有反应）。
+ */
 const SortableCard: React.FC<SortableCardProps> = props => {
   const sortable = useSortable({ id: props.link.id, disabled: !props.draggable });
   return (
@@ -30,7 +33,7 @@ const SortableCard: React.FC<SortableCardProps> = props => {
       {...(props.draggable ? sortable.attributes : {})}
       {...(props.draggable ? sortable.listeners : {})}
     >
-      <LinkCard {...props} />
+      <LinkCard {...props} activatorRef={props.draggable ? sortable.setActivatorNodeRef : undefined} />
     </div>
   );
 };

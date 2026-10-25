@@ -12,9 +12,10 @@ interface LinkCardProps {
   selected?: boolean;
   /** 显示拖拽把手（仅手动排序）。 */
   draggable?: boolean;
+  /** dnd-kit 的 activator ref：挂到把手上才能按住把手拖动。 */
+  activatorRef?: (node: HTMLElement | null) => void;
   onOpen: (link: LinkItem) => void;
   onEdit: (link: LinkItem) => void;
-
   onToggleSelect?: (id: string) => void;
   onContextMenu?: (event: React.MouseEvent, link: LinkItem) => void;
 }
@@ -109,7 +110,7 @@ const SelectBox: React.FC<{ selected?: boolean }> = ({ selected }) => (
 
 const LinkCard: React.FC<LinkCardProps> = ({
   link, cardStyle, selectable, selected, draggable,
-  onOpen, onEdit, onToggleSelect, onContextMenu,
+  onOpen, onEdit, onToggleSelect, onContextMenu, activatorRef,
 }) => {
   const handleClick = (event: React.MouseEvent) => {
     if (selectable) {
@@ -141,12 +142,18 @@ const LinkCard: React.FC<LinkCardProps> = ({
     </div>
   );
 
+  // 把手常显：只在 hover 出现会让用户不知道可以拖动
   const dragHandle = draggable && (
-    <span className="absolute -left-1 top-1/2 hidden -translate-y-1/2 cursor-grab items-center rounded-md bg-white p-1 text-slate-300 shadow-sm ring-1 ring-slate-200 group-hover:flex active:cursor-grabbing dark:bg-slate-700 dark:text-slate-500 dark:ring-slate-600">
+    <span
+      ref={activatorRef}
+      role="button"
+      tabIndex={-1}
+      aria-label="拖动排序"
+      className="absolute -left-1 top-1/2 flex -translate-y-1/2 cursor-grab touch-none items-center rounded-md bg-white p-1 text-slate-300 shadow-sm ring-1 ring-slate-200 transition-colors hover:text-blue-500 active:cursor-grabbing dark:bg-slate-700 dark:text-slate-500 dark:ring-slate-600"
+    >
       <GripVertical size={12} />
     </span>
   );
-
   if (cardStyle === 'list') {
     return (
       <div
@@ -157,6 +164,7 @@ const LinkCard: React.FC<LinkCardProps> = ({
         onContextMenu={event => onContextMenu?.(event, link)}
         className={`${shell} flex items-center gap-3 rounded-xl px-3 py-2`}
       >
+        {dragHandle}
         {selectable && <SelectBox selected={selected} />}
         <Favicon link={link} size="sm" />
         <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-slate-800 dark:text-slate-100">{link.title}</span>

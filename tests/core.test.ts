@@ -195,3 +195,25 @@ test('blocks private and loopback hosts while allowing public hosts', () => {
     assert.equal(isBlockedHost(host), false, `${host} should be allowed`);
   }
 });
+
+test('reorders by order field and keeps the drag result visible', async () => {
+  const { applySort, applyReorder } = await import('../services/sorting.ts');
+  const links = [
+    { id: 'a', title: 'AAAA', url: 'https://a.com', categoryId: 'common', createdAt: 1, order: 0 },
+    { id: 'b', title: 'BBBB', url: 'https://b.com', categoryId: 'common', createdAt: 2, order: 1 },
+    { id: 'c', title: 'CCCC', url: 'https://c.com', categoryId: 'common', createdAt: 3, order: 2 },
+  ];
+
+  // 手动模式必须按 order 排，否则拖拽写入的 order 不生效
+  assert.deepEqual(
+    applySort(links, { key: 'manual', direction: 'asc' }).map(link => link.id),
+    ['a', 'b', 'c'],
+  );
+
+  const next = applyReorder(links, links, 'a', 'c');
+  assert.ok(next);
+  assert.deepEqual(
+    applySort(next, { key: 'manual', direction: 'asc' }).map(link => link.id),
+    ['b', 'c', 'a'],
+  );
+});

@@ -29,7 +29,12 @@ const manualValue = (link: LinkItem) => (typeof link.order === 'number' ? link.o
  * 值相同时回落到手动顺序，避免同一数据反复重排抖动。
  */
 export const applySort = (links: LinkItem[], config: SortConfig): LinkItem[] => {
-  if (config.key === 'manual') return config.direction === 'asc' ? [...links] : [...links].reverse();
+  // 手动模式：按 order 字段排序（拖拽结果就写在 order 上）。
+  // 不能用原数组顺序——那样拖拽写入的 order 永远不会生效。
+  if (config.key === 'manual') {
+    const sorted = [...links].sort((a, b) => manualValue(a) - manualValue(b));
+    return config.direction === 'asc' ? sorted : sorted.reverse();
+  }
 
   const factor = config.direction === 'asc' ? 1 : -1;
   const compare = (a: LinkItem, b: LinkItem): number => {
@@ -65,21 +70,31 @@ export const normalizeSortConfig = (value: unknown): SortConfig => {
 export const canReorder = (config: SortConfig) => config.key === 'manual';
 
 /**
- * 把拖拽结果写回 order：只重排索引区间，其余卡片保持原值，
- * 避免整表 order 被反复覆盖造成无意义的云端写入。
+ * 把拖拽结果写回 order。
+ *
+ * `visible` 是界面上实际显示的顺序（可能是筛选/排序后的子集），
+ * `all` 是全量数据。只有基于 visible 计算下标，重排才和用户看到的一致；
+ * 否则拖完会被旧 order 覆盖回去，表现为「拖了没反应」。
  */
-export const applyReorder = (links: LinkItem[], draggedId: string, targetId: string): LinkItem[] | null => {
-  const from = links.findIndex(link => link.id === draggedId);
-  const to = links.findIndex(link => link.id === targetId);
+export const applyReorder = (
+  all: LinkItem[],
+  visible: LinkItem[],
+  draggedId: string,
+  targetId: string,
+): LinkItem[] | null => {
+  const from = visible.findIndex(link => link.id === draggedId);
+  const to = visible.findIndex(link => link.id === targetId);
   if (from < 0 || to < 0 || from === to) return null;
 
-  const next = [...links];
-  const [moved] = next.splice(from, 1);
-  next.splice(to, 0, moved);
+  const nextVisible = [...visible];
+  const [moved] = nextVisible.splice(from, 1);
+  nextVisible.splice(to, 0, moved);
 
-  const byId = new Map(next.map((link, index) => [link.id, index]));
-  return links.map(link => {
-    const index = byId.get(link.id);
-    return index === undefined || index === link.order ? link : { ...link, order: index };
+  // visible 的新下标即目标顺序；不在 visible 里的条目保持原 order
+  const orderById = new Map(nextVisible.map((link, index) => [link.id, index]));
+  return all.map(link => {
+    const nextOrder = orderById.get(link.id);
+    if (nextOrder === undefined || nextOrder === link.order) return link;
+    return { ...link, order: nextOrder };
   });
 };

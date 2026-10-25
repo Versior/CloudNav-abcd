@@ -510,13 +510,36 @@ const App: React.FC = () => {
     saveLocal(next, categories);
   };
 
+  /**
+   * 当前视图可见列表。
+   * 必须在 handleDragEnd 之前定义：拖拽写回 order 要基于用户看到的顺序。
+   */
+  // 用普通函数而非 useMemo：这样 handleDragEnd 里能拿到「当前可见顺序」，
+  // 又不受变量定义顺序限制（依赖项在后面才声明）。
+  const computeDisplayed = () => {
+    const parsed = parseSearchQuery(searchQuery);
+    const hasSearch = !!searchQuery.trim();
+    let result = links.filter(link => !link.deletedAt && !isCategoryLocked(link.categoryId));
+    // 置顶板块已单独渲染同一批卡片，主页主列表排除以免重复
+    if (!hasSearch && !advancedFilterActive && selectedCategory === 'all') result = result.filter(link => !link.pinned);
+    if (hasSearch) result = result.filter(link => matchesFilters(link, parsed, categories) && matchesQuery(link, parsed.text));
+    if (advancedFilterActive) result = result.filter(matchesAdvancedFilters);
+    if (selectedCategory === 'pinned') {
+      result = result.filter(link => link.pinned);
+    } else if (selectedCategory !== 'all') {
+      const childIds = categories.filter(category => category.parentId === selectedCategory).map(category => category.id);
+      result = result.filter(link => link.categoryId === selectedCategory || childIds.includes(link.categoryId));
+    }
+    return hasSearch ? sortByRelevance(result, parsed.text || searchQuery) : applySort(result, sortConfig);
+  };
+
   const handleDragEnd = (event: DragEndEvent) => {
     if (!event.over || event.active.id === event.over.id) return;
     if (!canReorder(sortConfig)) {
       showToast('请先切到「手动顺序」再拖拽排序', { type: 'info' });
       return;
     }
-    const next = applyReorder(links, String(event.active.id), String(event.over.id));
+    const next = applyReorder(links, computeDisplayed(), String(event.active.id), String(event.over.id));
     if (next) updateData(next, categories);
   };
 
@@ -551,23 +574,9 @@ const App: React.FC = () => {
     if (advancedFilters.untagged && (link.tags || []).length) return false;
     return true;
   };
-  const displayedLinks = useMemo(() => {
-    const parsed = parseSearchQuery(searchQuery);
-    const hasSearch = !!searchQuery.trim();
-    let result = links.filter(link => !link.deletedAt && !isCategoryLocked(link.categoryId));
-    // 置顶板块已单独渲染同一批卡片，主页主列表排除以免重复
-    if (!hasSearch && !advancedFilterActive && selectedCategory === 'all') result = result.filter(link => !link.pinned);
-    if (hasSearch) result = result.filter(link => matchesFilters(link, parsed, categories) && matchesQuery(link, parsed.text));
-    if (advancedFilterActive) result = result.filter(matchesAdvancedFilters);
-    if (selectedCategory === 'pinned') {
-      result = result.filter(link => link.pinned);
-    } else if (selectedCategory !== 'all') {
-      const childIds = categories.filter(category => category.parentId === selectedCategory).map(category => category.id);
-      result = result.filter(link => link.categoryId === selectedCategory || childIds.includes(link.categoryId));
-    }
-    return hasSearch ? sortByRelevance(result, parsed.text || searchQuery) : applySort(result, sortConfig);
-  }, [links, categories, selectedCategory, searchQuery, advancedFilterActive, advancedFilters, unlockedCategoryIds, sortConfig]);
 
+  // UI 渲染用：缓存在依赖变化时重算，避免每次渲染都跑一遍过滤。
+  const displayedLinks = useMemo(computeDisplayed, [links, categories, selectedCategory, searchQuery, advancedFilterActive, advancedFilters, unlockedCategoryIds, sortConfig]);
 
   const pinnedLinks = useMemo(
     () => applySort(links.filter(link => link.pinned && !isCategoryLocked(link.categoryId)), sortConfig),

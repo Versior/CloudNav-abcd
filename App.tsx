@@ -534,12 +534,30 @@ const App: React.FC = () => {
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
-    if (!event.over || event.active.id === event.over.id) return;
+    const overId = event.over ? String(event.over.id) : '';
+    if (!overId) return;
+
+    // 拖到侧栏分类 → 移动书签；这是独立于排序的操作
+    if (overId.startsWith('cat:')) {
+      const targetId = overId.slice(4);
+      const linkId = String(event.active.id);
+      const link = links.find(item => item.id === linkId);
+      if (!link || link.categoryId === targetId) return;
+      const target = categories.find(category => category.id === targetId);
+      updateData(
+        links.map(item => item.id === linkId ? { ...item, categoryId: targetId, updatedAt: Date.now() } : item),
+        categories,
+      );
+      showToast(`已移动到「${target?.name || targetId}」`, { type: 'success' });
+      return;
+    }
+
+    if (event.active.id === overId) return;
     if (!canReorder(sortConfig)) {
       showToast('请先切到「手动顺序」再拖拽排序', { type: 'info' });
       return;
     }
-    const next = applyReorder(links, computeDisplayed(), String(event.active.id), String(event.over.id));
+    const next = applyReorder(links, computeDisplayed(), String(event.active.id), overId);
     if (next) updateData(next, categories);
   };
 
@@ -702,9 +720,10 @@ const App: React.FC = () => {
 
   if (isLoading) return <div className="min-h-screen flex items-center justify-center text-slate-400"><Loader2 className="animate-spin" /></div>;
 
-  return <div className="flex h-screen overflow-hidden text-slate-900 dark:text-slate-50">
-    {requiresAuth && !authToken && <div className="fixed inset-0 z-50 bg-white dark:bg-slate-900 flex items-center justify-center"><div className="w-full max-w-md p-6 text-center"><div className="mx-auto w-16 h-16 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mb-4"><Lock className="w-8 h-8 text-blue-600" /></div><h1 className="text-2xl font-bold mb-2">需要身份验证</h1><p className="text-slate-500 mb-6">请输入访问密码以继续使用导航。</p><AuthModal isOpen onLogin={handleLogin} /></div></div>}
-    {(!requiresAuth || authToken) && <Suspense fallback={null}>
+  return <div className="flex h-screen overflow-hidden bg-canvas text-ink">
+    {requiresAuth && !authToken && <div className="fixed inset-0 z-50 bg-canvas flex items-center justify-center"><div className="w-full max-w-md p-6 text-center"><div className="mx-auto w-16 h-16 bg-accent-soft rounded-full flex items-center justify-center mb-4"><Lock className="w-8 h-8 text-accent" /></div><h1 className="text-2xl font-bold mb-2">需要身份验证</h1><p className="text-ink-soft mb-6">请输入访问密码以继续使用导航。</p><AuthModal isOpen onLogin={handleLogin} /></div></div>}
+    {(!requiresAuth || authToken) && <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+    <Suspense fallback={null}>
     <Sidebar
       navTitle={siteSettings.navTitle}
       categories={categories}
@@ -775,7 +794,6 @@ const App: React.FC = () => {
                 )}
               </div>
               {/* 首页只放一条紧凑横条，置顶再多也不挤占主列表 */}
-              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
                 <SortableContext items={pinnedLinks.map(link => link.id)} strategy={rectSortingStrategy}>
                   <BookmarkGrid
                     links={pinnedLinks.slice(0, HOME_PIN_LIMIT)}
@@ -786,7 +804,6 @@ const App: React.FC = () => {
                     {...cardHandlers}
                   />
                 </SortableContext>
-              </DndContext>
             </section>
           )}
 
@@ -808,7 +825,6 @@ const App: React.FC = () => {
             />
 
             {displayedLinks.length ? (
-              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
                 <SortableContext items={displayedLinks.map(link => link.id)} strategy={rectSortingStrategy}>
                   <BookmarkGrid
                     links={displayedLinks}
@@ -819,7 +835,6 @@ const App: React.FC = () => {
                     {...cardHandlers}
                   />
                 </SortableContext>
-              </DndContext>
             ) : (
               <div className="rounded-xl border border-dashed border-slate-200 py-16 text-center dark:border-slate-700">
                 {searchQuery ? (
@@ -865,7 +880,8 @@ const App: React.FC = () => {
       <LinkModal isOpen={isLinkModalOpen} onClose={() => { setIsLinkModalOpen(false); setEditingLink(undefined); setPrefillLink(undefined); }} onSave={editingLink ? handleEditLink : handleAddLink} onDelete={editingLink ? handleDeleteLink : undefined} categories={categories} links={links} initialData={editingLink || (prefillLink as LinkItem)} aiConfig={aiConfig} defaultCategoryId={selectedCategory !== 'all' ? selectedCategory : undefined} />
       <ContextMenu isOpen={contextMenu.isOpen} position={contextMenu.position} targetType={contextMenu.type} isCategoryEditable={contextMenu.category?.id !== 'common'} onClose={closeContextMenu} onCopyLink={copyLinkToClipboard} onShowQRCode={showQRCode} onEditLink={editLinkFromContextMenu} onDeleteLink={deleteLinkFromContextMenu} onTogglePin={togglePinFromContextMenu} onOpenCategory={openCategoryFromContextMenu} onEditCategory={editCategoryFromContextMenu} onRenameCategory={renameCategoryFromContextMenu} onStructureCategory={structureCategoryFromContextMenu} onDeleteCategory={deleteCategoryFromContextMenu} />
       <QRCodeModal isOpen={qrCode.isOpen} url={qrCode.url} title={qrCode.title} onClose={() => setQrCode({ isOpen: false, url: '', title: '' })} />
-      </Suspense>}
+      </Suspense>
+    </DndContext>}
   </div>
 };
 

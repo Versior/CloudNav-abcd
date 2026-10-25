@@ -149,13 +149,14 @@ const LinkCard: React.FC<LinkCardProps> = ({
   );
 
   // 把手作为卡片内左侧一列，不溢出、不遮挡内容
+  // 把手默认隐藏，卡片悬停或聚焦时才浮现；宽度为 0 不占布局，避免平时留出一条缝
   const dragHandle = draggable && (
     <span
       ref={activatorRef}
       role="button"
       tabIndex={-1}
       aria-label="拖动排序"
-      className="-ml-1 flex shrink-0 cursor-grab touch-none items-center self-stretch rounded px-0.5 text-ink-muted/50 transition-colors hover:text-accent active:cursor-grabbing"
+      className="flex w-0 shrink-0 cursor-grab touch-none items-center justify-center self-stretch overflow-visible text-ink-muted/0 transition-colors group-hover:text-ink-muted/60 group-focus-within:text-ink-muted/60 hover:!text-accent active:cursor-grabbing"
     >
       <GripVertical size={12} />
     </span>

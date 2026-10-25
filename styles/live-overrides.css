@@ -301,3 +301,257 @@
   color: #0f766e !important;
   border: 1px solid #99f6e4 !important;
 }
+
+/* ---------- RSS 阅读台 ----------
+   线上 v7/v8 是「左列表 + 右阅读」的两栏，v5 的居中流布局要取消。 */
+.cloudnav-redesign-root .cloudnav-rss-reader {
+  display: flex !important;
+  flex-direction: column !important;
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 22px 24px 32px !important;
+  gap: 16px !important;
+}
+
+/* 头部：左标题 + 右操作，横向 */
+.cloudnav-redesign-root .cloudnav-rss-reader .cloudnav-rss-v5-header {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 16px !important;
+  text-align: left !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+}
+
+.cloudnav-redesign-root .cloudnav-rss-reader .cloudnav-rss-header-actions {
+  display: flex !important;
+  justify-content: flex-end !important;
+  gap: 8px !important;
+  flex-wrap: nowrap !important;
+}
+
+/* 订阅源横向条 */
+.cloudnav-redesign-root .cloudnav-rss-reader .cloudnav-rss-source-rail {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 10px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  width: 100% !important;
+  overflow-x: auto !important;
+}
+
+.cloudnav-redesign-root .cloudnav-rss-reader .cloudnav-source-rail-label {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  flex: 0 0 auto !important;
+  font-size: 12px !important;
+  color: var(--cn-muted, #536864) !important;
+}
+
+.cloudnav-redesign-root .cloudnav-rss-reader .cloudnav-source-rail-list {
+  display: flex !important;
+  flex-direction: row !important;
+  gap: 8px !important;
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  overflow-x: auto !important;
+}
+
+.cloudnav-redesign-root .cloudnav-rss-reader .cloudnav-source-option {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  flex: 0 0 auto !important;
+  padding: 6px 12px !important;
+  border: 1px solid var(--ui-line, #e2e7ef) !important;
+  border-radius: 999px !important;
+  background: #fff !important;
+  font-size: 12px !important;
+  white-space: nowrap !important;
+}
+
+.cloudnav-redesign-root .cloudnav-rss-reader .cloudnav-source-option.is-active {
+  background: var(--cn-primary, #087f78) !important;
+  border-color: var(--cn-primary, #087f78) !important;
+  color: #fff !important;
+}
+
+/* 统计条：横向紧凑 */
+.cloudnav-redesign-root .cloudnav-rss-reader .cloudnav-rss-v5-stats {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 24px !important;
+  padding: 12px 16px !important;
+  border: 1px solid var(--ui-line, #e2e7ef) !important;
+  border-radius: 12px !important;
+  background: #fff !important;
+}
+
+.cloudnav-redesign-root .cloudnav-rss-reader .cloudnav-rss-v5-stats > span {
+  display: flex !important;
+  align-items: baseline !important;
+  gap: 6px !important;
+}
+
+.cloudnav-redesign-root .cloudnav-rss-reader .cloudnav-rss-v5-stats strong {
+  font-size: 18px !important;
+  font-weight: 800 !important;
+}
+
+.cloudnav-redesign-root .cloudnav-rss-reader .cloudnav-rss-v5-stats-note {
+  margin-left: auto !important;
+  color: var(--cn-muted, #536864) !important;
+  font-size: 12px !important;
+}
+
+/* 工具栏 + 内容区：垂直堆叠，内容撑满 */
+.cloudnav-redesign-root .cloudnav-rss-reader .cloudnav-rss-v5-toolbar {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 12px !important;
+  min-height: 48px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+}
+
+.cloudnav-redesign-root .cloudnav-rss-reader .cloudnav-rss-v5-toolbar-main {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 12px !important;
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+}
+
+.cloudnav-redesign-root .cloudnav-rss-reader .cloudnav-rss-v5-search {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  flex: 1 1 auto !important;
+  max-width: 520px !important;
+  height: 40px !important;
+  padding: 0 12px !important;
+  border: 1px solid var(--ui-line, #e2e7ef) !important;
+  border-radius: 10px !important;
+  background: #fff !important;
+}
+
+.cloudnav-redesign-root .cloudnav-rss-reader .cloudnav-rss-v5-search input {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  border: 0 !important;
+  outline: 0 !important;
+  background: transparent !important;
+  font-size: 13px !important;
+}
+
+.cloudnav-redesign-root .cloudnav-rss-reader .cloudnav-rss-v5-toolbar-actions {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 8px !important;
+  flex: 0 0 auto !important;
+}
+
+/* 两栏阅读布局：左列表 + 右阅读 */
+.cloudnav-redesign-root .cloudnav-rss-reader .cloudnav-rss-v6-reading-layout {
+  display: grid !important;
+  grid-template-columns: minmax(360px, .9fr) minmax(0, 1.1fr) !important;
+  gap: 16px !important;
+  width: 100% !important;
+  min-height: 480px !important;
+  align-items: start !important;
+  border: 0 !important;
+  background: transparent !important;
+  overflow: visible !important;
+}
+
+.cloudnav-redesign-root .cloudnav-rss-reader .cloudnav-rss-v5-stream {
+  display: flex !important;
+  flex-direction: column !important;
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 1px solid var(--ui-line, #e2e7ef) !important;
+  border-radius: 12px !important;
+  background: #fff !important;
+  overflow: visible !important;
+  height: auto !important;
+  min-height: 0 !important;
+}
+
+.cloudnav-redesign-root .cloudnav-rss-reader .cloudnav-rss-v5-stream-head {
+  display: flex !important;
+  align-items: flex-end !important;
+  justify-content: space-between !important;
+  gap: 12px !important;
+  padding: 16px 18px 12px !important;
+  border-bottom: 1px solid var(--ui-line, #e2e7ef) !important;
+}
+
+.cloudnav-redesign-root .cloudnav-rss-reader .cloudnav-rss-v5-stream-head h2 {
+  margin: 2px 0 0 !important;
+  font-size: 1rem !important;
+  font-weight: 800 !important;
+}
+
+.cloudnav-redesign-root .cloudnav-rss-reader .cloudnav-rss-v5-rows {
+  display: flex !important;
+  flex-direction: column !important;
+  padding: 0 !important;
+}
+
+.cloudnav-redesign-root .cloudnav-rss-reader .cloudnav-rss-v5-row {
+  display: grid !important;
+  grid-template-columns: 28px minmax(0, 1fr) auto !important;
+  align-items: start !important;
+  gap: 12px !important;
+  width: 100% !important;
+  padding: 14px 18px !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--ui-line, #e2e7ef) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  text-align: left !important;
+  min-height: 0 !important;
+}
+
+.cloudnav-redesign-root .cloudnav-rss-reader .cloudnav-rss-v5-row:hover {
+  background: #f4f8f6 !important;
+}
+
+.cloudnav-redesign-root .cloudnav-rss-reader .cloudnav-rss-v5-row.is-selected {
+  background: #e9f4f1 !important;
+  box-shadow: inset 3px 0 0 var(--cn-primary, #087f78) !important;
+}
+
+/* 右栏阅读区 */
+.cloudnav-redesign-root .cloudnav-rss-reader .cloudnav-rss-reading-zone {
+  display: flex !important;
+  flex-direction: column !important;
+  min-width: 0 !important;
+  min-height: 480px !important;
+  padding: 18px !important;
+  border: 1px solid var(--ui-line, #e2e7ef) !important;
+  border-radius: 12px !important;
+  background: #fff !important;
+}
+
+@media (max-width: 1100px) {
+  .cloudnav-redesign-root .cloudnav-rss-reader .cloudnav-rss-v6-reading-layout {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}

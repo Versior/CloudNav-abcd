@@ -2870,7 +2870,7 @@ function App() {
               ><div className="p-1"><Icon name="Github" size={18} /></div><span>GitHub追踪</span></button>
             </div>
             
-            <div className="flex items-center justify-between pt-4 pb-2 px-8">
+            <div className="cloudnav-category-directory flex items-center justify-between pt-4 pb-2 px-8">
                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">分类目录</span>
                <button 
                   onClick={() => { if(!authToken) setIsAuthOpen(true); else setIsCatManagerOpen(true); }}
@@ -2887,7 +2887,7 @@ function App() {
                 return (
                   <div 
                     key={cat.id} 
-                    className="relative px-4"
+                    className="cloudnav-category-directory__item relative px-4"
                     onMouseEnter={(e) => {
                       setHoveredCategory(cat.id);
                       setHoveredCategoryTop(e.currentTarget.getBoundingClientRect().top);

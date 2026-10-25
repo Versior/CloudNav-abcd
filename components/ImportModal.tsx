@@ -64,11 +64,14 @@ const ImportModal: React.FC<ImportModalProps> = ({
       links: data.links,
       categories: data.categories,
       searchConfig: data.searchConfig,
-      aiConfig: data.aiConfig
+      aiConfig: data.aiConfig && {
+        provider: data.aiConfig.provider,
+        baseUrl: data.aiConfig.baseUrl || '',
+        model: data.aiConfig.model || 'gemini-2.5-flash',
+      },
     };
   };
 
-  if (!isOpen) return null;
 
   const resetState = () => {
     setStep('upload');
@@ -149,6 +152,7 @@ const ImportModal: React.FC<ImportModalProps> = ({
   useEffect(() => {
     setSelectedIds(new Set(parsedLinks.map(l => l.id)));
   }, [parsedLinks]);
+  if (!isOpen) return null;
 
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => {
@@ -295,8 +299,7 @@ const ImportModal: React.FC<ImportModalProps> = ({
                                     <Database size={32} />
                                 </div>
                                 <div className="text-center">
-                                    <p className="text-sm font-medium dark:text-white">导入 navix_backup.json 文件</p>
-                                    <p className="text-xs text-slate-500 mt-1">与 WebDAV 备份格式一致，兼容旧 cloudnav_backup.json 文件</p>
+                                    <p className="text-xs text-slate-500 mt-1">导入 JSON 书签数据，可兼容旧版导出文件</p>
                                 </div>
                             </>
                         )}

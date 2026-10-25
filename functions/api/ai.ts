@@ -1,298 +1,136 @@
 import { jsonResponse, optionsResponse, requireAuth } from '../_shared/auth';
+import { getStorageKv, StorageEnv } from '../_shared/dataStore';
+import { isBlockedHost } from '../_shared/hostGuard';
 import { normalizeOpenAIEndpoint } from '../../services/openaiEndpoint';
 
-interface Env {
-  CLOUDNAV_KV: KVNamespace;
+interface Env extends StorageEnv {
   PASSWORD: string;
   SESSION_SECRET?: string;
   GEMINI_API_KEY?: string;
-}
-
-interface AIConfig {
-  provider?: 'gemini' | 'openai';
-  apiKey?: string;
-  baseUrl?: string;
-  model?: string;
+  OPENAI_API_KEY?: string;
 }
 
 type AITask = 'description' | 'category' | 'test' | 'folder_rename' | 'folder_structure';
+type RequestConfig = { provider?: 'gemini' | 'openai'; baseUrl?: string; model?: string };
+type ResolvedConfig = { provider: 'gemini' | 'openai'; baseUrl: string; model: string; apiKey: string };
 
-const readAiConfig = async (env: Env, requestConfig: AIConfig = {}) => {
-  const value = await env.CLOUDNAV_KV.get('ai_config');
-  const config = value ? JSON.parse(value) as AIConfig : {};
-  return {
-    provider: requestConfig.provider || config.provider || 'gemini',
-    apiKey: requestConfig.apiKey || config.apiKey || env.GEMINI_API_KEY || '',
-    baseUrl: requestConfig.baseUrl !== undefined ? requestConfig.baseUrl : config.baseUrl || '',
-    model: requestConfig.model || config.model || 'gemini-2.5-flash',
-  };
-};
-
-const isHtmlText = (text: string) => /^<!doctype\s+html/i.test(text.trim()) || /^<html[\s>]/i.test(text.trim());
-
-const extractHtmlTitle = (text: string) => {
-  const match = text.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-  return match?.[1]?.replace(/\s+/g, ' ').trim() || '';
-};
-
-const parseProviderErrorDetail = (raw: string) => {
+const parseProviderError = (raw: string) => {
   try {
     const data = JSON.parse(raw) as any;
-    return data?.error?.message || data?.error || data?.message || raw;
+    return String(data?.error?.message || data?.error || data?.message || raw);
   } catch {
     return raw;
   }
 };
-
-const parseProviderJson = (provider: string, raw: string, endpoint?: string) => {
-  if (isHtmlText(raw)) {
-    const title = extractHtmlTitle(raw);
-    throw new Error(`${provider} 返回了 HTML 页面。最终请求地址：${endpoint || '未知'}${title ? `；网页标题：${title}` : ''}`);
-  }
-  try {
-    return raw ? JSON.parse(raw) as any : {};
-  } catch {
-    throw new Error(`${provider} 返回的不是合法 JSON：${raw.slice(0, 120)}`);
-  }
+const isHtml = (text: string) => /^<!doctype\s+html/i.test(text.trim()) || /^<html[\s>]/i.test(text.trim());
+const parseProviderJson = (provider: string, raw: string) => {
+  if (isHtml(raw)) throw new Error(`${provider} 返回了 HTML 错误页，请检查接口地址。`);
+  try { return raw ? JSON.parse(raw) as any : {}; } catch { throw new Error(`${provider} 返回的不是合法 JSON。`); }
+};
+const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+const retryAfter = (response: Response) => {
+  const value = Number(response.headers.get('retry-after') || 0);
+  return Number.isFinite(value) && value > 0 ? Math.min(value * 1000, 15000) : 0;
 };
 
-const validateAiConfig = (config: AIConfig) => {
-  const provider = config.provider || 'gemini';
-  const model = (config.model || '').trim();
-  if (!model) throw new Error('模型名称不能为空');
-  if (/^https?:\/\//i.test(model)) throw new Error('模型名称不能填写网址，请填写模型 ID');
-  if (!config.apiKey) throw new Error('AI API key is not configured');
-  if (provider === 'openai') normalizeOpenAIEndpoint(config.baseUrl);
-};
-
-const sanitizeCategoryResponse = (text: string, categories: Array<{ id: string; name: string }> = []) => {
-  const cleaned = text.trim().replace(/```[\s\S]*?```/g, block => block.replace(/```\w*|```/g, '').trim()).replace(/^['"]|['"]$/g, '').trim();
-  const ids = categories.map(c => c.id);
-  if (ids.includes(cleaned)) return cleaned;
-  const matched = ids.find(id => new RegExp(`(^|[^a-zA-Z0-9_-])${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-zA-Z0-9_-]|$)`).test(cleaned));
-  return matched || null;
-};
-
-const cleanFolderName = (name: string) =>
-  name
-    .replace(/[\r\n\t]+/g, ' ')
-    .replace(/^["'「『【\[]+|["'」』】\]]+$/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 24);
-
-const formatProviderError = (provider: string, response: Response, detail: string) => {
-  const text = parseProviderErrorDetail(detail).toString().trim();
-  const contentType = response.headers.get('content-type') || '';
-  if (contentType.includes('text/html') || isHtmlText(text)) {
-    return `${provider} 返回了 HTML 错误页（HTTP ${response.status}）。API 地址大概率填成了网页地址，请改成服务商的接口地址。`;
-  }
-  if (response.status === 429 || /rate limit|too many requests|quota/i.test(text)) {
-    return `${provider} 请求失败：HTTP 429，限流中，请稍后重试。${text ? text.slice(0, 180) : ''}`;
-  }
-  return `${provider} 请求失败：HTTP ${response.status}${text ? `，${text.slice(0, 300)}` : ''}`;
-};
-
-const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-const parseRetryAfterMs = (response: Response, rawText: string) => {
-  const header = response.headers.get('retry-after');
-  if (header) {
-    const asNumber = Number(header);
-    if (!Number.isNaN(asNumber) && asNumber >= 0) return Math.min(asNumber * 1000, 20000);
-    const asDate = Date.parse(header);
-    if (!Number.isNaN(asDate)) return Math.min(Math.max(asDate - Date.now(), 500), 20000);
-  }
-  try {
-    const data = JSON.parse(rawText) as any;
-    const retry = data?.error?.retry_after || data?.retry_after;
-    if (typeof retry === 'number') return Math.min(Math.max(retry * 1000, 500), 20000);
-  } catch {
-    // ignore
-  }
-  return 0;
-};
-
-const callOpenAICompatible = async (config: AIConfig, systemPrompt: string, userPrompt: string, temperature = 0.7) => {
-  if (!config.apiKey || !config.baseUrl) throw new Error('OpenAI compatible API key or base URL is not configured');
-
-  const baseUrl = normalizeOpenAIEndpoint(config.baseUrl);
-  let lastError: Error | null = null;
-
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    const response = await fetch(baseUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: config.model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        temperature,
-      }),
-    });
-
-    const rawText = await response.text();
-    if (response.ok) {
-      const data = parseProviderJson('OpenAI Compatible', rawText, baseUrl);
-      return data.choices?.[0]?.message?.content?.trim() || '';
+const readAiConfig = async (env: Env, requestConfig: RequestConfig = {}): Promise<ResolvedConfig> => {
+  const kv = getStorageKv(env);
+  const raw = await kv.get('ai_config');
+  let stored: RequestConfig = {};
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      stored = {
+        provider: parsed.provider === 'openai' ? 'openai' : 'gemini',
+        baseUrl: typeof parsed.baseUrl === 'string' ? parsed.baseUrl : '',
+        model: typeof parsed.model === 'string' ? parsed.model : '',
+      };
+    } catch {
+      stored = {};
     }
-
-    lastError = new Error(formatProviderError('OpenAI Compatible', response, rawText));
-    if (response.status !== 429 && response.status !== 503) throw lastError;
-    if (attempt === 3) throw lastError;
-    const wait = parseRetryAfterMs(response, rawText) || Math.min(800 * (2 ** (attempt - 1)), 6000);
-    await sleep(wait);
   }
-
-  throw lastError || new Error('OpenAI Compatible request failed');
+  const provider = requestConfig.provider === 'openai' || requestConfig.provider === 'gemini'
+    ? requestConfig.provider
+    : stored.provider || 'gemini';
+  const baseUrl = requestConfig.baseUrl !== undefined ? String(requestConfig.baseUrl).trim() : stored.baseUrl || '';
+  const model = requestConfig.model !== undefined && String(requestConfig.model).trim()
+    ? String(requestConfig.model).trim()
+    : stored.model || 'gemini-2.5-flash';
+  const apiKey = provider === 'openai' ? env.OPENAI_API_KEY || '' : env.GEMINI_API_KEY || '';
+  return { provider, baseUrl, model, apiKey };
 };
 
-const callGemini = async (config: AIConfig, prompt: string) => {
-  if (!config.apiKey) throw new Error('Gemini API key is not configured');
-  const model = config.model || 'gemini-2.5-flash';
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
-  let lastError: Error | null = null;
-
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    const response = await fetch(`${endpoint}?key=${encodeURIComponent(config.apiKey)}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-      }),
-    });
-
-    const rawText = await response.text();
-    if (response.ok) {
-      const data = parseProviderJson('Gemini', rawText, endpoint);
-      return data.candidates?.[0]?.content?.parts?.map((part: any) => part.text || '').join('').trim() || '';
-    }
-
-    lastError = new Error(formatProviderError('Gemini', response, rawText));
-    if (response.status !== 429 && response.status !== 503) throw lastError;
-    if (attempt === 3) throw lastError;
-    const wait = parseRetryAfterMs(response, rawText) || Math.min(800 * (2 ** (attempt - 1)), 6000);
-    await sleep(wait);
+const validateConfig = (config: ResolvedConfig) => {
+  if (!config.apiKey) throw new Error(`${config.provider === 'openai' ? 'OPENAI_API_KEY' : 'GEMINI_API_KEY'} Secret 未配置`);
+  if (!config.model || /^https?:\/\//i.test(config.model)) throw new Error('模型名称无效');
+  if (config.provider === 'openai') {
+    const endpoint = normalizeOpenAIEndpoint(config.baseUrl);
+    if (isBlockedHost(new URL(endpoint).hostname)) throw new Error('API 地址不支持内网 / 本地主机');
   }
-
-  throw lastError || new Error('Gemini request failed');
 };
 
-export const onRequestOptions = async () => optionsResponse();
+const callGemini = async (config: ResolvedConfig, prompt: string) => {
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(config.model)}:generateContent`;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const response = await fetch(`${endpoint}?key=${encodeURIComponent(config.apiKey)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }), signal: AbortSignal.timeout(30000) });
+    const raw = await response.text();
+    if (response.ok) return parseProviderJson('Gemini', raw).candidates?.[0]?.content?.parts?.map((part: any) => part.text || '').join('').trim() || '';
+    const detail = parseProviderError(raw).slice(0, 240);
+    if (![429, 502, 503].includes(response.status) || attempt === 3) throw new Error(`Gemini 请求失败：HTTP ${response.status}，${detail}`);
+    await wait(retryAfter(response) || attempt * 1000);
+  }
+  throw new Error('Gemini 请求失败');
+};
 
+const callOpenAI = async (config: ResolvedConfig, system: string, user: string, temperature: number) => {
+  const endpoint = normalizeOpenAIEndpoint(config.baseUrl);
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` }, body: JSON.stringify({ model: config.model, messages: [{ role: 'system', content: system }, { role: 'user', content: user }], temperature }), signal: AbortSignal.timeout(30000) });
+    const raw = await response.text();
+    if (response.ok) return parseProviderJson('OpenAI Compatible', raw).choices?.[0]?.message?.content?.trim() || '';
+    const detail = parseProviderError(raw).slice(0, 240);
+    if (![429, 502, 503].includes(response.status) || attempt === 3) throw new Error(`OpenAI Compatible 请求失败：HTTP ${response.status}，${detail}`);
+    await wait(retryAfter(response) || attempt * 1000);
+  }
+  throw new Error('OpenAI Compatible 请求失败');
+};
+
+const cleanFolderName = (value: string) => value.replace(/[\r\n\t]+/g, ' ').replace(/^["'「『【\[]+|["'」』】\]]+$/g, '').replace(/\s+/g, ' ').trim().slice(0, 24);
+const categoryIdFrom = (text: string, categories: Array<{ id: string }>) => {
+  const cleaned = text.trim().replace(/^```(?:json|text)?\s*/i, '').replace(/\s*```$/i, '').replace(/^['"]|['"]$/g, '').trim();
+  return categories.find(category => category.id === cleaned)?.id
+    || categories.find(category => new RegExp(`(^|[^A-Za-z0-9_-])${category.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^A-Za-z0-9_-]|$)`).test(cleaned))?.id
+    || null;
+};
+
+export const onRequestOptions = async (context: { request: Request }) => optionsResponse(context.request);
 export const onRequestPost = async (context: { request: Request; env: Env }) => {
   const { request, env } = context;
-
   const authError = await requireAuth(request, env);
   if (authError) return authError;
-
   try {
-    const body = await request.json() as {
-      task?: AITask;
-      title?: string;
-      url?: string;
-      categories?: Array<{ id: string; name: string }>;
-      folderName?: string;
-      samples?: string[];
-      links?: Array<{ id: string; title: string; url: string; description?: string }>;
-      existingNames?: string[];
-      config?: AIConfig;
-    };
-
-    const task = body.task || '';
-    const allowed: AITask[] = ['description', 'category', 'test', 'folder_rename', 'folder_structure'];
-    if (!allowed.includes(task as AITask)) {
-      return jsonResponse({ error: 'Invalid request' }, { status: 400 });
-    }
-
-    // legacy tasks still require title/url; folder tasks use synthetic placeholders from client
-    if ((task === 'description' || task === 'category' || task === 'test') && (!body.title || !body.url)) {
-      return jsonResponse({ error: 'Invalid request' }, { status: 400 });
-    }
-    if ((task === 'folder_rename' || task === 'folder_structure') && !body.folderName && !body.title) {
-      return jsonResponse({ error: 'Invalid request' }, { status: 400 });
-    }
-
-    const config = await readAiConfig(env, body.config || {});
-    validateAiConfig(config);
-
-    if (task === 'test') {
-      const text = config.provider === 'gemini'
-        ? await callGemini(config, 'Reply with exactly: OK')
-        : await callOpenAICompatible(config, 'You are a connection tester. Reply with exactly OK.', 'Reply with exactly: OK', 0.1);
-      return jsonResponse({ text: text || 'OK' });
-    }
-
-    if (task === 'description') {
-      const prompt = `Title: ${body.title}\nURL: ${body.url}\nPlease write a very short description (max 15 words) in Chinese (Simplified) that explains what this website is for. Return ONLY the description text. No quotes.`;
-      const text = config.provider === 'gemini'
-        ? await callGemini(config, `I have a website bookmark. ${prompt}`)
-        : await callOpenAICompatible(config, 'You are a helpful assistant that summarizes website bookmarks.', prompt, 0.4);
-
-      if (!text) throw new Error('AI 未返回描述内容');
-      return jsonResponse({ text });
-    }
-
-    if (task === 'folder_rename') {
-      const folderName = body.folderName || body.title || '';
-      const samples = (body.samples || []).slice(0, 12);
-      const userPrompt = `Current folder name: ${folderName}\nSample bookmarks:\n${samples.map((s, i) => `${i + 1}. ${s}`).join('\n') || '无'}\n\nSuggest a clearer Chinese folder name based on the bookmarks. Return ONLY the name.`;
-      const text = config.provider === 'gemini'
-        ? await callGemini(config, `You rename bookmark folders. Reply with ONLY a short Chinese folder name, max 12 characters. No quotes, no explanation.\n${userPrompt}`)
-        : await callOpenAICompatible(config, 'You rename bookmark folders. Reply with ONLY a short Chinese folder name, max 12 characters. No quotes, no explanation.', userPrompt, 0.2);
-      const cleaned = cleanFolderName(text || '');
-      if (!cleaned) throw new Error('AI 未返回可用文件夹名称');
-      return jsonResponse({ text: cleaned });
-    }
-
-    if (task === 'folder_structure') {
-      const folderName = body.folderName || body.title || '';
-      const links = (body.links || []).slice(0, 40);
-      const existing = (body.existingNames || []).slice(0, 30);
-      const userPrompt = `Parent folder: ${folderName}
-Existing sibling/child folder names: ${existing.join('、') || '无'}
-Bookmarks:
-${links.map(l => `- id=${l.id} | ${l.title} | ${l.url}${l.description ? ` | ${l.description}` : ''}`).join('\n')}
-
-Return JSON only with this shape:
-{
-  "rename": "optional better parent folder name in Chinese",
-  "reason": "short reason",
-  "folders": [
-    { "name": "new child folder name", "linkIds": ["id1","id2"], "reason": "short reason" }
-  ],
-  "keepInParent": ["ids remaining in parent"]
-}
-
-Rules:
-1. Names must be short Simplified Chinese, max 12 chars.
-2. Prefer 2-6 child folders when bookmarks are mixed.
-3. Every provided link id must appear exactly once in folders.linkIds or keepInParent.
-4. Do not invent link ids.
-5. Avoid duplicating existing folder names unless necessary.
-6. If no structure change is needed, return empty folders and put all ids in keepInParent.`;
-      const text = config.provider === 'gemini'
-        ? await callGemini(config, `You reorganize bookmark folders. Return ONLY valid JSON, no markdown.\n${userPrompt}`)
-        : await callOpenAICompatible(config, 'You reorganize bookmark folders. Return ONLY valid JSON, no markdown.', userPrompt, 0.3);
-      if (!text) throw new Error('AI 未返回文件夹结构');
-      return jsonResponse({ text });
-    }
-
-    const catList = (body.categories || []).map(c => `${c.id}: ${c.name}`).join('\n');
-    const prompt = `Website: "${body.title}" (${body.url})\n\nAvailable Categories:\n${catList}\n\nReturn ONLY the 'id' of the best matching category. If unsure, return 'common'.`;
-    const text = config.provider === 'gemini'
-      ? await callGemini(config, `Task: Categorize this website.\n${prompt}`)
-      : await callOpenAICompatible(config, 'You are an intelligent classification assistant. You only output the category ID.', prompt, 0.2);
-
-    const categoryId = sanitizeCategoryResponse(text || '', body.categories || []);
-    return jsonResponse({ text: categoryId });
+    const body = await request.json() as { task?: AITask; title?: string; url?: string; categories?: Array<{ id: string; name: string }>; folderName?: string; samples?: string[]; links?: Array<{ id: string; title: string; url: string; description?: string }>; existingNames?: string[]; config?: RequestConfig };
+    const task = body.task;
+    if (!task || !['description', 'category', 'test', 'folder_rename', 'folder_structure'].includes(task)) return jsonResponse({ error: 'Invalid AI task', retryable: false }, { status: 400 }, request);
+    const config = await readAiConfig(env, body.config);
+    validateConfig(config);
+    const prompt = task === 'test'
+      ? 'Reply with exactly OK.'
+      : task === 'description'
+        ? `用简体中文写 15 字以内的网站用途说明。标题：${body.title}\n网址：${body.url}`
+        : task === 'category'
+          ? `网站：${body.title} (${body.url})\n分类：${(body.categories || []).map(category => `${category.id}: ${category.name}`).join('\n')}\n只返回分类 ID。`
+          : task === 'folder_rename'
+            ? `文件夹：${body.folderName}\n书签：${(body.samples || []).join('\n')}\n只返回新的中文文件夹名称。`
+            : `父文件夹：${body.folderName}\n现有名称：${(body.existingNames || []).join('、')}\n书签：${(body.links || []).map(link => `${link.id}|${link.title}|${link.url}`).join('\n')}\n返回 JSON：{"rename":"","reason":"","folders":[{"name":"","linkIds":[],"reason":""}],"keepInParent":[]}`;
+    const system = task === 'category' ? 'You classify bookmarks and output only a valid category ID.' : task === 'folder_structure' ? 'You reorganize bookmark folders. Return valid JSON only.' : 'You are a concise bookmark assistant.';
+    const text = config.provider === 'gemini' ? await callGemini(config, `${system}\n${prompt}`) : await callOpenAI(config, system, prompt, task === 'folder_structure' ? 0.2 : 0.3);
+    if (task === 'category') return jsonResponse({ text: categoryIdFrom(text, body.categories || []), provider: config.provider, retryable: false }, {}, request);
+    if (task === 'folder_rename') return jsonResponse({ text: cleanFolderName(text), provider: config.provider, retryable: false }, {}, request);
+    return jsonResponse({ text, provider: config.provider, retryable: false }, {}, request);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'AI request failed';
-    return jsonResponse({ error: message }, { status: 502 });
+    const retryable = /429|限流|502|503|timeout|超时/i.test(message);
+    return jsonResponse({ error: message.slice(0, 320), provider: 'unknown', retryable }, { status: retryable ? 503 : 502 }, request);
   }
 };

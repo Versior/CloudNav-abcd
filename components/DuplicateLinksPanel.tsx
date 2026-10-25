@@ -241,7 +241,6 @@ const DuplicateLinksPanel: React.FC<DuplicateLinksPanelProps> = ({
                               <span>访问：{link.visitCount || 0}</span>
                               {link.pinned && <span>已置顶</span>}
                               {link.note?.trim() && <span>有笔记</span>}
-                              {link.credentials && link.credentials.length > 0 && <span>有账号</span>}
                             </div>
                           </div>
 

@@ -191,9 +191,9 @@ const LinkModal: React.FC<LinkModalProps> = ({ isOpen, onClose, onSave, onDelete
 
   const handleAIAssist = async () => {
     if (!url || !title) return;
-    if (!aiConfig.hasApiKey && !aiConfig.apiKey) {
-        alert("请先点击侧边栏左下角设置图标配置 AI API Key");
-        return;
+    if (!aiConfig.hasApiKey) {
+      alert('当前部署尚未配置 AI Secret，请联系管理员配置对应 Cloudflare Secret');
+      return;
     }
 
     setIsGenerating(true);

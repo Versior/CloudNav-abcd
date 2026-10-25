@@ -1,40 +1,39 @@
-import { isAuthenticated, jsonResponse, optionsResponse, requireAuth } from '../_shared/auth';
+import { createExtensionToken, isAuthenticated, jsonResponse, optionsResponse, requireAuth } from '../_shared/auth';
+import {
+  getStorageKv,
+  hashData,
+  LATEST_BACKUP_KEY,
+  normalizeData,
+  persistData,
+  pruneLatestBackups,
+  readStoredDataWithPresence,
+  writeLatestBackup,
+  StorageEnv,
+} from '../_shared/dataStore';
 
-interface Env {
-  CLOUDNAV_KV: KVNamespace;
+interface Env extends StorageEnv {
   PASSWORD: string;
   SESSION_SECRET?: string;
+  GEMINI_API_KEY?: string;
+  OPENAI_API_KEY?: string;
 }
 
 interface AIConfig {
-  provider?: string;
-  apiKey?: string;
+  provider?: 'gemini' | 'openai';
   baseUrl?: string;
   model?: string;
 }
 
-interface WebDavConfig {
-  url?: string;
-  username?: string;
-  password?: string;
-  enabled?: boolean;
-}
-
-const sanitizeAiConfig = (config: AIConfig = {}, env?: Env) => ({
-  provider: config.provider || 'gemini',
-  apiKey: '',
-  baseUrl: config.baseUrl || '',
-  model: config.model || 'gemini-2.5-flash',
-  hasApiKey: !!config.apiKey || !!(env as any)?.GEMINI_API_KEY,
-});
-
-const sanitizeWebDavConfig = (config: WebDavConfig = {}) => ({
-  url: config.url || 'https://webdav.opendrive.com/',
-  username: config.username || '',
-  password: '',
-  enabled: !!config.enabled,
-  hasPassword: !!config.password,
-});
+const normalizeAiProvider = (value: unknown): 'gemini' | 'openai' => value === 'openai' ? 'openai' : 'gemini';
+const sanitizeAiConfig = (config: AIConfig = {}, env: Env) => {
+  const provider = normalizeAiProvider(config.provider);
+  return {
+    provider,
+    baseUrl: typeof config.baseUrl === 'string' ? config.baseUrl.trim() : '',
+    model: typeof config.model === 'string' && config.model.trim() ? config.model.trim() : 'gemini-2.5-flash',
+    hasApiKey: provider === 'openai' ? !!env.OPENAI_API_KEY : !!env.GEMINI_API_KEY,
+  };
+};
 
 const readJson = async <T>(kv: KVNamespace, key: string, fallback: T): Promise<T> => {
   const value = await kv.get(key);
@@ -47,20 +46,17 @@ const readJson = async <T>(kv: KVNamespace, key: string, fallback: T): Promise<T
 };
 
 const mergeAiConfig = (existing: AIConfig, incoming: AIConfig) => ({
-  provider: incoming.provider || existing.provider || 'gemini',
-  apiKey: incoming.apiKey ? incoming.apiKey : existing.apiKey || '',
-  baseUrl: incoming.baseUrl !== undefined ? incoming.baseUrl : existing.baseUrl || '',
-  model: incoming.model || existing.model || 'gemini-2.5-flash',
+  provider: normalizeAiProvider(incoming.provider ?? existing.provider),
+  baseUrl: incoming.baseUrl !== undefined ? String(incoming.baseUrl).trim() : existing.baseUrl || '',
+  model: incoming.model !== undefined && String(incoming.model).trim() ? String(incoming.model).trim() : existing.model || 'gemini-2.5-flash',
 });
 
-const mergeWebDavConfig = (existing: WebDavConfig, incoming: WebDavConfig) => ({
-  url: incoming.url !== undefined ? incoming.url : existing.url || 'https://webdav.opendrive.com/',
-  username: incoming.username !== undefined ? incoming.username : existing.username || '',
-  password: incoming.password ? incoming.password : existing.password || '',
-  enabled: incoming.enabled !== undefined ? !!incoming.enabled : !!existing.enabled,
-});
+const getFaviconDomain = (value: string | null) => {
+  if (!value || !/^[a-z0-9.-]{1,253}$/i.test(value)) return null;
+  return value.toLowerCase();
+};
 
-export const onRequestOptions = async () => optionsResponse();
+export const onRequestOptions = async (context: { request: Request }) => optionsResponse(context.request);
 
 export const onRequestGet = async (context: { env: Env; request: Request }) => {
   const { env, request } = context;
@@ -70,99 +66,123 @@ export const onRequestGet = async (context: { env: Env; request: Request }) => {
 
   try {
     if (checkAuth === 'true') {
+      const authenticated = await isAuthenticated(request, env);
       return jsonResponse({
         hasPassword: !!env.PASSWORD,
         requiresAuth: !!env.PASSWORD,
-        authenticated: await isAuthenticated(request, env),
-      });
+        authenticated,
+        extensionToken: authenticated ? await createExtensionToken(env) : '',
+      }, {}, request);
     }
 
-    if (getConfig === 'favicon') {
-      const domain = url.searchParams.get('domain');
-      if (!domain || !/^[a-z0-9.-]{1,253}$/i.test(domain)) {
-        return jsonResponse({ error: 'Domain parameter is invalid' }, { status: 400 });
+    if (getConfig === 'website' || getConfig === 'search' || getConfig === 'favicon') {
+      // 配置读取属于私有数据，必须与数据读取同等鉴权，避免匿名枚举站点配置。
+      const configAuthError = await requireAuth(request, env);
+      if (configAuthError) return configAuthError;
+
+      const kv = getStorageKv(env);
+      if (getConfig === 'favicon') {
+        const domain = getFaviconDomain(url.searchParams.get('domain'));
+        if (!domain) return jsonResponse({ error: 'Domain parameter is invalid' }, { status: 400 }, request);
+        const icon = await kv.get(`favicon:${domain}`);
+        return jsonResponse({ icon: icon || null, cached: !!icon }, {}, request);
       }
-
-      const cachedIcon = await env.CLOUDNAV_KV.get(`favicon:${domain.toLowerCase()}`);
-      return jsonResponse({ icon: cachedIcon || null, cached: !!cachedIcon });
-    }
-
-    if (getConfig === 'website') {
-      const websiteConfig = await env.CLOUDNAV_KV.get('website_config');
-      return jsonResponse(websiteConfig ? JSON.parse(websiteConfig) : { passwordExpiryDays: 7 });
-    }
-
-    if (getConfig === 'search') {
-      const searchConfig = await env.CLOUDNAV_KV.get('search_config');
-      return jsonResponse(searchConfig ? JSON.parse(searchConfig) : {});
+      const key = getConfig === 'website' ? 'website_config' : 'search_config';
+      const fallback = getConfig === 'website' ? { passwordExpiryDays: 7 } : {};
+      return jsonResponse(await readJson(kv, key, fallback), {}, request);
     }
 
     const authError = await requireAuth(request, env);
     if (authError) return authError;
 
+    const kv = getStorageKv(env);
     if (getConfig === 'ai') {
-      const aiConfig = await readJson<AIConfig>(env.CLOUDNAV_KV, 'ai_config', {});
-      return jsonResponse(sanitizeAiConfig(aiConfig, env));
+      const aiConfig = await readJson<AIConfig>(kv, 'ai_config', {});
+      return jsonResponse(sanitizeAiConfig(aiConfig, env), {}, request);
     }
 
-    if (getConfig === 'webdav') {
-      const webDavConfig = await readJson<WebDavConfig>(env.CLOUDNAV_KV, 'webdav_config', {});
-      return jsonResponse(sanitizeWebDavConfig(webDavConfig));
-    }
-
-    const data = await env.CLOUDNAV_KV.get('app_data');
-    return jsonResponse(data ? JSON.parse(data) : { links: [], categories: [] });
+    const stored = await readStoredDataWithPresence(env);
+    return jsonResponse({ ...stored.data, initialized: stored.exists }, {}, request);
   } catch {
-    return jsonResponse({ error: 'Failed to fetch data' }, { status: 500 });
+    return jsonResponse({ error: 'Failed to fetch data' }, { status: 500 }, request);
   }
 };
 
-export const onRequestPost = async (context: { request: Request; env: Env }) => {
-  const { request, env } = context;
+export const onRequestPost = async (context: {
+  request: Request;
+  env: Env;
+  waitUntil?: (promise: Promise<unknown>) => void;
+}) => {
+  const { request, env, waitUntil } = context;
+
+  const authError = await requireAuth(request, env);
+  if (authError) return authError;
 
   try {
-    const body = await request.json() as any;
+    const body = await request.json() as {
+      saveConfig?: string;
+      config?: Record<string, unknown>;
+      domain?: string;
+      icon?: string;
+      links?: unknown;
+      categories?: unknown;
+      baseVersion?: number;
+    };
+    const kv = getStorageKv(env);
 
     if (body.saveConfig === 'favicon') {
-      const { domain, icon } = body;
-      if (!domain || !icon || !/^[a-z0-9.-]{1,253}$/i.test(domain)) {
-        return jsonResponse({ error: 'Domain and icon are required' }, { status: 400 });
+      const domain = getFaviconDomain(body.domain || null);
+      if (!domain || !body.icon || body.icon.length > 2048) {
+        return jsonResponse({ error: 'Domain and icon are required' }, { status: 400 }, request);
       }
-
-      await env.CLOUDNAV_KV.put(`favicon:${domain.toLowerCase()}`, icon, { expirationTtl: 30 * 24 * 60 * 60 });
-      return jsonResponse({ success: true });
+      await kv.put(`favicon:${domain}`, body.icon, { expirationTtl: 30 * 24 * 60 * 60 });
+      return jsonResponse({ success: true }, {}, request);
     }
 
-    const authError = await requireAuth(request, env);
-    if (authError) return authError;
-
-    if (body.saveConfig === 'search') {
-      await env.CLOUDNAV_KV.put('search_config', JSON.stringify(body.config || {}));
-      return jsonResponse({ success: true });
+    if (body.saveConfig === 'search' || body.saveConfig === 'website') {
+      const key = body.saveConfig === 'search' ? 'search_config' : 'website_config';
+      await kv.put(key, JSON.stringify(body.config || {}));
+      return jsonResponse({ success: true }, {}, request);
     }
 
     if (body.saveConfig === 'ai') {
-      const existing = await readJson<AIConfig>(env.CLOUDNAV_KV, 'ai_config', {});
+      const existing = await readJson<AIConfig>(kv, 'ai_config', {});
       const next = mergeAiConfig(existing, body.config || {});
-      await env.CLOUDNAV_KV.put('ai_config', JSON.stringify(next));
-      return jsonResponse({ success: true, config: sanitizeAiConfig(next, env) });
+      await kv.put('ai_config', JSON.stringify(next));
+      return jsonResponse({ success: true, config: sanitizeAiConfig(next, env) }, {}, request);
     }
 
-    if (body.saveConfig === 'webdav') {
-      const existing = await readJson<WebDavConfig>(env.CLOUDNAV_KV, 'webdav_config', {});
-      const next = mergeWebDavConfig(existing, body.config || {});
-      await env.CLOUDNAV_KV.put('webdav_config', JSON.stringify(next));
-      return jsonResponse({ success: true, config: sanitizeWebDavConfig(next) });
+    if (body.saveConfig === 'pruneBackup') {
+      const result = await pruneLatestBackups(env);
+      return jsonResponse({ success: result.status !== 'missing-binding', ...result }, {}, request);
     }
 
-    if (body.saveConfig === 'website') {
-      await env.CLOUDNAV_KV.put('website_config', JSON.stringify(body.config || {}));
-      return jsonResponse({ success: true });
+    if (!Array.isArray(body.links) || !Array.isArray(body.categories)) {
+      return jsonResponse({ error: 'links and categories must be arrays' }, { status: 400 }, request);
     }
 
-    await env.CLOUDNAV_KV.put('app_data', JSON.stringify(body));
-    return jsonResponse({ success: true });
+    const result = await persistData(env, {
+      links: body.links,
+      categories: body.categories,
+    }, body.baseVersion);
+
+    if (result.conflict === true) {
+      return jsonResponse({ error: 'Data conflict', data: result.current }, { status: 409 }, request);
+    }
+
+    if (result.changed === false) {
+      return jsonResponse({ success: true, changed: false, version: result.data.version, updatedAt: result.data.updatedAt, backup: result.backup }, {}, request);
+    }
+
+    const backupPromise = writeLatestBackup(env, result.data, result.hash);
+    if (waitUntil) {
+      waitUntil(backupPromise.catch(() => undefined));
+      return jsonResponse({ success: true, changed: true, version: result.data.version, updatedAt: result.data.updatedAt, backup: { status: 'scheduled', key: LATEST_BACKUP_KEY } }, {}, request);
+    }
+
+    const backup = await backupPromise.catch(() => ({ status: 'failed' as const }));
+    return jsonResponse({ success: true, changed: true, version: result.data.version, updatedAt: result.data.updatedAt, backup }, {}, request);
   } catch {
-    return jsonResponse({ error: 'Failed to save data' }, { status: 500 });
+    return jsonResponse({ error: 'Failed to save data' }, { status: 500 }, request);
   }
 };

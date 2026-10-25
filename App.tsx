@@ -1,3144 +1,863 @@
-
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { 
-  Search, Plus, Upload, Moon, Sun, Menu,
-  Trash2, Edit2, Loader2, Cloud, CheckCircle2, AlertCircle,
-  Pin, Settings, Lock, CloudCog, Github, GitFork, GripVertical, Save, CheckSquare, LogOut, ExternalLink, X, Filter, CopyCheck
+import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Cloud, Loader2, Lock, Moon, Pin, Plus, Save, Settings, Sun, Upload,
 } from 'lucide-react';
-import {
-  DndContext,
-  DragEndEvent,
-  closestCenter,
-  closestCorners,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  KeyboardSensor,
-} from '@dnd-kit/core';
-import {
-  arrayMove,
-  SortableContext,
-  sortableKeyboardCoordinates,
-  verticalListSortingStrategy,
-  rectSortingStrategy,
-  useSortable,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
-import { LinkItem, Category, DEFAULT_CATEGORIES, INITIAL_LINKS, WebDavConfig, AIConfig, SearchMode, ExternalSearchSource, SearchConfig, INBOX_ID } from './types';
+import { DndContext, DragEndEvent, PointerSensor, closestCenter, useSensor, useSensors, KeyboardSensor } from '@dnd-kit/core';
+import { SortableContext, sortableKeyboardCoordinates, rectSortingStrategy } from '@dnd-kit/sortable';
+import { AIConfig, Category, DEFAULT_CATEGORIES, ExternalSearchSource, INITIAL_LINKS, LinkItem, SearchConfig, SearchMode, SiteSettings, CardStyle } from './types';
+import { LOCAL_STORAGE_KEY, AI_CONFIG_KEY, SEARCH_CONFIG_KEY, SITE_SETTINGS_KEY, SORT_CONFIG_KEY } from './constants/storageKeys';
+import { applyReorder, applySort, canReorder, normalizeSortConfig, type SortConfig } from './services/sorting';
+
+import { normalizeAppData } from './services/dataNormalization';
 import { parseBookmarks } from './services/bookmarkParser';
-import Icon from './components/Icon';
-import CommandPalette from './components/CommandPalette';
-import { useToast } from './components/Toast';
-import { AI_CONFIG_KEY, SITE_SETTINGS_KEY } from './constants/storageKeys';
+import { generateBookmarkHtml, downloadHtmlFile } from './services/exportService';
 import { suggestCategory } from './services/geminiService';
-import LinkModal from './components/LinkModal';
-import AuthModal from './components/AuthModal';
-import CategoryManagerModal from './components/CategoryManagerModal';
-import BackupModal from './components/BackupModal';
-import CategoryAuthModal from './components/CategoryAuthModal';
-import CategoryActionAuthModal from './components/CategoryActionAuthModal';
-import ImportModal from './components/ImportModal';
-import SettingsModal from './components/SettingsModal';
-import SearchConfigModal from './components/SearchConfigModal';
-import ContextMenu from './components/ContextMenu';
-import QRCodeModal from './components/QRCodeModal';
-import LinkDetailsDrawer from './components/LinkDetailsDrawer';
-import HomeDashboard from './components/HomeDashboard';
-import SyncConflictModal from './components/SyncConflictModal';
-import OrganizeModeBar from './components/OrganizeModeBar';
-import AdvancedSearchBar from './components/AdvancedSearchBar';
-import ModalErrorBoundary from './components/ModalErrorBoundary';
 import { getDefaultSearchSources } from './services/defaultSearchSources';
 import { matchesFilters, matchesQuery, parseSearchQuery, sortByRelevance } from './services/searchService';
+import Sidebar from './components/Sidebar';
+import TopBar from './components/TopBar';
+import BookmarkToolbar from './components/BookmarkToolbar';
+import BookmarkGrid from './components/BookmarkGrid';
+import ArrangeActionBar from './components/ArrangeActionBar';
+import { ToastProvider, useToast } from './components/Toast';
+import AuthModal from './components/AuthModal';
+import CategoryAuthModal from './components/CategoryAuthModal';
+import CategoryManagerModal from './components/CategoryManagerModal';
+import CommandPalette from './components/CommandPalette';
+import ContextMenu from './components/ContextMenu';
+import ModalErrorBoundary from './components/ModalErrorBoundary';
+const ImportModal = React.lazy(() => import('./components/ImportModal'));
+const LinkModal = React.lazy(() => import('./components/LinkModal'));
+const QRCodeModal = React.lazy(() => import('./components/QRCodeModal'));
+const SearchConfigModal = React.lazy(() => import('./components/SearchConfigModal'));
+const SettingsModal = React.lazy(() => import('./components/SettingsModal'));
+const SyncConflictModal = React.lazy(() => import('./components/SyncConflictModal'));
 
-const getSearchSourceIconUrl = (url: string) => {
+/** 首页置顶横条最多显示的条目数，超出时引导去置顶页。 */
+const HOME_PIN_LIMIT = 6;
+const DEFAULT_SITE_SETTINGS = { title: 'CloudNav - 我的导航', navTitle: 'CloudNav', favicon: '', cardStyle: 'detailed' as const, passwordExpiryDays: 7 };
+
+type SyncStatus = 'idle' | 'saving' | 'saved' | 'error' | 'conflict';
+const DEFAULT_AI_CONFIG: AIConfig = { provider: 'gemini', baseUrl: '', model: 'gemini-2.5-flash' };
+type SettingsTab = 'site' | 'ai' | 'tools' | 'duplicates' | 'backup';
+type ContextState = {
+  isOpen: boolean;
+  position: { x: number; y: number };
+  link: LinkItem | null;
+  category: Category | null;
+  type: 'link' | 'category';
+};
+
+const readJson = <T,>(key: string, fallback: T): T => {
   try {
-    const normalized = url.startsWith('http://') || url.startsWith('https://') ? url : `https://${url}`;
-    const hostname = new URL(normalized).hostname;
-    return `https://t3.gstatic.cn/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&size=128&url=https://${hostname}`;
+    const value = localStorage.getItem(key);
+    return value ? JSON.parse(value) as T : fallback;
   } catch {
-    return '';
+    return fallback;
   }
 };
 
-// --- 配置项 ---
-// 项目核心仓库地址
-const GITHUB_REPO_URL = 'https://github.com/Versior/CloudNav-abcd';
-
-const LOCAL_STORAGE_KEY = 'cloudnav_data_cache';
-const SEARCH_CONFIG_KEY = 'cloudnav_search_config';
-
-const DEFAULT_AI_CONFIG: AIConfig = {
-  provider: 'gemini',
-  apiKey: '',
-  baseUrl: '',
-  model: 'gemini-2.5-flash',
+const readAIConfig = (): AIConfig => {
+  const saved = readJson<Partial<AIConfig>>(AI_CONFIG_KEY, {});
+  return {
+    ...DEFAULT_AI_CONFIG,
+    provider: saved.provider === 'openai' ? 'openai' : 'gemini',
+    baseUrl: typeof saved.baseUrl === 'string' ? saved.baseUrl : '',
+    model: typeof saved.model === 'string' && saved.model.trim() ? saved.model : DEFAULT_AI_CONFIG.model,
+    hasApiKey: false,
+  };
 };
 
-const readLocalAIConfig = (): AIConfig => {
-  try {
-    const saved = localStorage.getItem(AI_CONFIG_KEY);
-    if (saved) {
-      const parsed = JSON.parse(saved) as Partial<AIConfig>;
-      return {
-        ...DEFAULT_AI_CONFIG,
-        ...parsed,
-        hasApiKey: !!parsed.hasApiKey || !!parsed.apiKey,
-      };
-    }
-  } catch {}
-  return DEFAULT_AI_CONFIG;
-};
-
-const mergeClientAIConfig = (remote: Partial<AIConfig> = {}, local = readLocalAIConfig()): AIConfig => ({
-  provider: remote.provider || local.provider || 'gemini',
-  apiKey: remote.apiKey || local.apiKey || '',
+const mergeClientAIConfig = (remote: Partial<AIConfig> = {}, local = readAIConfig()): AIConfig => ({
+  provider: remote.provider === 'openai' ? 'openai' : local.provider,
   baseUrl: remote.baseUrl !== undefined ? remote.baseUrl : local.baseUrl || '',
   model: remote.model || local.model || 'gemini-2.5-flash',
-  hasApiKey: !!remote.hasApiKey || !!remote.apiKey || !!local.apiKey || !!local.hasApiKey,
+  hasApiKey: remote.hasApiKey === true,
 });
 
-const saveLocalAIConfig = (config: AIConfig): AIConfig => {
-  const next = {
-    ...DEFAULT_AI_CONFIG,
-    ...config,
-    hasApiKey: !!config.hasApiKey || !!config.apiKey,
-  };
-  localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(next));
-  return next;
+const mergeVisitState = (links: LinkItem[]): LinkItem[] => {
+  const local = readJson<{ links?: LinkItem[] }>(LOCAL_STORAGE_KEY, {});
+  const byId = new Map((local.links || []).map(link => [link.id, link]));
+  return links.map(link => {
+    const old = byId.get(link.id);
+    if (!old) return link;
+    return {
+      ...link,
+      visitCount: Math.max(link.visitCount || 0, old.visitCount || 0),
+      lastVisitedAt: Math.max(link.lastVisitedAt || 0, old.lastVisitedAt || 0) || undefined,
+    };
+  });
 };
 
-const mergeLocalVisitState = (incomingLinks: LinkItem[]): LinkItem[] => {
-  try {
-    const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
-    if (!stored) return incomingLinks;
-    const localLinks = (JSON.parse(stored).links || []) as LinkItem[];
-    const localById = new Map(localLinks.map(link => [link.id, link]));
-    return incomingLinks.map(link => {
-      const local = localById.get(link.id);
-      if (!local) return link;
-      const visitCount = Math.max(link.visitCount || 0, local.visitCount || 0);
-      const lastVisitedAt = Math.max(link.lastVisitedAt || 0, local.lastVisitedAt || 0) || undefined;
-      return { ...link, visitCount, lastVisitedAt };
-    });
-  } catch {
-    return incomingLinks;
-  }
+const parseStoredData = (value: unknown) => {
+  const raw = value && typeof value === 'object' ? value as Record<string, unknown> : {};
+  const normalized = normalizeAppData(raw);
+  return { ...normalized, links: mergeVisitState(normalized.links) };
 };
 
-const normalizeCategories = (value: unknown): Category[] => {
-  const source = Array.isArray(value) ? value : DEFAULT_CATEGORIES;
-  const cleaned = source.filter((item): item is Category => !!item && typeof item === 'object' && typeof (item as Category).id === 'string' && typeof (item as Category).name === 'string');
-  return cleaned.length > 0 ? cleaned : DEFAULT_CATEGORIES;
-};
+const makeId = () => crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-const normalizeLinks = (value: unknown): LinkItem[] => {
-  const source = Array.isArray(value) ? value : INITIAL_LINKS;
-  const cleaned = source.filter((item): item is LinkItem => !!item && typeof item === 'object' && typeof (item as LinkItem).id === 'string' && typeof (item as LinkItem).title === 'string' && typeof (item as LinkItem).url === 'string');
-  return cleaned.length > 0 ? cleaned : INITIAL_LINKS;
-};
-
-function App() {
+const App: React.FC = () => {
   const { showToast } = useToast();
-  const [isPaletteOpen, setIsPaletteOpen] = useState(false);
-  const [selectedLinkId, setSelectedLinkId] = useState<string | null>(null);
-  const [isOrganizeMode, setIsOrganizeMode] = useState(false);
-  const [isAiOrganizing, setIsAiOrganizing] = useState(false);
-  const [organizeIndex, setOrganizeIndex] = useState(0);
-  const [isSyncConflict, setIsSyncConflict] = useState(false);
-  const [isAdvancedFilterOpen, setIsAdvancedFilterOpen] = useState(false);
-  const [advancedFilters, setAdvancedFilters] = useState<Record<string, string | boolean | undefined>>({});
-  const [syncConflictResolve, setSyncConflictResolve] = useState<{ useLocal: () => void; useCloud: () => void; merge: () => void } | null>(null);
-
-  // Visit tracking stays local so opening links never waits on cloud sync.
-  const recordVisit = (id: string) => {
-    const nextLinks = links.map(l =>
-      l.id === id ? { ...l, lastVisitedAt: Date.now(), visitCount: (l.visitCount || 0) + 1 } : l
-    );
-    setLinks(nextLinks);
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ links: nextLinks, categories }));
-  };
-
-  // --- State ---
   const [links, setLinks] = useState<LinkItem[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  // 默认落地置顶页：常用入口一打开就在手边。
+  const [selectedCategory, setSelectedCategory] = useState('pinned');
   const [searchQuery, setSearchQuery] = useState('');
   const [darkMode, setDarkMode] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  
-  // Search Mode State
+  const [sortConfig, setSortConfig] = useState<SortConfig>(() => normalizeSortConfig(readJson<unknown>(SORT_CONFIG_KEY, null)));
+  const [arrangeMode, setArrangeMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isPaletteOpen, setIsPaletteOpen] = useState(false);
+  const [isAdvancedFilterOpen, setIsAdvancedFilterOpen] = useState(false);
+  const [advancedFilters, setAdvancedFilters] = useState<Record<string, string | boolean | undefined>>({});
   const [searchMode, setSearchMode] = useState<SearchMode>('external');
   const [externalSearchSources, setExternalSearchSources] = useState<ExternalSearchSource[]>([]);
-  const [isLoadingSearchConfig, setIsLoadingSearchConfig] = useState(true);
-  
-  // Category Security State
-  const [unlockedCategoryIds, setUnlockedCategoryIds] = useState<Set<string>>(new Set());
-
-  // WebDAV Config State
-  const [webDavConfig, setWebDavConfig] = useState<WebDavConfig>({
-      url: 'https://webdav.opendrive.com/',
-      username: '',
-      password: '',
-      enabled: false
-  });
-
-  // AI Config State
-  const [aiConfig, setAiConfig] = useState<AIConfig>(() => readLocalAIConfig());
-
-  // Site Settings State
-  const [siteSettings, setSiteSettings] = useState(() => {
-      const saved = localStorage.getItem(SITE_SETTINGS_KEY);
-      if (saved) {
-          try {
-              return JSON.parse(saved);
-          } catch (e) {}
-      }
-      return {
-          title: 'CloudNav - 我的导航',
-          navTitle: 'CloudNav',
-          favicon: '',
-          cardStyle: 'detailed' as const,
-          passwordExpiryDays: 7
-      };
-  });
-  
-  // Modals
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isAuthOpen, setIsAuthOpen] = useState(false);
-  const [isCatManagerOpen, setIsCatManagerOpen] = useState(false);
-  const [categoryManagerEditId, setCategoryManagerEditId] = useState('');
-  const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
-  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
-  const [isSearchConfigModalOpen, setIsSearchConfigModalOpen] = useState(false);
-  const [catAuthModalData, setCatAuthModalData] = useState<Category | null>(null);
-  
-  const [editingLink, setEditingLink] = useState<LinkItem | undefined>(undefined);
-  // State for data pre-filled from Bookmarklet
-  const [prefillLink, setPrefillLink] = useState<Partial<LinkItem> | undefined>(undefined);
-  
-  // Sync State
-  const [syncStatus, setSyncStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
-  const [authToken, setAuthToken] = useState<boolean>(false);
-  const [extensionToken, setExtensionToken] = useState('');
-  const [requiresAuth, setRequiresAuth] = useState<boolean | null>(null); // null表示未检查，true表示需要认证，false表示不需要
-  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
-  
-  // Sort State
-  const [isSortingMode, setIsSortingMode] = useState<string | null>(null); // 存储正在排序的分类ID，null表示不在排序模式
-  const [isSortingPinned, setIsSortingPinned] = useState(false); // 是否正在排序置顶链接
-  
-  // Batch Edit State
-  const [isBatchEditMode, setIsBatchEditMode] = useState(false); // 是否处于批量编辑模式
-  const [selectedLinks, setSelectedLinks] = useState<Set<string>>(new Set()); // 选中的链接ID集合
-  
-  // Sub-category State
-  const [hoveredCategory, setHoveredCategory] = useState<string | null>(null); // 当前悬浮的一级分类ID
-  const [hoveredCategoryTop, setHoveredCategoryTop] = useState<number>(0); // 当前悬浮的一级分类的垂直位置
-  
-  // Context Menu State
-  const [contextMenu, setContextMenu] = useState<{
-    isOpen: boolean;
-    position: { x: number; y: number };
-    link: LinkItem | null;
-    category: Category | null;
-    type: 'link' | 'category';
-  }>({
-    isOpen: false,
-    position: { x: 0, y: 0 },
-    link: null,
-    category: null,
-    type: 'link'
-  });
-  const [aiSettingsCategoryId, setAiSettingsCategoryId] = useState('');
-  const [aiSettingsAction, setAiSettingsAction] = useState<'organize' | 'rename' | 'structure' | ''>('');
-  const [settingsInitialTab, setSettingsInitialTab] = useState<'site' | 'ai' | 'tools' | 'duplicates' | 'health' | undefined>(undefined);
-  
-  // QR Code Modal State
-  const [qrCodeModal, setQrCodeModal] = useState<{
-    isOpen: boolean;
-    url: string;
-    title: string;
-  }>({
-    isOpen: false,
-    url: '',
-    title: ''
-  });
-
-  // Mobile Search State
+  const [selectedSearchSource, setSelectedSearchSource] = useState<ExternalSearchSource | null>(null);
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
-  
-  // Category Action Auth State
-  const [categoryActionAuth, setCategoryActionAuth] = useState<{
-    isOpen: boolean;
-    action: 'edit' | 'delete';
-    categoryId: string;
-    categoryName: string;
-  }>({
-    isOpen: false,
-    action: 'edit',
-    categoryId: '',
-    categoryName: ''
-  });
-  
-  // --- Helpers & Sync Logic ---
+  const [isLoading, setIsLoading] = useState(true);
 
-  const loadFromLocal = () => {
-    const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored);
-        let loadedCategories = normalizeCategories(parsed.categories);
-        
-        // 确保"常用推荐"分类始终存在，并确保它是第一个分类
-        if (!loadedCategories.some(c => c.id === 'common')) {
-          loadedCategories = [
-            { id: 'common', name: '常用推荐', icon: 'Star' },
-            ...loadedCategories
-          ];
-        } else {
-          // 如果"常用推荐"分类已存在，确保它是第一个分类
-          const commonIndex = loadedCategories.findIndex(c => c.id === 'common');
-          if (commonIndex > 0) {
-            const commonCategory = loadedCategories[commonIndex];
-            loadedCategories = [
-              commonCategory,
-              ...loadedCategories.slice(0, commonIndex),
-              ...loadedCategories.slice(commonIndex + 1)
-            ];
-          }
-        }
-        
-        // 检查是否有链接的categoryId不存在于当前分类中，将这些链接移动到"常用推荐"
-        const validCategoryIds = new Set(loadedCategories.map(c => c.id));
-        let loadedLinks = normalizeLinks(parsed.links);
-        loadedLinks = loadedLinks.map(link => {
-          if (!validCategoryIds.has(link.categoryId)) {
-            return { ...link, categoryId: 'common' };
-          }
-          return link;
-        });
-        
-        setLinks(loadedLinks);
-        setCategories(loadedCategories);
-      } catch (e) {
-        setLinks(INITIAL_LINKS);
-        setCategories(DEFAULT_CATEGORIES);
-      }
-    } else {
+  const [aiConfig, setAiConfig] = useState<AIConfig>(() => readAIConfig());
+  const [siteSettings, setSiteSettings] = useState<SiteSettings>(() => readJson(SITE_SETTINGS_KEY, DEFAULT_SITE_SETTINGS));
+  const [authToken, setAuthToken] = useState(false);
+  const [requiresAuth, setRequiresAuth] = useState<boolean | null>(null);
+  const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [extensionToken, setExtensionToken] = useState('');
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle');
+  const dataVersionRef = useRef(0);
+  const syncQueueRef = useRef<Promise<boolean>>(Promise.resolve(true));
+  const syncBlockedRef = useRef(false);
+  const lastRefreshRef = useRef(0);
+
+  const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
+  const [editingLink, setEditingLink] = useState<LinkItem | undefined>();
+  const [prefillLink, setPrefillLink] = useState<Partial<LinkItem> | undefined>();
+  const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState(false);
+  const [categoryManagerEditId, setCategoryManagerEditId] = useState('');
+  const [lockedCategory, setLockedCategory] = useState<Category | null>(null);
+  const [isImportOpen, setIsImportOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTab | undefined>();
+  const [aiSettingsCategoryId, setAiSettingsCategoryId] = useState('');
+  const [aiSettingsAction, setAiSettingsAction] = useState<'rename' | 'structure' | ''>('');
+  const [isSearchConfigOpen, setIsSearchConfigOpen] = useState(false);
+  const [qrCode, setQrCode] = useState({ isOpen: false, url: '', title: '' });
+  const [unlockedCategoryIds, setUnlockedCategoryIds] = useState<Set<string>>(new Set());
+  const [contextMenu, setContextMenu] = useState<ContextState>({ isOpen: false, position: { x: 0, y: 0 }, link: null, category: null, type: 'link' });
+  const [syncConflict, setSyncConflict] = useState<{ local: { links: LinkItem[]; categories: Category[] }; cloud: { links: LinkItem[]; categories: Category[]; version: number } } | null>(null);
+  const [lastBackup, setLastBackup] = useState<{ status: string; at: number } | null>(null);
+
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
+  const saveLocal = (nextLinks: LinkItem[], nextCategories: Category[], version = dataVersionRef.current) => {
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ links: nextLinks, categories: nextCategories, version }));
+  };
+
+  const applyCloudData = (value: unknown) => {
+    const data = parseStoredData(value);
+    dataVersionRef.current = data.version;
+    setLinks(data.links);
+    setCategories(data.categories);
+    saveLocal(data.links, data.categories, data.version);
+    return data;
+  };
+
+  const loadLocal = () => {
+    const stored = readJson<Record<string, unknown> | null>(LOCAL_STORAGE_KEY, null);
+    if (!stored || !Array.isArray(stored.links)) {
+      dataVersionRef.current = 0;
       setLinks(INITIAL_LINKS);
       setCategories(DEFAULT_CATEGORIES);
+      return { links: INITIAL_LINKS, categories: DEFAULT_CATEGORIES, version: 0 };
     }
+    const data = parseStoredData(stored);
+    dataVersionRef.current = data.version;
+    setLinks(data.links);
+    setCategories(data.categories);
+    return data;
   };
 
-  const syncToCloud = async (newLinks: LinkItem[], newCategories: Category[]) => {
-    setSyncStatus('saving');
-    try {
+  const syncToCloud = (nextLinks: LinkItem[], nextCategories: Category[]): Promise<boolean> => {
+    const run = async () => {
+      if (syncBlockedRef.current) return false;
+      setSyncStatus('saving');
+      try {
         const response = await fetch('/api/storage', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ links: newLinks, categories: newCategories })
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ links: nextLinks, categories: nextCategories, baseVersion: dataVersionRef.current }),
         });
-
-        if (response.status === 409) {
-            try {
-                const conflict = await response.json();
-                const cloudData = conflict?.data;
-                if (cloudData && Array.isArray(cloudData.links)) {
-                    const localSnapshot = { links: newLinks, categories: newCategories };
-                    setSyncConflictResolve({
-                        useLocal: () => syncToCloud(localSnapshot.links, localSnapshot.categories),
-                        useCloud: () => {
-                            updateData(cloudData.links, cloudData.categories || []);
-                        },
-                        merge: () => {
-                            const mergedLinks = [
-                                ...cloudData.links.filter((cl: LinkItem) => !localSnapshot.links.find((ll: LinkItem) => ll.id === cl.id)),
-                                ...localSnapshot.links,
-                            ];
-                            const mergedCats = [...cloudData.categories || [], ...newCategories];
-                            updateData(mergedLinks, mergedCats);
-                        },
-                    });
-                    setIsSyncConflict(true);
-                }
-            } catch {}
-            setSyncStatus('error');
-            return false;
-        }
-
+        const result = await response.json().catch(() => ({}));
         if (response.status === 401) {
-            setAuthToken(false);
-            setIsAuthOpen(true);
-            setSyncStatus('error');
-            return false;
+          setAuthToken(false);
+          setIsAuthOpen(true);
+          setSyncStatus('error');
+          return false;
         }
-
-        if (!response.ok) throw new Error('Network response was not ok');
-
+        if (response.status === 409 && result.data) {
+          const cloud = parseStoredData(result.data);
+          dataVersionRef.current = cloud.version;
+          syncBlockedRef.current = true;
+          setSyncConflict({ local: { links: nextLinks, categories: nextCategories }, cloud });
+          setSyncStatus('conflict');
+          return false;
+        }
+        if (!response.ok) throw new Error(typeof result.error === 'string' ? result.error : '同步失败');
+        if (typeof result.version === 'number') dataVersionRef.current = result.version;
+        setLastBackup({ status: typeof result.backup?.status === 'string' ? result.backup.status : 'unknown', at: Date.now() });
+        saveLocal(nextLinks, nextCategories, dataVersionRef.current);
         setSyncStatus('saved');
-        setTimeout(() => setSyncStatus('idle'), 2000);
+        window.setTimeout(() => setSyncStatus(current => current === 'saved' ? 'idle' : current), 1800);
         return true;
-    } catch (error) {
-        console.error("Sync failed", error);
+      } catch (error) {
+        console.error('Sync failed', error);
         setSyncStatus('error');
         return false;
+      }
+    };
+    const queued = syncQueueRef.current.then(run, run);
+    syncQueueRef.current = queued.then(() => true, () => false);
+    return queued;
+  };
+
+  const updateData = (nextLinks: LinkItem[], nextCategories: Category[]) => {
+    const normalized = parseStoredData({ links: nextLinks, categories: nextCategories, version: dataVersionRef.current });
+    setLinks(normalized.links);
+    setCategories(normalized.categories);
+    saveLocal(normalized.links, normalized.categories);
+    if (authToken) void syncToCloud(normalized.links, normalized.categories);
+  };
+
+  const loadRemoteData = async (allowLocalMigration = false) => {
+    lastRefreshRef.current = Date.now();
+    const response = await fetch('/api/storage');
+    if (response.status === 401) {
+      setAuthToken(false);
+      setIsAuthOpen(true);
+      return;
+    }
+    if (!response.ok) throw new Error(`云端数据读取失败（HTTP ${response.status}）`);
+    const payload = await response.json() as Record<string, unknown>;
+    const cloud = parseStoredData(payload);
+    const initialized = payload.initialized === true;
+    const local = readJson<Record<string, unknown> | null>(LOCAL_STORAGE_KEY, null);
+    const localData = local && Array.isArray(local.links) ? parseStoredData(local) : null;
+    if (allowLocalMigration && !initialized && localData && localData.links.length > 0) {
+      syncBlockedRef.current = false;
+      dataVersionRef.current = cloud.version;
+      setLinks(localData.links);
+      setCategories(localData.categories);
+      saveLocal(localData.links, localData.categories, cloud.version);
+      await syncToCloud(localData.links, localData.categories);
+      return;
+    }
+    applyCloudData(cloud);
+  };
+
+  const loadRemoteConfig = async () => {
+    const [aiResponse, searchResponse, siteResponse] = await Promise.all([
+      fetch('/api/storage?getConfig=ai'),
+      fetch('/api/storage?getConfig=search'),
+      fetch('/api/storage?getConfig=website'),
+    ]);
+    if (aiResponse.ok) {
+      const remote = await aiResponse.json();
+      const next = mergeClientAIConfig(remote);
+      setAiConfig(next);
+      localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(next));
+    }
+    if (searchResponse.ok) {
+      const config = await searchResponse.json() as Partial<SearchConfig>;
+      if (config.mode || config.externalSources) {
+        setSearchMode(config.mode || 'external');
+        setExternalSearchSources(config.externalSources || []);
+        setSelectedSearchSource(config.selectedSource || null);
+        localStorage.setItem(SEARCH_CONFIG_KEY, JSON.stringify(config));
+      }
+    }
+    if (siteResponse.ok) {
+      const remote = await siteResponse.json();
+      setSiteSettings(current => ({ ...current, ...remote }));
     }
   };
 
-  const updateData = (newLinks: LinkItem[], newCategories: Category[]) => {
-      // 1. Optimistic UI Update
-      setLinks(newLinks);
-      setCategories(newCategories);
-      
-      // 2. Save to Local Cache
-      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ links: newLinks, categories: newCategories }));
-
-      // 3. Sync to Cloud (if authenticated)
-      if (authToken) {
-          syncToCloud(newLinks, newCategories);
+  useEffect(() => {
+    const init = async () => {
+      if (localStorage.getItem('theme') === 'dark' || (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        setDarkMode(true);
+        document.documentElement.classList.add('dark');
       }
+      const params = new URLSearchParams(window.location.search);
+      const addUrl = params.get('add_url');
+      if (addUrl) {
+        window.history.replaceState({}, '', window.location.pathname);
+        setPrefillLink({ title: params.get('add_title') || '', url: addUrl, categoryId: 'common' });
+        setIsLinkModalOpen(true);
+      }
+      try {
+        const response = await fetch('/api/storage?checkAuth=true');
+        const auth = response.ok ? await response.json() : { requiresAuth: true, authenticated: false };
+        setAuthToken(!!auth.authenticated);
+        setExtensionToken(auth.extensionToken || '');
+        setRequiresAuth(!!auth.requiresAuth);
+        if (auth.requiresAuth && !auth.authenticated) {
+          setIsAuthOpen(true);
+          loadLocal();
+          return;
+        }
+        await loadRemoteConfig();
+        await loadRemoteData(true);
+      } catch (error) {
+        console.warn('Cloud load failed, using local data', error);
+        loadLocal();
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    void init();
+  }, []);
+
+  useEffect(() => {
+    const refresh = async () => {
+      if (!authToken || Date.now() - lastRefreshRef.current < 30000) return;
+      lastRefreshRef.current = Date.now();
+      try {
+        const response = await fetch('/api/storage');
+        if (!response.ok) return;
+        const data = parseStoredData(await response.json());
+        if (data.version > dataVersionRef.current) applyCloudData(data);
+      } catch {
+        // A foreground refresh is best effort.
+      }
+    };
+    const onVisibility = () => { if (document.visibilityState === 'visible') void refresh(); };
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => { window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', onVisibility); };
+  }, [authToken]);
+
+  useEffect(() => {
+    document.title = siteSettings.title || 'CloudNav';
+    if (!siteSettings.favicon) return;
+    document.querySelectorAll('link[rel="icon"]').forEach(node => node.remove());
+    const link = document.createElement('link');
+    link.rel = 'icon';
+    link.href = siteSettings.favicon;
+    document.head.appendChild(link);
+  }, [siteSettings.title, siteSettings.favicon]);
+
+  useEffect(() => {
+    const handleKey = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setIsPaletteOpen(open => !open);
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, []);
+
+  const handleLogin = async (password: string) => {
+    try {
+      const response = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) });
+      if (!response.ok) return false;
+      const result = await response.json();
+      setAuthToken(true);
+      setExtensionToken(result.extensionToken || '');
+      setIsAuthOpen(false);
+      await loadRemoteConfig();
+      await loadRemoteData(true);
+      return true;
+    } catch {
+      return false;
+    }
   };
 
-  // --- Context Menu Functions ---
+  const handleLogout = async () => {
+    await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'logout' }) }).catch(() => undefined);
+    setAuthToken(false);
+    setExtensionToken('');
+    setSyncStatus('idle');
+    loadLocal();
+  };
+
+  const handleCategoryActionAuth = async (password: string) => {
+    const response = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) }).catch(() => null);
+    if (!response?.ok) return false;
+    const result = await response.json();
+    setAuthToken(true);
+    setExtensionToken(result.extensionToken || '');
+    return true;
+  };
+
+  const handleSaveAIConfig = async (config: AIConfig, nextSiteSettings?: typeof siteSettings) => {
+    const requestedConfig: AIConfig = {
+      provider: config.provider === 'openai' ? 'openai' : 'gemini',
+      baseUrl: config.baseUrl.trim(),
+      model: config.model.trim() || DEFAULT_AI_CONFIG.model,
+      hasApiKey: false,
+    };
+    let nextConfig = requestedConfig;
+    if (authToken) {
+      const response = await fetch('/api/storage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ saveConfig: 'ai', config: requestedConfig }),
+      }).catch(() => null);
+      if (response?.ok) {
+        const result = await response.json().catch(() => ({}));
+        if (result.config) nextConfig = { ...requestedConfig, ...result.config, hasApiKey: result.config.hasApiKey === true };
+      }
+    }
+    setAiConfig(nextConfig);
+    localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(nextConfig));
+    if (nextSiteSettings) {
+      setSiteSettings(nextSiteSettings);
+      localStorage.setItem(SITE_SETTINGS_KEY, JSON.stringify(nextSiteSettings));
+      if (authToken) await fetch('/api/storage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ saveConfig: 'website', config: nextSiteSettings }),
+      }).catch(() => undefined);
+    }
+  };
+
+  const handleRestoreAIConfig = async (config: AIConfig) => handleSaveAIConfig(config);
+
+  const persistSearchConfig = async (sources: ExternalSearchSource[], mode: SearchMode, selected?: ExternalSearchSource | null) => {
+    const config = { mode, externalSources: sources, selectedSource: selected === undefined ? selectedSearchSource : selected };
+    setSearchMode(mode);
+    setExternalSearchSources(sources);
+    if (selected !== undefined) setSelectedSearchSource(selected);
+    localStorage.setItem(SEARCH_CONFIG_KEY, JSON.stringify(config));
+    if (authToken) await fetch('/api/storage', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ saveConfig: 'search', config }) }).catch(() => undefined);
+  };
+
+  const handleImportConfirm = (newLinks: LinkItem[], newCategories: Category[]) => {
+    const categoryList = [...categories];
+    newCategories.forEach(category => { if (!categoryList.some(existing => existing.id === category.id || existing.name === category.name)) categoryList.push(category); });
+    updateData([...links, ...newLinks], categoryList);
+    setIsImportOpen(false);
+    showToast(`成功导入 ${newLinks.length} 个新书签`, { type: 'success' });
+  };
+
+  const handleRestoreSearchConfig = (config: SearchConfig) => { void persistSearchConfig(config.externalSources, config.mode, config.selectedSource); };
+
+  const toggleTheme = () => {
+    const next = !darkMode;
+    setDarkMode(next);
+    document.documentElement.classList.toggle('dark', next);
+    localStorage.setItem('theme', next ? 'dark' : 'light');
+  };
+
+  const isCategoryLocked = (categoryId: string): boolean => {
+    const category = categories.find(item => item.id === categoryId);
+    if (!category) return false;
+    if (category.password && !unlockedCategoryIds.has(category.id)) return true;
+    return category.parentId ? isCategoryLocked(category.parentId) : false;
+  };
+
+  const handleCategoryClick = (category: Category) => {
+    if (isCategoryLocked(category.id)) { setLockedCategory(category); return; }
+    setSelectedCategory(category.id);
+    setSidebarOpen(false);
+  };
+
+  /**
+   * 统一的弹窗打开入口：同一时刻只允许一个主弹窗，
+   * 避免「分类管理」叠在「添加新链接」之上这类互相遮挡。
+   */
+  const openExclusive = (target: 'link' | 'category' | 'settings' | 'import') => {
+    setIsLinkModalOpen(target === 'link');
+    setIsCategoryManagerOpen(target === 'category');
+    setIsSettingsOpen(target === 'settings');
+    setIsImportOpen(target === 'import');
+  };
+
+  const handleUpdateCategories = (nextCategories: Category[]) => updateData(links, nextCategories);
+  const handleDeleteCategory = (categoryId: string) => {
+    if (categoryId === 'common') return;
+    if (!confirm('确定删除这个分类吗？其中的书签将移动到常用推荐。')) return;
+    const childIds = categories.filter(category => category.parentId === categoryId).map(category => category.id);
+    const ids = new Set([categoryId, ...childIds]);
+    updateData(links.map(link => ids.has(link.categoryId) ? { ...link, categoryId: 'common' } : link), categories.filter(category => !ids.has(category.id)));
+  };
+
+  const handleAddLink = (data: Omit<LinkItem, 'id' | 'createdAt'>) => {
+    // 仅在站点确实启用访问密码时要求登录；纯本地模式下直接落本地，保持一致。
+    if (requiresAuth && !authToken) { setIsAuthOpen(true); return; }
+    const url = data.url.match(/^https?:\/\//) ? data.url : `https://${data.url}`;
+    const newLink: LinkItem = { ...data, url, id: makeId(), createdAt: Date.now(), order: links.length };
+    updateData([...links, newLink], categories);
+    setIsLinkModalOpen(false);
+  };
+
+  const handleEditLink = (data: Omit<LinkItem, 'id' | 'createdAt'>) => {
+    if (!editingLink) return;
+    updateData(links.map(link => link.id === editingLink.id ? { ...link, ...data, updatedAt: Date.now() } : link), categories);
+    setEditingLink(undefined);
+    setIsLinkModalOpen(false);
+  };
+
+  const handleDeleteLink = (id: string) => {
+    if (confirm('确定删除此链接吗？')) updateData(links.filter(link => link.id !== id), categories);
+    setIsLinkModalOpen(false);
+  };
+
+  const recordVisit = (id: string) => {
+    const next = links.map(link => link.id === id ? { ...link, lastVisitedAt: Date.now(), visitCount: (link.visitCount || 0) + 1 } : link);
+    setLinks(next);
+    saveLocal(next, categories);
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    if (!event.over || event.active.id === event.over.id) return;
+    if (!canReorder(sortConfig)) {
+      showToast('请先切到「手动顺序」再拖拽排序', { type: 'info' });
+      return;
+    }
+    const next = applyReorder(links, String(event.active.id), String(event.over.id));
+    if (next) updateData(next, categories);
+  };
+
   const handleContextMenu = (event: React.MouseEvent, link: LinkItem) => {
     event.preventDefault();
-    event.stopPropagation();
-
-    if (isBatchEditMode) return;
-
-    setContextMenu({
-      isOpen: true,
-      position: { x: event.clientX, y: event.clientY },
-      link,
-      category: null,
-      type: 'link'
-    });
+    setContextMenu({ isOpen: true, position: { x: event.clientX, y: event.clientY }, link, category: null, type: 'link' });
   };
 
   const handleCategoryContextMenu = (event: React.MouseEvent, category: Category) => {
     event.preventDefault();
-    event.stopPropagation();
-
-    setHoveredCategory(null);
-    setContextMenu({
-      isOpen: true,
-      position: { x: event.clientX, y: event.clientY },
-      link: null,
-      category,
-      type: 'category'
-    });
+    setContextMenu({ isOpen: true, position: { x: event.clientX, y: event.clientY }, link: null, category, type: 'category' });
   };
 
-  const closeContextMenu = () => {
-    setContextMenu({
-      isOpen: false,
-      position: { x: 0, y: 0 },
-      link: null,
-      category: null,
-      type: 'link'
-    });
-  };
-
-  const copyLinkToClipboard = () => {
-    if (!contextMenu.link) return;
-    
-    navigator.clipboard.writeText(contextMenu.link.url)
-      .then(() => {
-        // 可以添加一个短暂的提示
-        console.log('链接已复制到剪贴板');
-      })
-      .catch(err => {
-        console.error('复制链接失败:', err);
-      });
-    
-    closeContextMenu();
-  };
-
-  const showQRCode = () => {
-    if (!contextMenu.link) return;
-    
-    setQrCodeModal({
-      isOpen: true,
-      url: contextMenu.link.url,
-      title: contextMenu.link.title
-    });
-    
-    closeContextMenu();
-  };
-
-  const editLinkFromContextMenu = () => {
-    if (!contextMenu.link) return;
-    
-    setEditingLink(contextMenu.link);
-    setIsModalOpen(true);
-    closeContextMenu();
-  };
-
-  const deleteLinkFromContextMenu = () => {
-    if (!contextMenu.link) return;
-    
-    if (window.confirm(`确定要删除"${contextMenu.link.title}"吗？`)) {
-      const newLinks = links.filter(link => link.id !== contextMenu.link!.id);
-      updateData(newLinks, categories);
-    }
-    
-    closeContextMenu();
-  };
-
-  const togglePinFromContextMenu = () => {
-    if (!contextMenu.link) return;
-
-    const linkToToggle = links.find(l => l.id === contextMenu.link!.id);
-    if (!linkToToggle) return;
-
-    const updated = links.map(l => {
-      if (l.id === contextMenu.link!.id) {
-        const isPinned = !l.pinned;
-        return {
-          ...l,
-          pinned: isPinned,
-          pinnedOrder: isPinned ? links.filter(link => link.pinned).length : undefined
-        };
-      }
-      return l;
-    });
-
-    updateData(updated, categories);
-    closeContextMenu();
-  };
-
-  const openCategoryFromContextMenu = () => {
-    if (!contextMenu.category) return;
-    handleCategoryClick(contextMenu.category);
-  };
-
-  const editCategoryFromContextMenu = () => {
-    const category = contextMenu.category;
-    if (!category) return;
-    if (!authToken) {
-      setIsAuthOpen(true);
-      return;
-    }
-    if (category.id === 'common') {
-      setIsCatManagerOpen(true);
-      return;
-    }
-    openCategoryActionAuth('edit', category.id, category.name);
-  };
-
-  const openAICategoryAction = (action: 'organize' | 'rename' | 'structure') => {
-    if (!contextMenu.category) return;
-    if (!authToken) {
-      setIsAuthOpen(true);
-      return;
-    }
-    if ((action === 'rename' || action === 'structure') && (contextMenu.category.id === 'common' || contextMenu.category.id === '__inbox__')) {
-      alert(action === 'rename' ? '该系统文件夹不支持 AI 重命名' : '该系统文件夹不支持 AI 拆分');
-      return;
-    }
-    setAiSettingsCategoryId(contextMenu.category.id);
-    setAiSettingsAction(action);
-    setIsSettingsModalOpen(true);
-  };
-
-  const organizeCategoryFromContextMenu = () => openAICategoryAction('organize');
-  const renameCategoryFromContextMenu = () => openAICategoryAction('rename');
-  const structureCategoryFromContextMenu = () => openAICategoryAction('structure');
-
-  const deleteCategoryFromContextMenu = () => {
-    const category = contextMenu.category;
-    if (!category || category.id === 'common') return;
-    if (!authToken) {
-      setIsAuthOpen(true);
-      return;
-    }
-    openCategoryActionAuth('delete', category.id, category.name);
-  };
-
-  // 加载链接图标缓存
-  const loadLinkIcons = async (linksToLoad: LinkItem[]) => {
-    if (!authToken) return; // 只有在已登录状态下才加载图标缓存
-    
-    const updatedLinks = [...linksToLoad];
-    const domainsToFetch: string[] = [];
-    
-    // 收集所有链接的域名（包括已有图标的链接）
-    for (const link of updatedLinks) {
-      if (link.url) {
-        try {
-          let domain = link.url;
-          if (!link.url.startsWith('http://') && !link.url.startsWith('https://')) {
-            domain = 'https://' + link.url;
-          }
-          
-          if (domain.startsWith('http://') || domain.startsWith('https://')) {
-            const urlObj = new URL(domain);
-            domain = urlObj.hostname;
-            domainsToFetch.push(domain);
-          }
-        } catch (e) {
-          console.error("Failed to parse URL for icon loading", e);
-        }
-      }
-    }
-    
-    // 批量获取图标
-    if (domainsToFetch.length > 0) {
-      const iconPromises = domainsToFetch.map(async (domain) => {
-        try {
-          const response = await fetch(`/api/storage?getConfig=favicon&domain=${encodeURIComponent(domain)}`);
-          if (response.ok) {
-            const data = await response.json();
-            if (data.cached && data.icon) {
-              return { domain, icon: data.icon };
-            }
-          }
-        } catch (error) {
-          console.log(`Failed to fetch cached icon for ${domain}`, error);
-        }
-        return null;
-      });
-      
-      const iconResults = await Promise.all(iconPromises);
-      
-      // 更新链接的图标
-      iconResults.forEach(result => {
-        if (result) {
-          const linkToUpdate = updatedLinks.find(link => {
-            if (!link.url) return false;
-            try {
-              let domain = link.url;
-              if (!link.url.startsWith('http://') && !link.url.startsWith('https://')) {
-                domain = 'https://' + link.url;
-              }
-              
-              if (domain.startsWith('http://') || domain.startsWith('https://')) {
-                const urlObj = new URL(domain);
-                return urlObj.hostname === result.domain;
-              }
-            } catch (e) {
-              return false;
-            }
-            return false;
-          });
-          
-          if (linkToUpdate) {
-            // 只有当链接没有图标，或者当前图标是 gstatic.cn 生成的，或者缓存中的图标是自定义图标时才更新
-            if (!linkToUpdate.icon || 
-                linkToUpdate.icon.includes('gstatic.cn') || 
-                !result.icon.includes('gstatic.cn')) {
-              linkToUpdate.icon = result.icon;
-            }
-          }
-        }
-      });
-      
-      // 更新状态
-      setLinks(updatedLinks);
-    }
-  };
-
-  // --- Effects ---
-
-  useEffect(() => {
-    // Theme init
-    if (localStorage.getItem('theme') === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-      setDarkMode(true);
-      document.documentElement.classList.add('dark');
-    }
-
-    // Handle URL Params for Bookmarklet (Add Link)
-    const urlParams = new URLSearchParams(window.location.search);
-    const addUrl = urlParams.get('add_url');
-    if (addUrl) {
-        const addTitle = urlParams.get('add_title') || '';
-        // Clean URL params to avoid re-triggering on refresh
-        window.history.replaceState({}, '', window.location.pathname);
-        
-        setPrefillLink({
-            title: addTitle,
-            url: addUrl,
-            categoryId: 'common' // Default, Modal will handle selection
-        });
-        setEditingLink(undefined);
-        setIsModalOpen(true);
-    }
-
-    // Initial Data Fetch
-    const initData = async () => {
-        let authenticated = false;
-        try {
-            const authRes = await fetch('/api/storage?checkAuth=true');
-            if (authRes.ok) {
-                const authData = await authRes.json();
-                authenticated = !!authData.authenticated;
-                setAuthToken(authenticated);
-                setExtensionToken(authData.extensionToken || '');
-                setRequiresAuth(authData.requiresAuth);
-
-                if (authData.requiresAuth && !authenticated) {
-                    setIsCheckingAuth(false);
-                    setIsAuthOpen(true);
-                    return;
-                }
-            }
-        } catch (e) {
-            console.warn("Failed to check auth requirement.", e);
-        }
-
-        try {
-            const webDavConfigRes = await fetch('/api/storage?getConfig=webdav');
-            if (webDavConfigRes.ok) {
-                setWebDavConfig(await webDavConfigRes.json());
-            }
-        } catch (e) {
-            console.warn("Failed to fetch WebDAV config.", e);
-        }
-
-        try {
-            const aiConfigRes = await fetch('/api/storage?getConfig=ai');
-            if (aiConfigRes.ok) {
-                const remoteConfig = await aiConfigRes.json();
-                const mergedConfig = mergeClientAIConfig(remoteConfig);
-                setAiConfig(mergedConfig);
-                localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(mergedConfig));
-            }
-        } catch (e) {
-            console.warn("Failed to fetch AI config.", e);
-        }
-
-        // 获取数据
-        let hasCloudData = false;
-        try {
-            const res = await fetch('/api/storage');
-            if (res.ok) {
-                const data = await res.json();
-                if (data.links && data.links.length > 0) {
-                    const mergedLinks = mergeLocalVisitState(normalizeLinks(data.links));
-                    const nextCategories = normalizeCategories(data.categories);
-                    setLinks(mergedLinks);
-                    setCategories(nextCategories);
-                    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ ...data, links: mergedLinks, categories: nextCategories }));
-
-                    // 加载链接图标缓存
-                    loadLinkIcons(mergedLinks);
-                    hasCloudData = true;
-                }
-            } else if (res.status === 401) {
-                setAuthToken(false);
-                setIsAuthOpen(true);
-                setIsCheckingAuth(false);
-                return;
-            }
-        } catch (e) {
-            console.warn("Failed to fetch from cloud, falling back to local.", e);
-        }
-        
-        // 无论是否有云端数据，都尝试从KV空间加载搜索配置和网站配置
-        let hasLoadedSearchConfig = false;
-        try {
-            const searchConfigRes = await fetch('/api/storage?getConfig=search');
-            if (searchConfigRes.ok) {
-                const searchConfigData = await searchConfigRes.json();
-                // 检查搜索配置是否有效（包含必要的字段）
-                if (searchConfigData && (searchConfigData.mode || searchConfigData.externalSources || searchConfigData.selectedSource)) {
-                    setSearchMode(searchConfigData.mode || 'external');
-                    setExternalSearchSources(searchConfigData.externalSources || []);
-                    // 加载已保存的选中搜索源
-                    if (searchConfigData.selectedSource) {
-                        setSelectedSearchSource(searchConfigData.selectedSource);
-                    }
-                    localStorage.setItem(SEARCH_CONFIG_KEY, JSON.stringify(searchConfigData));
-                    hasLoadedSearchConfig = true;
-                }
-            }
-            
-            // 获取网站配置（包括密码过期时间设置）
-            const websiteConfigRes = await fetch('/api/storage?getConfig=website');
-            if (websiteConfigRes.ok) {
-                const websiteConfigData = await websiteConfigRes.json();
-                if (websiteConfigData) {
-                    setSiteSettings(prev => {
-                        const next = {
-                            ...prev,
-                            title: websiteConfigData.title || prev.title,
-                            navTitle: websiteConfigData.navTitle || prev.navTitle,
-                            favicon: websiteConfigData.favicon || prev.favicon,
-                            cardStyle: websiteConfigData.cardStyle || prev.cardStyle,
-                            passwordExpiryDays: websiteConfigData.passwordExpiryDays !== undefined ? websiteConfigData.passwordExpiryDays : prev.passwordExpiryDays
-                        };
-                        localStorage.setItem(SITE_SETTINGS_KEY, JSON.stringify(next));
-                        return next;
-                    });
-                }
-            }
-        } catch (e) {
-            console.warn("Failed to fetch configs from KV.", e);
-        }
-        
-        if (!hasLoadedSearchConfig) {
-            try {
-                const savedSearchConfig = localStorage.getItem(SEARCH_CONFIG_KEY);
-                if (savedSearchConfig) {
-                    const searchConfigData = JSON.parse(savedSearchConfig) as SearchConfig;
-                    if (searchConfigData && (searchConfigData.mode || searchConfigData.externalSources || searchConfigData.selectedSource)) {
-                        setSearchMode(searchConfigData.mode || 'external');
-                        setExternalSearchSources(searchConfigData.externalSources || []);
-                        if (searchConfigData.selectedSource) {
-                            setSelectedSearchSource(searchConfigData.selectedSource);
-                        }
-                        hasLoadedSearchConfig = true;
-                    }
-                }
-            } catch (e) {
-                console.warn("Failed to load local search config.", e);
-            }
-        }
-
-        if (!hasLoadedSearchConfig) {
-            setSearchMode('external');
-            setExternalSearchSources(getDefaultSearchSources());
-        }
-
-        // 如果有云端数据，则不需要加载本地数据
-        if (hasCloudData) {
-            setIsLoadingSearchConfig(false);
-            setIsCheckingAuth(false);
-            return;
-        }
-
-        // 如果没有云端数据，则加载本地数据
-        loadFromLocal();
-
-        setIsLoadingSearchConfig(false);
-        setIsCheckingAuth(false);
-    };
-
-    initData();
-  }, []);
-
-  // Update page title and favicon when site settings change
-  useEffect(() => {
-    if (siteSettings.title) {
-      document.title = siteSettings.title;
-    }
-    
-    if (siteSettings.favicon) {
-      // Remove existing favicon links
-      const existingFavicons = document.querySelectorAll('link[rel="icon"]');
-      existingFavicons.forEach(favicon => favicon.remove());
-      
-      // Add new favicon
-      const favicon = document.createElement('link');
-      favicon.rel = 'icon';
-      favicon.href = siteSettings.favicon;
-      document.head.appendChild(favicon);
-    }
-  }, [siteSettings.title, siteSettings.favicon]);
-
-  // Command Palette shortcut: Ctrl/Cmd+K
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        e.preventDefault();
-        setIsPaletteOpen(prev => !prev);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
-
-  const toggleTheme = () => {
-    const newMode = !darkMode;
-    setDarkMode(newMode);
-    if (newMode) {
-      document.documentElement.classList.add('dark');
-      localStorage.setItem('theme', 'dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-      localStorage.setItem('theme', 'light');
-    }
-  };
-
-  // 视图模式切换处理函数
-  const handleViewModeChange = (cardStyle: 'detailed' | 'simple') => {
-    const newSiteSettings = { ...siteSettings, cardStyle };
-    setSiteSettings(newSiteSettings);
-    localStorage.setItem(SITE_SETTINGS_KEY, JSON.stringify(newSiteSettings));
-  };
-
-  // --- Batch Edit Functions ---
-  const toggleBatchEditMode = () => {
-    setIsBatchEditMode(!isBatchEditMode);
-    setSelectedLinks(new Set()); // 退出批量编辑模式时清空选中项
-  };
-
-  const toggleLinkSelection = (linkId: string) => {
-    setSelectedLinks(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(linkId)) {
-        newSet.delete(linkId);
-      } else {
-        newSet.add(linkId);
-      }
-      return newSet;
-    });
-  };
-
-  const handleBatchDelete = () => {
-    if (!authToken) { setIsAuthOpen(true); return; }
-    
-    if (selectedLinks.size === 0) {
-      alert('请先选择要删除的链接');
-      return;
-    }
-    
-    if (confirm(`确定要删除选中的 ${selectedLinks.size} 个链接吗？`)) {
-      const newLinks = links.filter(link => !selectedLinks.has(link.id));
-      updateData(newLinks, categories);
-      setSelectedLinks(new Set());
-      setIsBatchEditMode(false);
-    }
-  };
-
-  const handleBatchMove = (targetCategoryId: string) => {
-    if (!authToken) { setIsAuthOpen(true); return; }
-    
-    if (selectedLinks.size === 0) {
-      alert('请先选择要移动的链接');
-      return;
-    }
-    
-    const newLinks = links.map(link => 
-      selectedLinks.has(link.id) ? { ...link, categoryId: targetCategoryId } : link
-    );
-    updateData(newLinks, categories);
-    setSelectedLinks(new Set());
-    setIsBatchEditMode(false);
-  };
-
-  const handleSelectAll = () => {
-    // 获取当前显示的所有链接ID
-    const currentLinkIds = displayedLinks.map(link => link.id);
-    
-    // 如果已选中的链接数量等于当前显示的链接数量，则取消全选
-    if (selectedLinks.size === currentLinkIds.length && currentLinkIds.every(id => selectedLinks.has(id))) {
-      setSelectedLinks(new Set());
-    } else {
-      // 否则全选当前显示的所有链接
-      setSelectedLinks(new Set(currentLinkIds));
-    }
-  };
-
-  // --- Actions ---
-
-  const handleLogin = async (password: string): Promise<boolean> => {
-      try {
-        const authResponse = await fetch('/api/auth', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ password })
-        });
-
-        if (authResponse.ok) {
-            const authData = await authResponse.json();
-            setAuthToken(true);
-            setExtensionToken(authData.extensionToken || '');
-            setIsAuthOpen(false);
-            setSyncStatus('saved');
-
-            try {
-                const websiteConfigRes = await fetch('/api/storage?getConfig=website');
-                if (websiteConfigRes.ok) {
-                    const websiteConfigData = await websiteConfigRes.json();
-                    if (websiteConfigData) {
-                        setSiteSettings(prev => ({
-                            ...prev,
-                            title: websiteConfigData.title || prev.title,
-                            navTitle: websiteConfigData.navTitle || prev.navTitle,
-                            favicon: websiteConfigData.favicon || prev.favicon,
-                            cardStyle: websiteConfigData.cardStyle || prev.cardStyle,
-                            passwordExpiryDays: websiteConfigData.passwordExpiryDays !== undefined ? websiteConfigData.passwordExpiryDays : prev.passwordExpiryDays
-                        }));
-                    }
-                }
-            } catch (e) {
-                console.warn("Failed to fetch website config after login.", e);
-            }
-
-            try {
-                const webDavConfigRes = await fetch('/api/storage?getConfig=webdav');
-                if (webDavConfigRes.ok) {
-                    setWebDavConfig(await webDavConfigRes.json());
-                }
-            } catch (e) {
-                console.warn("Failed to fetch WebDAV config after login.", e);
-            }
-
-            try {
-                const res = await fetch('/api/storage');
-                if (res.ok) {
-                    const data = await res.json();
-                    if (data.links && data.links.length > 0) {
-                        const mergedLinks = mergeLocalVisitState(normalizeLinks(data.links));
-                        const nextCategories = normalizeCategories(data.categories);
-                        setLinks(mergedLinks);
-                        setCategories(nextCategories);
-                        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ ...data, links: mergedLinks, categories: nextCategories }));
-                        loadLinkIcons(mergedLinks);
-                    } else {
-                        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ links, categories }));
-                        syncToCloud(links, categories);
-                        loadLinkIcons(links);
-                    }
-                }
-            } catch (e) {
-                console.warn("Failed to fetch data after login.", e);
-                loadFromLocal();
-                syncToCloud(links, categories);
-            }
-
-            try {
-                const aiConfigRes = await fetch('/api/storage?getConfig=ai');
-                if (aiConfigRes.ok) {
-                    const aiConfigData = await aiConfigRes.json();
-                    if (aiConfigData && Object.keys(aiConfigData).length > 0) {
-                        const mergedConfig = mergeClientAIConfig(aiConfigData);
-                        setAiConfig(mergedConfig);
-                        localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(mergedConfig));
-                    }
-                }
-            } catch (e) {
-                console.warn("Failed to fetch AI config after login.", e);
-            }
-
-            return true;
-        }
-        return false;
-      } catch (e) {
-          return false;
-      }
-  };
-
-  const handleLogout = async () => {
-      try {
-          await fetch('/api/auth', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ action: 'logout' })
-          });
-      } catch (e) {
-          console.warn('Failed to logout on server.', e);
-      }
-      setAuthToken(false);
-      setExtensionToken('');
-      setSyncStatus('idle');
-      loadFromLocal();
-  };
-
-  const handleCategoryActionAuth = async (password: string): Promise<boolean> => {
-    try {
-      const authResponse = await fetch('/api/auth', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ password })
-      });
-
-      if (authResponse.ok) {
-        const authData = await authResponse.json();
-        setAuthToken(true);
-        setExtensionToken(authData.extensionToken || '');
-      }
-
-      return authResponse.ok;
-    } catch (error) {
-      console.error('Category action auth error:', error);
-      return false;
-    }
-  };
-
-  // 打开分类操作验证弹窗
-  const openCategoryActionAuth = (action: 'edit' | 'delete', categoryId: string, categoryName: string) => {
-    setCategoryActionAuth({
-      isOpen: true,
-      action,
-      categoryId,
-      categoryName
-    });
-  };
-
-  // 关闭分类操作验证弹窗
-  const closeCategoryActionAuth = () => {
-    setCategoryActionAuth({
-      isOpen: false,
-      action: 'edit',
-      categoryId: '',
-      categoryName: ''
-    });
-  };
-
-  const handleCategoryActionVerified = () => {
-    const { action, categoryId } = categoryActionAuth;
-    if (action === 'edit') {
-      setCategoryManagerEditId(categoryId);
-      setIsCatManagerOpen(true);
-      closeCategoryActionAuth();
-      return;
-    }
-
-    if (window.confirm(`确定删除"${categoryActionAuth.categoryName}"分类吗？该分类下的书签将移动到"常用推荐"。`)) {
-      handleDeleteCategory(categoryId);
-    }
-    closeCategoryActionAuth();
-  };
-
-  const handleImportConfirm = (newLinks: LinkItem[], newCategories: Category[]) => {
-      // Merge categories: Avoid duplicate names/IDs
-      const mergedCategories = [...categories];
-      
-      // 确保"常用推荐"分类始终存在
-      if (!mergedCategories.some(c => c.id === 'common')) {
-        mergedCategories.push({ id: 'common', name: '常用推荐', icon: 'Star' });
-      }
-      
-      newCategories.forEach(nc => {
-          if (!mergedCategories.some(c => c.id === nc.id || c.name === nc.name)) {
-              mergedCategories.push(nc);
-          }
-      });
-
-      const mergedLinks = [...links, ...newLinks];
-      updateData(mergedLinks, mergedCategories);
-      setIsImportModalOpen(false);
-      alert(`成功导入 ${newLinks.length} 个新书签!`);
-  };
-
-  const handleAddLink = (data: Omit<LinkItem, 'id' | 'createdAt'>) => {
-    if (!authToken) { setIsAuthOpen(true); return; }
-    
-    // 处理URL，确保有协议前缀
-    let processedUrl = data.url;
-    if (processedUrl && !processedUrl.startsWith('http://') && !processedUrl.startsWith('https://')) {
-      processedUrl = 'https://' + processedUrl;
-    }
-    
-    // 获取当前分类下的所有链接（不包括置顶链接）
-    const categoryLinks = links.filter(link => 
-      !link.pinned && (data.categoryId === 'all' || link.categoryId === data.categoryId)
-    );
-    
-    // 计算新链接的order值，使其排在分类最后
-    const maxOrder = categoryLinks.length > 0 
-      ? Math.max(...categoryLinks.map(link => link.order || 0))
-      : -1;
-    
-    const newLink: LinkItem = {
-      ...data,
-      url: processedUrl, // 使用处理后的URL
-      id: Date.now().toString(),
-      createdAt: Date.now(),
-      order: maxOrder + 1, // 设置为当前分类的最大order值+1，确保排在最后
-      // 如果是置顶链接，设置pinnedOrder为当前置顶链接数量
-      pinnedOrder: data.pinned ? links.filter(l => l.pinned).length : undefined
-    };
-    
-    // 将新链接插入到合适的位置，而不是直接放在开头
-    // 如果是置顶链接，放在置顶链接区域的最后
-    if (newLink.pinned) {
-      const firstNonPinnedIndex = links.findIndex(link => !link.pinned);
-      if (firstNonPinnedIndex === -1) {
-        // 如果没有非置顶链接，直接添加到末尾
-        updateData([...links, newLink], categories);
-      } else {
-        // 插入到非置顶链接之前
-        const updatedLinks = [...links];
-        updatedLinks.splice(firstNonPinnedIndex, 0, newLink);
-        updateData(updatedLinks, categories);
-      }
-    } else {
-      // 非置顶链接，按照order字段排序后插入
-      const updatedLinks = [...links, newLink].sort((a, b) => {
-        // 置顶链接始终排在前面
-        if (a.pinned && !b.pinned) return -1;
-        if (!a.pinned && b.pinned) return 1;
-        
-        // 同类型链接按照order排序
-        const aOrder = a.order !== undefined ? a.order : a.createdAt;
-        const bOrder = b.order !== undefined ? b.order : b.createdAt;
-        return aOrder - bOrder;
-      });
-      updateData(updatedLinks, categories);
-    }
-    
-    // Clear prefill if any
-    setPrefillLink(undefined);
-  };
-
-  const handleEditLink = (data: Omit<LinkItem, 'id' | 'createdAt'>) => {
-    if (!authToken) { setIsAuthOpen(true); return; }
-    if (!editingLink) return;
-    
-    // 处理URL，确保有协议前缀
-    let processedUrl = data.url;
-    if (processedUrl && !processedUrl.startsWith('http://') && !processedUrl.startsWith('https://')) {
-      processedUrl = 'https://' + processedUrl;
-    }
-    
-    const updated = links.map(l => l.id === editingLink.id ? { ...l, ...data, url: processedUrl } : l);
-    updateData(updated, categories);
-    setEditingLink(undefined);
-  };
-
-  // 拖拽结束事件处理函数
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-
-    if (over && active.id !== over.id) {
-      // 获取当前分类下的所有链接（包括子分类）
-      const subCategoryIds = categories.filter(c => c.parentId === selectedCategory).map(c => c.id);
-      const categoryLinks = links.filter(link => 
-        selectedCategory === 'all' || 
-        link.categoryId === selectedCategory || 
-        subCategoryIds.includes(link.categoryId)
-      );
-      
-      // 找到被拖拽元素和目标元素的索引
-      const activeIndex = categoryLinks.findIndex(link => link.id === active.id);
-      const overIndex = categoryLinks.findIndex(link => link.id === over.id);
-      
-      if (activeIndex !== -1 && overIndex !== -1) {
-        // 重新排序当前分类的链接
-        const reorderedCategoryLinks = arrayMove<LinkItem>(categoryLinks, activeIndex, overIndex);
-        
-        // 更新所有链接的顺序
-        const updatedLinks = links.map(link => {
-          const reorderedIndex = reorderedCategoryLinks.findIndex(l => l.id === link.id);
-          if (reorderedIndex !== -1) {
-            return { ...link, order: reorderedIndex };
-          }
-          return link;
-        });
-        
-        // 按照order字段重新排序
-        updatedLinks.sort((a, b) => (a.order || 0) - (b.order || 0));
-        
-        updateData(updatedLinks, categories);
-      }
-    }
-  };
-
-  // 置顶链接拖拽结束事件处理函数
-  const handlePinnedDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-
-    if (over && active.id !== over.id) {
-      // 获取所有置顶链接
-      const pinnedLinksList = links.filter(link => link.pinned);
-      
-      // 找到被拖拽元素和目标元素的索引
-      const activeIndex = pinnedLinksList.findIndex(link => link.id === active.id);
-      const overIndex = pinnedLinksList.findIndex(link => link.id === over.id);
-      
-      if (activeIndex !== -1 && overIndex !== -1) {
-        // 重新排序置顶链接
-        const reorderedPinnedLinks = arrayMove<LinkItem>(pinnedLinksList, activeIndex, overIndex);
-        
-        // 创建一个映射，存储每个置顶链接的新pinnedOrder
-        const pinnedOrderMap = new Map<string, number>();
-        reorderedPinnedLinks.forEach((link, index) => {
-          pinnedOrderMap.set(link.id, index);
-        });
-        
-        // 只更新置顶链接的pinnedOrder，不改变任何链接的顺序
-        const updatedLinks = links.map(link => {
-          if (link.pinned) {
-            return { 
-              ...link, 
-              pinnedOrder: pinnedOrderMap.get(link.id) 
-            };
-          }
-          return link;
-        });
-        
-        // 按照pinnedOrder重新排序整个链接数组，确保置顶链接的顺序正确
-        // 同时保持非置顶链接的相对顺序不变
-        updatedLinks.sort((a, b) => {
-          // 如果都是置顶链接，按照pinnedOrder排序
-          if (a.pinned && b.pinned) {
-            return (a.pinnedOrder || 0) - (b.pinnedOrder || 0);
-          }
-          // 如果只有一个是置顶链接，置顶链接排在前面
-          if (a.pinned) return -1;
-          if (b.pinned) return 1;
-          // 如果都不是置顶链接，保持原位置不变（按照order或createdAt排序）
-          const aOrder = a.order !== undefined ? a.order : a.createdAt;
-          const bOrder = b.order !== undefined ? b.order : b.createdAt;
-          return bOrder - aOrder;
-        });
-        
-        updateData(updatedLinks, categories);
-      }
-    }
-  };
-
-  // 开始排序
-  const startSorting = (categoryId: string) => {
-    setIsSortingMode(categoryId);
-  };
-
-  // 保存排序
-  const saveSorting = () => {
-    // 在保存排序时，确保将当前排序后的数据保存到服务器和本地存储
-    updateData(links, categories);
-    setIsSortingMode(null);
-  };
-
-  // 取消排序
-  const cancelSorting = () => {
-    setIsSortingMode(null);
-  };
-
-  // 保存置顶链接排序
-  const savePinnedSorting = () => {
-    // 在保存排序时，确保将当前排序后的数据保存到服务器和本地存储
-    updateData(links, categories);
-    setIsSortingPinned(false);
-  };
-
-  // 取消置顶链接排序
-  const cancelPinnedSorting = () => {
-    setIsSortingPinned(false);
-  };
-
-  // 设置dnd-kit的传感器
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 8, // 需要拖动8px才开始拖拽，避免误触
-      },
-    }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
-  );
-
-  const handleDeleteLink = (id: string) => {
-    if (!authToken) { setIsAuthOpen(true); return; }
-    if (confirm('确定删除此链接吗?')) {
-      updateData(links.filter(l => l.id !== id), categories);
-    }
-  };
-
-  const togglePin = (id: string, e: React.MouseEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      if (!authToken) { setIsAuthOpen(true); return; }
-      
-      const linkToToggle = links.find(l => l.id === id);
-      if (!linkToToggle) return;
-      
-      // 如果是设置为置顶，则设置pinnedOrder为当前置顶链接数量
-      // 如果是取消置顶，则清除pinnedOrder
-      const updated = links.map(l => {
-        if (l.id === id) {
-          const isPinned = !l.pinned;
-          return { 
-            ...l, 
-            pinned: isPinned,
-            pinnedOrder: isPinned ? links.filter(link => link.pinned).length : undefined
-          };
-        }
-        return l;
-      });
-      
-      updateData(updated, categories);
-  };
-
-  const handleSaveAIConfig = async (config: AIConfig, newSiteSettings?: any) => {
-      const localConfig = saveLocalAIConfig(config);
-      setAiConfig(localConfig);
-
-      if (newSiteSettings) {
-          setSiteSettings(newSiteSettings);
-          localStorage.setItem(SITE_SETTINGS_KEY, JSON.stringify(newSiteSettings));
-      }
-
-      if (authToken) {
-          try {
-              const response = await fetch('/api/storage', {
-                  method: 'POST',
-                  headers: {
-                      'Content-Type': 'application/json'
-                  },
-                  body: JSON.stringify({
-                      saveConfig: 'ai',
-                      config: localConfig
-                  })
-              });
-
-              if (response.ok) {
-                  const data = await response.json();
-                  if (data.config) {
-                      const mergedConfig = mergeClientAIConfig(data.config, localConfig);
-                      setAiConfig(mergedConfig);
-                      localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(mergedConfig));
-                  }
-              } else {
-                  console.error('Failed to save AI config to KV:', response.statusText);
-              }
-          } catch (error) {
-              console.error('Error saving AI config to KV:', error);
-          }
-
-          if (newSiteSettings) {
-              try {
-                  const response = await fetch('/api/storage', {
-                      method: 'POST',
-                      headers: {
-                          'Content-Type': 'application/json'
-                      },
-                      body: JSON.stringify({
-                          saveConfig: 'website',
-                          config: newSiteSettings
-                      })
-                  });
-
-                  if (!response.ok) {
-                      console.error('Failed to save website config to KV:', response.statusText);
-                  }
-              } catch (error) {
-                  console.error('Error saving website config to KV:', error);
-              }
-          }
-      }
-  };
-
-  const handleRestoreAIConfig = async (config: AIConfig) => {
-      const localConfig = saveLocalAIConfig(config);
-      setAiConfig(localConfig);
-
-      if (authToken) {
-          try {
-              const response = await fetch('/api/storage', {
-                  method: 'POST',
-                  headers: {
-                      'Content-Type': 'application/json'
-                  },
-                  body: JSON.stringify({
-                      saveConfig: 'ai',
-                      config: localConfig
-                  })
-              });
-
-              if (response.ok) {
-                  const data = await response.json();
-                  if (data.config) {
-                      const mergedConfig = mergeClientAIConfig(data.config, localConfig);
-                      setAiConfig(mergedConfig);
-                      localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(mergedConfig));
-                  }
-              } else {
-                  console.error('Failed to restore AI config to KV:', response.statusText);
-              }
-          } catch (error) {
-              console.error('Error restoring AI config to KV:', error);
-          }
-      }
-  };
-
-  // --- Category Management & Security ---
-
-  const handleCategoryClick = (cat: Category) => {
-      // 检查当前分类或其父分类是否设置了密码且未解锁
-      const getLockedAncestor = (category: Category): Category | null => {
-          // 如果当前分类有密码且未解锁，返回当前分类
-          if (category.password && !unlockedCategoryIds.has(category.id)) {
-              return category;
-          }
-          // 如果有父分类，递归检查父分类
-          if (category.parentId) {
-              const parent = categories.find(c => c.id === category.parentId);
-              if (parent) {
-                  return getLockedAncestor(parent);
-              }
-          }
-          return null;
-      };
-
-      const lockedAncestor = getLockedAncestor(cat);
-      if (lockedAncestor) {
-          setCatAuthModalData(lockedAncestor);
-          setSidebarOpen(false);
-          return;
-      }
-      
-      setSelectedCategory(cat.id);
-      setSidebarOpen(false);
-  };
-
-  const handleUnlockCategory = (catId: string) => {
-      setUnlockedCategoryIds(prev => new Set(prev).add(catId));
-      setSelectedCategory(catId);
-  };
-
-  const handleUpdateCategories = (newCats: Category[]) => {
-      if (!authToken) { setIsAuthOpen(true); return; }
-      updateData(links, newCats);
-  };
-
-  const handleDeleteCategory = (catId: string, mode: 'migrate' | 'delete_all' = 'migrate', targetId: string = 'common') => {
-      if (!authToken) { setIsAuthOpen(true); return; }
-      
-      // 找出所有要删除的分类ID（包括子分类）
-      const idsToDelete = [catId];
-      const children = categories.filter(c => c.parentId === catId);
-      children.forEach(child => idsToDelete.push(child.id));
-
-      let newCats = categories.filter(c => !idsToDelete.includes(c.id));
-      
-      let newLinks;
-      if (mode === 'migrate') {
-        // 迁移书签
-        newLinks = links.map(l => idsToDelete.includes(l.categoryId) ? { ...l, categoryId: targetId } : l);
-      } else {
-        // 连同书签一起删除
-        newLinks = links.filter(l => !idsToDelete.includes(l.categoryId));
-      }
-      
-      updateData(newLinks, newCats);
-  };
-
-  // --- WebDAV Config ---
-  const handleSaveWebDavConfig = async (config: WebDavConfig) => {
-      setWebDavConfig(config);
-      if (!authToken) return;
-
-      try {
-          const response = await fetch('/api/storage', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                  saveConfig: 'webdav',
-                  config
-              })
-          });
-
-          if (response.ok) {
-              const data = await response.json();
-              if (data.config) setWebDavConfig(data.config);
-          } else {
-              console.error('Failed to save WebDAV config to KV:', response.statusText);
-          }
-      } catch (error) {
-          console.error('Error saving WebDAV config to KV:', error);
-      }
-  };
-
-  // 搜索源选择弹出窗口状态
-  const [showSearchSourcePopup, setShowSearchSourcePopup] = useState(false);
-  const [hoveredSearchSource, setHoveredSearchSource] = useState<ExternalSearchSource | null>(null);
-  const [selectedSearchSource, setSelectedSearchSource] = useState<ExternalSearchSource | null>(null);
-  const [isIconHovered, setIsIconHovered] = useState(false);
-  const [isPopupHovered, setIsPopupHovered] = useState(false);
-  const hideTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  // 处理弹出窗口显示/隐藏逻辑
-  useEffect(() => {
-    if (isIconHovered || isPopupHovered) {
-      // 如果图标或弹出窗口被悬停，清除隐藏定时器并显示弹出窗口
-      if (hideTimeoutRef.current) {
-        clearTimeout(hideTimeoutRef.current);
-        hideTimeoutRef.current = null;
-      }
-      setShowSearchSourcePopup(true);
-    } else {
-      // 如果图标和弹出窗口都没有被悬停，设置一个延迟隐藏弹出窗口
-      if (hideTimeoutRef.current) {
-        clearTimeout(hideTimeoutRef.current);
-      }
-      hideTimeoutRef.current = setTimeout(() => {
-        setShowSearchSourcePopup(false);
-        setHoveredSearchSource(null);
-      }, 100);
-    }
-    
-    // 清理函数
-    return () => {
-      if (hideTimeoutRef.current) {
-        clearTimeout(hideTimeoutRef.current);
-      }
-    };
-  }, [isIconHovered, isPopupHovered]);
-
-  // 处理搜索源选择
-  const handleSearchSourceSelect = async (source: ExternalSearchSource) => {
-    // 更新选中的搜索源
-    setSelectedSearchSource(source);
-    
-    // 保存选中的搜索源到KV空间
-    await handleSaveSearchConfig(externalSearchSources, searchMode, source);
-    
-    if (searchQuery.trim()) {
-      const searchUrl = source.url.replace('{query}', encodeURIComponent(searchQuery));
-      window.open(searchUrl, '_blank');
-    }
-    setShowSearchSourcePopup(false);
-    setHoveredSearchSource(null);
-  };
-
-  const persistSearchConfig = async (sources: ExternalSearchSource[], mode: SearchMode, selectedSource?: ExternalSearchSource | null) => {
-      const searchConfig: SearchConfig = {
-          mode,
-          externalSources: sources,
-          selectedSource: selectedSource !== undefined ? selectedSource : selectedSearchSource
-      };
-
-      try {
-          const response = await fetch('/api/storage', {
-              method: 'POST',
-              headers: {
-                  'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({
-                  saveConfig: 'search',
-                  config: searchConfig
-              })
-          });
-
-          if (!response.ok) {
-              console.error('Failed to save search config to KV:', response.statusText);
-          }
-      } catch (error) {
-          console.error('Error saving search config to KV:', error);
-      }
-  };
-
-  // --- Search Config ---
-  const handleSaveSearchConfig = async (sources: ExternalSearchSource[], mode: SearchMode, selectedSource?: ExternalSearchSource | null) => {
-      setExternalSearchSources(sources);
-      setSearchMode(mode);
-      if (selectedSource !== undefined) {
-          setSelectedSearchSource(selectedSource);
-      }
-      await persistSearchConfig(sources, mode, selectedSource);
-  };
-
-  const handleSearchModeChange = (mode: SearchMode) => {
-      const nextSources = mode === 'external' && externalSearchSources.length === 0 ? getDefaultSearchSources() : externalSearchSources;
-
-      setSearchMode(mode);
-      setExternalSearchSources(nextSources);
-      persistSearchConfig(nextSources, mode);
-  };
-
-  const handleExternalSearch = () => {
-      if (searchQuery.trim() && searchMode === 'external') {
-          // 如果搜索源列表为空，自动加载默认搜索源
-          if (externalSearchSources.length === 0) {
-              const defaultSources: ExternalSearchSource[] = [
-                  {
-                      id: 'bing',
-                      name: '必应',
-                      url: 'https://www.bing.com/search?q={query}',
-                      icon: 'Search',
-                      enabled: true,
-                      createdAt: Date.now()
-                  },
-                  {
-                      id: 'google',
-                      name: 'Google',
-                      url: 'https://www.google.com/search?q={query}',
-                      icon: 'Search',
-                      enabled: true,
-                      createdAt: Date.now()
-                  },
-                  {
-                      id: 'baidu',
-                      name: '百度',
-                      url: 'https://www.baidu.com/s?wd={query}',
-                      icon: 'Globe',
-                      enabled: true,
-                      createdAt: Date.now()
-                  },
-                  {
-                      id: 'sogou',
-                      name: '搜狗',
-                      url: 'https://www.sogou.com/web?query={query}',
-                      icon: 'Globe',
-                      enabled: true,
-                      createdAt: Date.now()
-                  },
-                  {
-                      id: 'yandex',
-                      name: 'Yandex',
-                      url: 'https://yandex.com/search/?text={query}',
-                      icon: 'Globe',
-                      enabled: true,
-                      createdAt: Date.now()
-                  },
-                  {
-                      id: 'github',
-                      name: 'GitHub',
-                      url: 'https://github.com/search?q={query}',
-                      icon: 'Github',
-                      enabled: true,
-                      createdAt: Date.now()
-                  },
-                  {
-                      id: 'linuxdo',
-                      name: 'Linux.do',
-                      url: 'https://linux.do/search?q={query}',
-                      icon: 'Terminal',
-                      enabled: true,
-                      createdAt: Date.now()
-                  },
-                  {
-                      id: 'bilibili',
-                      name: 'B站',
-                      url: 'https://search.bilibili.com/all?keyword={query}',
-                      icon: 'Play',
-                      enabled: true,
-                      createdAt: Date.now()
-                  },
-                  {
-                      id: 'youtube',
-                      name: 'YouTube',
-                      url: 'https://www.youtube.com/results?search_query={query}',
-                      icon: 'Video',
-                      enabled: true,
-                      createdAt: Date.now()
-                  },
-                  {
-                      id: 'wikipedia',
-                      name: '维基',
-                      url: 'https://zh.wikipedia.org/wiki/Special:Search?search={query}',
-                      icon: 'BookOpen',
-                      enabled: true,
-                      createdAt: Date.now()
-                  }
-              ];
-              
-              // 保存默认搜索源到状态和KV空间
-              handleSaveSearchConfig(defaultSources, 'external');
-              
-              // 使用第一个默认搜索源立即执行搜索
-              const searchUrl = defaultSources[0].url.replace('{query}', encodeURIComponent(searchQuery));
-              window.open(searchUrl, '_blank');
-              return;
-          }
-          
-          // 如果有选中的搜索源，使用选中的搜索源；否则使用第一个启用的搜索源
-          let source = selectedSearchSource;
-          if (!source) {
-              const enabledSources = externalSearchSources.filter(s => s.enabled);
-              if (enabledSources.length > 0) {
-                  source = enabledSources[0];
-              }
-          }
-          
-          if (source) {
-              const searchUrl = source.url.replace('{query}', encodeURIComponent(searchQuery));
-              window.open(searchUrl, '_blank');
-          }
-      }
-  };
-
-  const handleRestoreBackup = (restoredLinks: LinkItem[], restoredCategories: Category[]) => {
-      updateData(restoredLinks, restoredCategories);
-      setIsBackupModalOpen(false);
-  };
-
-  const handleRestoreSearchConfig = (restoredSearchConfig: SearchConfig) => {
-      handleSaveSearchConfig(restoredSearchConfig.externalSources, restoredSearchConfig.mode);
-  };
-
-  // --- Filtering & Memo ---
-
-  // Helper to check if a category is "Locked" (Has password AND not unlocked, or its parent is locked)
-  const isCategoryLocked = (catId: string): boolean => {
-      const cat = categories.find(c => c.id === catId);
-      if (!cat) return false;
-      
-      // 检查当前分类是否锁定
-      if (cat.password && !unlockedCategoryIds.has(catId)) return true;
-      
-      // 如果有父分类，递归检查父分类是否锁定
-      if (cat.parentId) {
-          return isCategoryLocked(cat.parentId);
-      }
-      
-      return false;
-  };
-
-  const pinnedLinks = useMemo(() => {
-      // Don't show pinned links if they belong to a locked category
-      const filteredPinnedLinks = links.filter(l => l.pinned && !isCategoryLocked(l.categoryId));
-      // 按照pinnedOrder字段排序，如果没有pinnedOrder字段则按创建时间排序
-      return filteredPinnedLinks.sort((a, b) => {
-        // 如果有pinnedOrder字段，则使用pinnedOrder排序
-        if (a.pinnedOrder !== undefined && b.pinnedOrder !== undefined) {
-          return a.pinnedOrder - b.pinnedOrder;
-        }
-        // 如果只有一个有pinnedOrder字段，有pinnedOrder的排在前面
-        if (a.pinnedOrder !== undefined) return -1;
-        if (b.pinnedOrder !== undefined) return 1;
-        // 如果都没有pinnedOrder字段，则按创建时间排序
-        return a.createdAt - b.createdAt;
-      });
-  }, [links, categories, unlockedCategoryIds]);
-
-  const inboxLinks = useMemo(() => links.filter(l => l.categoryId === INBOX_ID && !isCategoryLocked(l.categoryId)), [links, categories, unlockedCategoryIds]);
-
+  const closeContextMenu = () => setContextMenu(current => ({ ...current, isOpen: false }));
+  const copyLinkToClipboard = () => { if (contextMenu.link) void navigator.clipboard.writeText(contextMenu.link.url); closeContextMenu(); };
+  const showQRCode = () => { if (contextMenu.link) setQrCode({ isOpen: true, url: contextMenu.link.url, title: contextMenu.link.title }); closeContextMenu(); };
+  const editLinkFromContextMenu = () => { if (contextMenu.link) { setEditingLink(contextMenu.link); setIsLinkModalOpen(true); } closeContextMenu(); };
+  const deleteLinkFromContextMenu = () => { if (contextMenu.link) handleDeleteLink(contextMenu.link.id); closeContextMenu(); };
+  const togglePinFromContextMenu = () => { if (contextMenu.link) updateData(links.map(link => link.id === contextMenu.link?.id ? { ...link, pinned: !link.pinned } : link), categories); closeContextMenu(); };
+  const openCategoryFromContextMenu = () => { if (contextMenu.category) handleCategoryClick(contextMenu.category); closeContextMenu(); };
+  const editCategoryFromContextMenu = () => { if (contextMenu.category) { setCategoryManagerEditId(contextMenu.category.id); setIsCategoryManagerOpen(true); } closeContextMenu(); };
+  const renameCategoryFromContextMenu = () => { if (contextMenu.category) { setAiSettingsCategoryId(contextMenu.category.id); setAiSettingsAction('rename'); setSettingsInitialTab('ai'); setIsSettingsOpen(true); } closeContextMenu(); };
+  const structureCategoryFromContextMenu = () => { if (contextMenu.category) { setAiSettingsCategoryId(contextMenu.category.id); setAiSettingsAction('structure'); setSettingsInitialTab('ai'); setIsSettingsOpen(true); } closeContextMenu(); };
+  const deleteCategoryFromContextMenu = () => { if (contextMenu.category) handleDeleteCategory(contextMenu.category.id); closeContextMenu(); };
+
+  const allTags = useMemo(() => Array.from(new Set(links.flatMap(link => link.tags || []))).sort(), [links]);
   const advancedFilterActive = useMemo(() => Object.values(advancedFilters).some(value => value !== undefined && value !== '' && value !== false), [advancedFilters]);
-
-  const allTags = useMemo(() => {
-    return Array.from(new Set(links.flatMap(link => link.tags || []))).sort((a, b) => a.localeCompare(b));
-  }, [links]);
-
   const matchesAdvancedFilters = (link: LinkItem) => {
     if (advancedFilters.status && link.status !== advancedFilters.status) return false;
     if (advancedFilters.tag && !link.tags?.includes(String(advancedFilters.tag))) return false;
     if (advancedFilters.hasNote && !link.note?.trim()) return false;
-    if (advancedFilters.untagged && (link.tags || []).length > 0) return false;
-    if (advancedFilters.broken && link.health?.status !== 'broken') return false;
+    if (advancedFilters.untagged && (link.tags || []).length) return false;
     return true;
   };
-
-  const sortByManualOrder = (items: LinkItem[]) => [...items].sort((a, b) => {
-    const aOrder = a.order !== undefined ? a.order : a.createdAt;
-    const bOrder = b.order !== undefined ? b.order : b.createdAt;
-    return aOrder - bOrder;
-  });
-
   const displayedLinks = useMemo(() => {
-    const parsedQuery = parseSearchQuery(searchQuery);
-    const hasSearch = searchQuery.trim().length > 0;
-    let result = links.filter(l => !isCategoryLocked(l.categoryId) && !l.deletedAt);
-
-    if (hasSearch) {
-      result = result.filter(l => matchesFilters(l, parsedQuery, categories) && matchesQuery(l, parsedQuery.text));
+    const parsed = parseSearchQuery(searchQuery);
+    const hasSearch = !!searchQuery.trim();
+    let result = links.filter(link => !link.deletedAt && !isCategoryLocked(link.categoryId));
+    // 置顶板块已单独渲染同一批卡片，主页主列表排除以免重复
+    if (!hasSearch && !advancedFilterActive && selectedCategory === 'all') result = result.filter(link => !link.pinned);
+    if (hasSearch) result = result.filter(link => matchesFilters(link, parsed, categories) && matchesQuery(link, parsed.text));
+    if (advancedFilterActive) result = result.filter(matchesAdvancedFilters);
+    if (selectedCategory === 'pinned') {
+      result = result.filter(link => link.pinned);
+    } else if (selectedCategory !== 'all') {
+      const childIds = categories.filter(category => category.parentId === selectedCategory).map(category => category.id);
+      result = result.filter(link => link.categoryId === selectedCategory || childIds.includes(link.categoryId));
     }
+    return hasSearch ? sortByRelevance(result, parsed.text || searchQuery) : applySort(result, sortConfig);
+  }, [links, categories, selectedCategory, searchQuery, advancedFilterActive, advancedFilters, unlockedCategoryIds, sortConfig]);
 
-    if (advancedFilterActive) {
-      result = result.filter(matchesAdvancedFilters);
+
+  const pinnedLinks = useMemo(
+    () => applySort(links.filter(link => link.pinned && !isCategoryLocked(link.categoryId)), sortConfig),
+    [links, categories, unlockedCategoryIds, sortConfig],
+  );
+
+  /** 侧栏计数：父分类含其子分类的书签。 */
+  const categoryCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    const visible = links.filter(link => !link.deletedAt && !isCategoryLocked(link.categoryId));
+    for (const link of visible) counts[link.categoryId] = (counts[link.categoryId] || 0) + 1;
+    for (const category of categories) {
+      for (const child of categories.filter(item => item.parentId === category.id)) {
+        counts[category.id] = (counts[category.id] || 0) + (counts[child.id] || 0);
+      }
     }
+    return counts;
+  }, [links, categories, unlockedCategoryIds]);
+  const visibleTotal = useMemo(() => links.filter(link => !link.deletedAt && !isCategoryLocked(link.categoryId)).length, [links, categories, unlockedCategoryIds]);
 
-    if (selectedCategory !== 'all') {
-      const subCategoryIds = categories.filter(c => c.parentId === selectedCategory).map(c => c.id);
-      result = result.filter(l => l.categoryId === selectedCategory || subCategoryIds.includes(l.categoryId));
-    }
+  useEffect(() => { localStorage.setItem(SORT_CONFIG_KEY, JSON.stringify(sortConfig)); }, [sortConfig]);
 
-    return hasSearch ? sortByRelevance(result, parsedQuery.text || searchQuery) : sortByManualOrder(result);
-  }, [links, selectedCategory, searchQuery, advancedFilters, advancedFilterActive, categories, unlockedCategoryIds]);
+  const changeSort = (next: SortConfig) => setSortConfig(next);
+  const changeCardStyle = (style: CardStyle) => {
+    const next = { ...siteSettings, cardStyle: style };
+    setSiteSettings(next);
+    localStorage.setItem(SITE_SETTINGS_KEY, JSON.stringify(next));
+    if (authToken) void fetch('/api/storage', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ saveConfig: 'website', config: next }),
+    }).catch(() => undefined);
+  };
 
-  // 计算其他目录的搜索结果
-  const otherCategoryResults = useMemo<Record<string, LinkItem[]>>(() => {
-    if ((!searchQuery.trim() && !advancedFilterActive) || selectedCategory === 'all') {
-      return {};
-    }
+  const exitArrange = () => { setArrangeMode(false); setSelectedIds(new Set()); };
+  const toggleArrange = () => { if (arrangeMode) exitArrange(); else setArrangeMode(true); };
+  const toggleSelect = (id: string) => setSelectedIds(current => {
+    const next = new Set(current);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const selectAll = () => setSelectedIds(new Set(displayedLinks.map(link => link.id)));
+  const clearSelection = () => setSelectedIds(new Set());
 
-    const parsedQuery = parseSearchQuery(searchQuery);
-    const currentCategoryIds = new Set([
-      selectedCategory,
-      ...categories.filter(c => c.parentId === selectedCategory).map(c => c.id),
-    ]);
+  /** 批量改动后统一收尾：写回数据并保持整理模式可用。 */
+  const applyBatch = (nextLinks: LinkItem[], message: string) => {
+    updateData(nextLinks, categories);
+    showToast(message, { type: 'success' });
+  };
 
-    const otherLinks = links.filter(link => {
-      if (currentCategoryIds.has(link.categoryId)) return false;
-      if (isCategoryLocked(link.categoryId) || link.deletedAt) return false;
-      if (searchQuery.trim() && (!matchesFilters(link, parsedQuery, categories) || !matchesQuery(link, parsedQuery.text))) return false;
-      return !advancedFilterActive || matchesAdvancedFilters(link);
-    });
+  const batchMove = (categoryId: string) => {
+    const target = categories.find(category => category.id === categoryId);
+    applyBatch(
+      links.map(link => selectedIds.has(link.id) ? { ...link, categoryId, updatedAt: Date.now() } : link),
+      `已移动 ${selectedIds.size} 项到「${target?.name || categoryId}」`,
+    );
+    clearSelection();
+  };
 
-    return otherLinks.reduce((acc, link) => {
-      if (!acc[link.categoryId]) acc[link.categoryId] = [];
-      acc[link.categoryId].push(link);
-      acc[link.categoryId] = searchQuery.trim() ? sortByRelevance(acc[link.categoryId], parsedQuery.text || searchQuery) : sortByManualOrder(acc[link.categoryId]);
-      return acc;
-    }, {} as Record<string, LinkItem[]>);
-  }, [links, selectedCategory, searchQuery, advancedFilters, advancedFilterActive, categories, unlockedCategoryIds]);
+  const batchPin = (pinned: boolean) => {
+    applyBatch(
+      links.map(link => selectedIds.has(link.id) ? { ...link, pinned, pinnedOrder: pinned ? (link.pinnedOrder ?? Date.now()) : undefined } : link),
+      pinned ? `已置顶 ${selectedIds.size} 项` : `已取消置顶 ${selectedIds.size} 项`,
+    );
+    clearSelection();
+  };
 
+  const batchAddTag = (tag: string) => {
+    applyBatch(
+      links.map(link => selectedIds.has(link.id)
+        ? { ...link, tags: Array.from(new Set([...(link.tags || []), tag])), updatedAt: Date.now() }
+        : link),
+      `已为 ${selectedIds.size} 项添加标签「${tag}」`,
+    );
+    clearSelection();
+  };
 
-  const handleAiOrganizeCurrent = async () => {
-    const current = inboxLinks[organizeIndex];
-    if (!current || isAiOrganizing) return;
-    if (!aiConfig.hasApiKey && !aiConfig.apiKey) {
-      alert('请先在设置里配置并保存 AI API Key');
-      setIsSettingsModalOpen(true);
+  const batchDelete = () => {
+    if (!confirm(`确定删除选中的 ${selectedIds.size} 个链接吗？`)) return;
+    applyBatch(links.filter(link => !selectedIds.has(link.id)), `已删除 ${selectedIds.size} 项`);
+    clearSelection();
+  };
+
+  const openLink = (link: LinkItem) => {
+    recordVisit(link.id);
+    window.open(link.url, '_blank', 'noopener,noreferrer');
+  };
+  const saveExport = (format: 'json' | 'html') => {
+    const data = normalizeAppData({ links, categories });
+    if (format === 'html') {
+      downloadHtmlFile(generateBookmarkHtml(data.links, data.categories), `cloudnav_${new Date().toISOString().slice(0, 10)}.html`);
       return;
     }
-
-    setIsAiOrganizing(true);
-    try {
-      const availableCategories = categories
-        .filter(c => c.id !== INBOX_ID && !c.password && c.id !== 'all')
-        .map(c => ({ id: c.id, name: c.name }));
-      const categoryId = await suggestCategory(current.title, current.url, availableCategories, aiConfig);
-      const targetCategoryId = categoryId && categories.some(c => c.id === categoryId && c.id !== INBOX_ID) ? categoryId : 'common';
-      const nextLinks = links.map(l => l.id === current.id ? { ...l, categoryId: targetCategoryId, status: 'read' as const, updatedAt: Date.now() } : l);
-      updateData(nextLinks, categories);
-      showToast(`已整理到 ${categories.find(c => c.id === targetCategoryId)?.name || '常用推荐'}`, { type: 'success' });
-      if (organizeIndex < inboxLinks.length - 1) setOrganizeIndex(i => i + 1);
-      else { setIsOrganizeMode(false); setOrganizeIndex(0); }
-    } catch (e) {
-      const message = e instanceof Error ? e.message : 'AI 整理失败';
-      alert(`AI 整理失败：${message}`);
-    } finally {
-      setIsAiOrganizing(false);
-    }
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = 'cloudnav_latest.json';
+    anchor.click();
+    URL.revokeObjectURL(url);
   };
 
-  // --- Render Components ---
+  const actions = [
+    { id: 'add-link', title: '添加链接', description: '新建一个网站卡片', keywords: ['add', '添加', '链接'], icon: <Plus size={14} />, group: 'action' as const, run: () => { setEditingLink(undefined); setIsLinkModalOpen(true); } },
+    { id: 'settings', title: '打开设置', description: '网站、AI、扩展与去重设置', keywords: ['settings', '设置', 'ai'], icon: <Settings size={14} />, group: 'action' as const, run: () => setIsSettingsOpen(true) },
+    { id: 'import', title: '导入书签', description: '导入 HTML 或 JSON', keywords: ['import', '导入'], icon: <Upload size={14} />, group: 'action' as const, run: () => setIsImportOpen(true) },
+    { id: 'export-json', title: '导出 JSON', description: '导出当前书签数据', keywords: ['export', 'json', '导出'], icon: <Save size={14} />, group: 'action' as const, run: () => saveExport('json') },
+    { id: 'export-html', title: '导出 HTML', description: '导出浏览器书签文件', keywords: ['export', 'html', '导出'], icon: <Save size={14} />, group: 'action' as const, run: () => saveExport('html') },
+    { id: 'theme', title: darkMode ? '切换到浅色模式' : '切换到深色模式', keywords: ['theme', '主题'], icon: darkMode ? <Sun size={14} /> : <Moon size={14} />, group: 'action' as const, run: toggleTheme },
+  ];
+  const viewTitle = selectedCategory === 'pinned'
+    ? '置顶'
+    : selectedCategory === 'all'
+      ? (searchQuery ? '搜索结果' : '所有链接')
+      : categories.find(category => category.id === selectedCategory)?.name || '链接';
 
-  // 创建可排序的链接卡片组件
-  const SortableLinkCard = ({ link }: { link: LinkItem }) => {
-    const {
-      attributes,
-      listeners,
-      setNodeRef,
-      transform,
-      transition,
-      isDragging,
-    } = useSortable({ id: link.id });
-    
-    // 根据视图模式决定卡片样式
-    const isDetailedView = siteSettings.cardStyle === 'detailed';
-    
-    const style = {
-      transform: CSS.Transform.toString(transform),
-      transition: isDragging ? 'none' : transition,
-      opacity: isDragging ? 0.5 : 1,
-      zIndex: isDragging ? 1000 : 'auto',
-    };
-
-    return (
-      <div
-        ref={setNodeRef}
-        style={style}
-        className={`group relative transition-all duration-200 cursor-grab active:cursor-grabbing min-w-0 max-w-full overflow-hidden hover:shadow-lg hover:shadow-green-100/50 dark:hover:shadow-green-900/20 ${
-          isSortingMode || isSortingPinned
-            ? 'bg-green-20 dark:bg-green-900/30 border-green-200 dark:border-green-800' 
-            : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700'
-        } ${isDragging ? 'shadow-2xl scale-105' : ''} ${
-          isDetailedView 
-            ? 'flex flex-col rounded-2xl border shadow-sm p-4 min-h-[100px] hover:border-green-400 dark:hover:border-green-500' 
-            : 'flex items-center rounded-xl border shadow-sm hover:border-green-300 dark:hover:border-green-600'
-        }`}
-        {...attributes}
-        {...listeners}
-      >
-        {/* 链接内容 - 移除a标签，改为div防止点击跳转 */}
-        <div className={`flex flex-1 min-w-0 overflow-hidden ${
-          isDetailedView ? 'flex-col' : 'items-center gap-3'
-        }`}>
-          {/* 第一行：图标和标题水平排列 */}
-          <div className={`flex items-center gap-3 mb-2 ${
-            isDetailedView ? '' : 'w-full'
-          }`}>
-            {/* Icon */}
-            <div className={`text-blue-600 dark:text-blue-400 flex items-center justify-center text-sm font-bold uppercase shrink-0 ${
-              isDetailedView ? 'w-8 h-8 rounded-xl bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-700 dark:to-slate-800' : 'w-8 h-8 rounded-lg bg-slate-50 dark:bg-slate-700'
-            }`}>
-                {link.icon ? <img src={link.icon} alt="" className="w-5 h-5"/> : link.title.charAt(0)}
-            </div>
-            
-            {/* 标题 */}
-            <h3 className={`text-slate-900 dark:text-slate-100 truncate overflow-hidden text-ellipsis ${
-              isDetailedView ? 'text-base' : 'text-sm font-medium text-slate-800 dark:text-slate-200'
-            }`} title={link.title}>
-                {link.title}
-            </h3>
-          </div>
-          
-          {/* 第二行：描述文字 */}
-             {isDetailedView && link.description && (
-               <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed line-clamp-2">
-                 {link.description}
-               </p>
-             )}
-        </div>
-      </div>
-    );
+  const cardHandlers = {
+    onOpen: openLink,
+    onEdit: (link: LinkItem) => { setEditingLink(link); setIsLinkModalOpen(true); },
+    onToggleSelect: toggleSelect,
+    onContextMenu: handleContextMenu,
   };
 
-  const renderLinkCard = (link: LinkItem) => {
-    const isSelected = selectedLinks.has(link.id);
-    
-    // 检查是否在有二级分类的一级分类页面下，且该站点未归属到二级分类
-    const isUnassignedHighlight = selectedCategory !== 'all' && 
-                                 !categories.find(c => c.id === selectedCategory)?.parentId && 
-                                 link.categoryId === selectedCategory && 
-                                 categories.some(c => c.parentId === selectedCategory);
+  if (isLoading) return <div className="min-h-screen flex items-center justify-center text-slate-400"><Loader2 className="animate-spin" /></div>;
 
-    // 根据视图模式决定卡片样式
-    const isDetailedView = siteSettings.cardStyle === 'detailed';
-    
-    return (
-      <div
-        key={link.id}
-        className={`group relative transition-all duration-200 hover:shadow-lg hover:shadow-blue-100/50 dark:hover:shadow-blue-900/20 ${
-          isSelected 
-            ? 'bg-red-50 dark:bg-red-900/30 border-red-200 dark:border-red-800' 
-            : isUnassignedHighlight
-              ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800/50 hover:bg-amber-100 dark:hover:bg-amber-900/30'
-              : 'bg-white dark:bg-slate-800 hover:bg-blue-50 dark:hover:bg-blue-900/20 border-slate-200 dark:border-slate-700'
-        } ${isBatchEditMode ? 'cursor-pointer' : ''} ${
-          isDetailedView 
-            ? 'flex flex-col rounded-2xl border shadow-sm p-4 min-h-[100px] hover:border-blue-400 dark:hover:border-blue-500' 
-            : 'flex items-center justify-between rounded-xl border shadow-sm p-3 hover:border-blue-300 dark:hover:border-blue-600'
-        }`}
-        onClick={() => isBatchEditMode && toggleLinkSelection(link.id)}
-        onContextMenu={(e) => handleContextMenu(e, link)}
-      >
-        {/* 链接内容 - 在批量编辑模式下不使用a标签 */}
-        {isBatchEditMode ? (
-          <div className={`flex flex-1 min-w-0 overflow-hidden h-full ${
-            isDetailedView ? 'flex-col' : 'items-center'
-          }`}>
-            {/* 第一行：图标和标题水平排列 */}
-            <div className={`flex items-center gap-3 w-full`}>
-              {/* Icon */}
-              <div className={`text-blue-600 dark:text-blue-400 flex items-center justify-center text-sm font-bold uppercase shrink-0 ${
-                isDetailedView ? 'w-8 h-8 rounded-xl bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-700 dark:to-slate-800' : 'w-8 h-8 rounded-lg bg-slate-50 dark:bg-slate-700'
-              }`}>
-                  {link.icon ? <img src={link.icon} alt="" className="w-5 h-5"/> : link.title.charAt(0)}
-              </div>
-              
-              {/* 标题 */}
-              <h3 className={`text-slate-900 dark:text-slate-100 truncate overflow-hidden text-ellipsis ${
-                isDetailedView ? 'text-base' : 'text-sm font-medium text-slate-800 dark:text-slate-200'
-              }`} title={link.title}>
-                  {link.title}
-              </h3>
-            </div>
-            
-            {/* 第二行：描述文字 */}
-            {isDetailedView && link.description && (
-              <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed line-clamp-2">
-                {link.description}
-              </p>
-            )}
-          </div>
-        ) : (
-          <a
-            href={link.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className={`flex flex-1 min-w-0 overflow-hidden h-full ${
-              isDetailedView ? 'flex-col' : 'items-center'
-            }`}
-            onClick={() => recordVisit(link.id)}
-            title={isDetailedView ? link.url : (link.description || link.url)} // 详情版视图只显示URL作为tooltip
-          >
-            {/* 第一行：图标和标题水平排列 */}
-            <div className={`flex items-center gap-3 w-full`}>
-              {/* Icon */}
-              <div className={`text-blue-600 dark:text-blue-400 flex items-center justify-center text-sm font-bold uppercase shrink-0 ${
-                isDetailedView ? 'w-8 h-8 rounded-xl bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-700 dark:to-slate-800' : 'w-8 h-8 rounded-lg bg-slate-50 dark:bg-slate-700'
-              }`}>
-                  {link.icon ? <img src={link.icon} alt="" className="w-5 h-5"/> : link.title.charAt(0)}
-              </div>
-              
-              {/* 标题 */}
-                <h3 className={`text-slate-800 dark:text-slate-200 truncate whitespace-nowrap overflow-hidden text-ellipsis group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors ${
-                  isDetailedView ? 'text-base' : 'text-sm font-medium'
-                }`} title={link.title}>
-                    {link.title}
-                </h3>
-            </div>
-            
-            {/* 第二行：描述文字 */}
-              {isDetailedView && link.description && (
-                <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed line-clamp-2">
-                  {link.description}
-                </p>
-              )}
-            {!isDetailedView && link.description && (
-              <div className="tooltip-custom absolute left-0 -top-8 w-max max-w-[200px] bg-black text-white text-xs p-2 rounded opacity-0 invisible group-hover:visible group-hover:opacity-100 transition-all z-20 pointer-events-none truncate">
-                {link.description}
-              </div>
-            )}
-          </a>
-        )}
-
-        {/* Hover Actions (Absolute Right) - 在批量编辑模式下隐藏 */}
-        {!isBatchEditMode && (
-          <div className={`flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-blue-50 dark:bg-blue-900/20 backdrop-blur-sm rounded-md p-1 absolute ${
-            isDetailedView ? 'top-3 right-3' : 'top-1/2 -translate-y-1/2 right-2'
-          }`}>
-              <button
-                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setSelectedLinkId(link.id); }}
-                  className="p-1 text-slate-400 hover:text-blue-500 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-md"
-                  title="详情"
-              >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
-                  </svg>
-              </button>
-              <button
-                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setEditingLink(link); setIsModalOpen(true); }}
-                  className="p-1 text-slate-400 hover:text-blue-500 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-md"
-                  title="编辑"
-              >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <path d="M12 15.5A3.5 3.5 0 0 1 8.5 12A3.5 3.5 0 0 1 12 8.5a3.5 3.5 0 0 1 3.5 3.5a3.5 3.5 0 0 1-3.5 3.5m7.43-2.53c.04-.32.07-.64.07-.97c0-.33-.03-.65-.07-.97l2.11-1.63c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.39-1.06-.73-1.69-.98l-.37-2.65A.506.506 0 0 0 14 2h-4c-.25 0-.46.18-.5.42l-.37 2.65c-.63.25-1.17.59-1.69.98l-2.49-1c-.22-.08-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64L4.57 11c-.04.32-.07.64-.07.97c0 .33.03.65.07.97l-2.11 1.63c-.19.15-.24.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.39 1.06.73 1.69.98l.37 2.65c.04.24.25.42.5.42h4c.25 0 .46-.18.5-.42l.37-2.65c.63-.25 1.17-.59 1.69-.98l2.49 1c.22.08.49 0 .61-.22l2-3.46c.13-.22.07-.49-.12-.64l-2.11-1.63Z" fill="currentColor"/>
-                  </svg>
-              </button>
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  return (
-    <div className="flex h-screen overflow-hidden text-slate-900 dark:text-slate-50">
-      {/* 认证遮罩层 - 当需要认证时显示 */}
-      {requiresAuth && !authToken && (
-        <div className="fixed inset-0 z-50 bg-white dark:bg-slate-900 flex items-center justify-center">
-          <div className="w-full max-w-md p-6">
-            <div className="text-center mb-8">
-              <div className="mx-auto w-16 h-16 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mb-4">
-                <Lock className="w-8 h-8 text-blue-600 dark:text-blue-400" />
-              </div>
-              <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-50 mb-2">
-                需要身份验证
-              </h1>
-              <p className="text-slate-600 dark:text-slate-400">
-                此导航页面设置了访问密码，请输入密码以继续访问
-              </p>
-            </div>
-            <AuthModal isOpen={true} onLogin={handleLogin} />
-          </div>
-        </div>
-      )}
-      
-      {/* 主要内容 - 只有在不需要认证或已认证时显示 */}
-      {(!requiresAuth || authToken) && (
-        <>
-          <AuthModal isOpen={isAuthOpen} onLogin={handleLogin} />
-      
-      <CategoryAuthModal 
-        isOpen={!!catAuthModalData}
-        category={catAuthModalData}
-        onClose={() => setCatAuthModalData(null)}
-        onUnlock={handleUnlockCategory}
-      />
-
-      <CategoryManagerModal
-        isOpen={isCatManagerOpen}
-        onClose={() => { setIsCatManagerOpen(false); setCategoryManagerEditId(''); }}
-        categories={categories}
-        onUpdateCategories={handleUpdateCategories}
-        onDeleteCategory={handleDeleteCategory}
-        onVerifyPassword={handleCategoryActionAuth}
-        initialEditId={categoryManagerEditId}
-      />
-
-      <BackupModal
-        isOpen={isBackupModalOpen}
-        onClose={() => setIsBackupModalOpen(false)}
-        links={links}
-        categories={categories}
-        onRestore={handleRestoreBackup}
-        webDavConfig={webDavConfig}
-        onSaveWebDavConfig={handleSaveWebDavConfig}
-        searchConfig={{ mode: searchMode, externalSources: externalSearchSources }}
-        onRestoreSearchConfig={handleRestoreSearchConfig}
-        aiConfig={aiConfig}
-        onRestoreAIConfig={handleRestoreAIConfig}
-      />
-
-      <ModalErrorBoundary onClose={() => setIsImportModalOpen(false)}>
-        <ImportModal
-          isOpen={isImportModalOpen}
-          onClose={() => setIsImportModalOpen(false)}
-          existingLinks={links}
-          categories={categories}
-          onImport={handleImportConfirm}
-          onImportSearchConfig={handleRestoreSearchConfig}
-          onImportAIConfig={handleRestoreAIConfig}
+  return <div className="flex h-screen overflow-hidden text-slate-900 dark:text-slate-50">
+    {requiresAuth && !authToken && <div className="fixed inset-0 z-50 bg-white dark:bg-slate-900 flex items-center justify-center"><div className="w-full max-w-md p-6 text-center"><div className="mx-auto w-16 h-16 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mb-4"><Lock className="w-8 h-8 text-blue-600" /></div><h1 className="text-2xl font-bold mb-2">需要身份验证</h1><p className="text-slate-500 mb-6">请输入访问密码以继续使用导航。</p><AuthModal isOpen onLogin={handleLogin} /></div></div>}
+    {(!requiresAuth || authToken) && <Suspense fallback={null}>
+    <Sidebar
+      navTitle={siteSettings.navTitle}
+      categories={categories}
+      selectedCategory={selectedCategory}
+      counts={categoryCounts}
+      totalCount={visibleTotal}
+      pinnedCount={pinnedLinks.length}
+      open={sidebarOpen}
+      onClose={() => setSidebarOpen(false)}
+      onSelect={id => { setSelectedCategory(id); setSidebarOpen(false); exitArrange(); }}
+      onSelectCategory={handleCategoryClick}
+      onCategoryContextMenu={handleCategoryContextMenu}
+      onCreateCategory={() => openExclusive('category')}
+      onOpenSettings={() => openExclusive('settings')}
+    />
+      <CategoryAuthModal isOpen={!!lockedCategory} category={lockedCategory} onClose={() => setLockedCategory(null)} onUnlock={id => { setUnlockedCategoryIds(current => new Set(current).add(id)); setSelectedCategory(id); setLockedCategory(null); }} />
+      <CategoryManagerModal isOpen={isCategoryManagerOpen} onClose={() => { setIsCategoryManagerOpen(false); setCategoryManagerEditId(''); }} categories={categories} onUpdateCategories={handleUpdateCategories} onDeleteCategory={handleDeleteCategory} onVerifyPassword={handleCategoryActionAuth} initialEditId={categoryManagerEditId} />
+      <ModalErrorBoundary onClose={() => setIsImportOpen(false)}><ImportModal isOpen={isImportOpen} onClose={() => setIsImportOpen(false)} existingLinks={links} categories={categories} onImport={handleImportConfirm} onImportSearchConfig={handleRestoreSearchConfig} onImportAIConfig={handleRestoreAIConfig} /></ModalErrorBoundary>
+      <SettingsModal isOpen={isSettingsOpen} onClose={() => { setIsSettingsOpen(false); setSettingsInitialTab(undefined); setAiSettingsCategoryId(''); setAiSettingsAction(''); }} config={aiConfig} siteSettings={siteSettings} onSave={handleSaveAIConfig} links={links} categories={categories} onUpdateLinks={next => updateData(next, categories)} onUpdateCategories={next => updateData(links, next)} onUpdateData={updateData} onEditLink={link => { setIsSettingsOpen(false); setEditingLink(link); setIsLinkModalOpen(true); }} onExportJson={() => saveExport('json')} lastBackup={lastBackup} onOpenImport={() => { setIsSettingsOpen(false); setSettingsInitialTab('backup'); setIsImportOpen(true); }} authToken={authToken} extensionToken={extensionToken} initialAICategoryId={aiSettingsCategoryId} initialAIAction={aiSettingsAction || undefined} initialTab={settingsInitialTab} />
+      <SearchConfigModal isOpen={isSearchConfigOpen} onClose={() => setIsSearchConfigOpen(false)} sources={externalSearchSources} onSave={sources => void persistSearchConfig(sources, searchMode)} />
+      <CommandPalette isOpen={isPaletteOpen} onClose={() => setIsPaletteOpen(false)} links={links} categories={categories} actions={actions} onOpenLink={link => { recordVisit(link.id); window.open(link.url, '_blank', 'noopener,noreferrer'); }} onSelectCategory={id => { setSelectedCategory(id); setIsPaletteOpen(false); }} />
+      <SyncConflictModal isOpen={!!syncConflict} onClose={() => { syncBlockedRef.current = false; setSyncConflict(null); setSyncStatus('idle'); }} onUseLocal={() => { if (syncConflict) { syncBlockedRef.current = false; void syncToCloud(syncConflict.local.links, syncConflict.local.categories); setSyncConflict(null); } }} onUseCloud={() => { if (syncConflict) { syncBlockedRef.current = false; applyCloudData(syncConflict.cloud); setSyncConflict(null); setSyncStatus('idle'); } }} onMerge={() => { if (!syncConflict) return; const linkMap = new Map([...syncConflict.cloud.links, ...syncConflict.local.links].map(link => [link.id, link])); const catMap = new Map([...syncConflict.cloud.categories, ...syncConflict.local.categories].map(category => [category.id, category])); syncBlockedRef.current = false; dataVersionRef.current = syncConflict.cloud.version; updateData([...linkMap.values()], [...catMap.values()]); setSyncConflict(null); }} />
+      <main className="flex min-w-0 flex-1 flex-col bg-slate-50 dark:bg-slate-900">
+        <TopBar
+          searchQuery={searchQuery}
+          searchMode={searchMode}
+          placeholder={searchMode === 'internal' ? '搜索书签、标签、备注…' : '搜索互联网…'}
+          darkMode={darkMode}
+          authenticated={authToken}
+          mobileSearchOpen={isMobileSearchOpen}
+          advancedOpen={isAdvancedFilterOpen}
+          advancedActive={advancedFilterActive}
+          tags={allTags}
+          filters={advancedFilters}
+          onSearchChange={setSearchQuery}
+          onSubmitSearch={() => {
+            if (searchMode !== 'external' || !searchQuery.trim()) return;
+            const source = selectedSearchSource || externalSearchSources.find(item => item.enabled) || getDefaultSearchSources()[0];
+            window.open(source.url.replace('{query}', encodeURIComponent(searchQuery)), '_blank', 'noopener,noreferrer');
+          }}
+          onToggleSearchMode={() => setSearchMode(current => current === 'internal' ? 'external' : 'internal')}
+          onToggleMobileSearch={() => setIsMobileSearchOpen(open => !open)}
+          onToggleAdvanced={() => setIsAdvancedFilterOpen(open => !open)}
+          onCloseAdvanced={() => setIsAdvancedFilterOpen(false)}
+          onFilterChange={next => setAdvancedFilters(current => ({ ...current, ...next }))}
+          onToggleTheme={toggleTheme}
+          onLogout={handleLogout}
+          onAdd={() => { setEditingLink(undefined); openExclusive('link'); }}
+          onOpenSidebar={() => setSidebarOpen(true)}
+          onOpenPalette={() => setIsPaletteOpen(true)}
         />
-      </ModalErrorBoundary>
 
-      <SettingsModal
-        isOpen={isSettingsModalOpen}
-        onClose={() => { setIsSettingsModalOpen(false); setAiSettingsCategoryId(''); setAiSettingsAction(''); setSettingsInitialTab(undefined); }}
-        config={aiConfig}
-        siteSettings={siteSettings}
-        onSave={handleSaveAIConfig}
-        links={links}
-        categories={categories}
-        onUpdateLinks={(newLinks) => updateData(newLinks, categories)}
-        onUpdateCategories={(newCats) => updateData(links, newCats)}
-        onUpdateData={(nextLinks, nextCats) => updateData(nextLinks, nextCats)}
-        onEditLink={(link) => {
-          setIsSettingsModalOpen(false);
-          setSettingsInitialTab(undefined);
-          setEditingLink(link);
-          setIsModalOpen(true);
-        }}
-        authToken={authToken}
-        extensionToken={extensionToken}
-        initialAICategoryId={aiSettingsCategoryId}
-        initialAIAction={aiSettingsAction || undefined}
-        initialTab={settingsInitialTab}
-      />
-
-      <SearchConfigModal
-        isOpen={isSearchConfigModalOpen}
-        onClose={() => setIsSearchConfigModalOpen(false)}
-        sources={externalSearchSources}
-        onSave={(sources) => handleSaveSearchConfig(sources, searchMode)}
-      />
-
-      <CommandPalette
-        isOpen={isPaletteOpen}
-        onClose={() => setIsPaletteOpen(false)}
-        links={links}
-        categories={categories}
-        actions={[
-          { id: 'add-link', title: '添加链接', description: '新建一个网站卡片', keywords: ['add', 'new', '添加', '链接'], icon: <Plus size={14} />, group: 'action', run: () => { if (!authToken) setIsAuthOpen(true); else { setEditingLink(undefined); setIsModalOpen(true); } } },
-          { id: 'settings', title: '打开设置', description: '网站、AI 与扩展工具设置', keywords: ['settings', '设置', 'ai'], icon: <Settings size={14} />, group: 'action', run: () => { setSettingsInitialTab(undefined); setIsSettingsModalOpen(true); } },
-          { id: 'duplicates', title: '检测重复网址', description: '扫描并清理重复书签', keywords: ['duplicate', '重复', '去重', '网址'], icon: <CopyCheck size={14} />, group: 'action', run: () => { if (!authToken) setIsAuthOpen(true); else { setSettingsInitialTab('duplicates'); setIsSettingsModalOpen(true); } } },
-          { id: 'health', title: '检测无法访问网站', description: '批量健康检测并清理失效链接', keywords: ['health', 'broken', '失效', '无法访问', '死链', '清理'], icon: <AlertCircle size={14} />, group: 'action', run: () => { if (!authToken) setIsAuthOpen(true); else { setSettingsInitialTab('health'); setIsSettingsModalOpen(true); } } },
-          { id: 'backup', title: '备份与恢复', description: 'WebDAV 与本地导出', keywords: ['backup', '备份', '恢复'], icon: <Cloud size={14} />, group: 'action', run: () => setIsBackupModalOpen(true) },
-          { id: 'import', title: '导入书签', description: '导入 HTML 或 JSON 备份', keywords: ['import', '导入', '书签'], icon: <Upload size={14} />, group: 'action', run: () => setIsImportModalOpen(true) },
-          { id: 'organize', title: '整理待处理链接', description: `${inboxLinks.length} 个待整理`, keywords: ['organize', 'inbox', '整理', '待整理'], icon: <CheckSquare size={14} />, group: 'action', run: () => { if (inboxLinks.length > 0) { setSelectedCategory(INBOX_ID); setOrganizeIndex(0); setIsOrganizeMode(true); } } },
-          { id: 'theme', title: darkMode ? '切换到浅色模式' : '切换到深色模式', keywords: ['theme', 'dark', 'light', '主题'], icon: darkMode ? <Sun size={14} /> : <Moon size={14} />, group: 'action', run: toggleTheme },
-        ]}
-        onOpenLink={(link) => { recordVisit(link.id); window.open(link.url, '_blank'); }}
-        onSelectCategory={(categoryId) => { setSelectedCategory(categoryId); setSidebarOpen(false); }}
-        onOpenInbox={() => { setSelectedCategory(INBOX_ID); setOrganizeIndex(0); setIsOrganizeMode(true); }}
-      />
-
-      {/* Sidebar Mobile Overlay */}
-      {sidebarOpen && (
-        <div 
-          className="fixed inset-0 z-20 bg-black/50 lg:hidden backdrop-blur-sm"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
-
-      {/* Sidebar */}
-      <aside 
-        className={`
-          fixed lg:static inset-y-0 left-0 z-50 w-64 transform transition-transform duration-300 ease-in-out
-          bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 flex flex-col
-          ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
-        `}
-      >
-        {/* Logo */}
-        <div className="h-16 flex items-center px-6 border-b border-slate-100 dark:border-slate-700 shrink-0">
-            <span className="text-xl font-bold bg-gradient-to-r from-blue-500 to-purple-500 bg-clip-text text-transparent">
-              {siteSettings.navTitle || 'CloudNav'}
-            </span>
-        </div>
-
-        {/* Categories List */}
-        <div 
-          className="flex-1 overflow-y-auto py-4 space-y-1 scrollbar-hide"
-          onScroll={() => setHoveredCategory(null)}
-        >
-            <div className="px-4">
-              <button
-                onClick={() => { setSelectedCategory('all'); setSidebarOpen(false); }}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
-                  selectedCategory === 'all' 
-                    ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium' 
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'
-                }`}
-              >
-                <div className="p-1"><Icon name="LayoutGrid" size={18} /></div>
-                <span>置顶网站</span>
-              </button>
-            </div>
-            
-            <div className="flex items-center justify-between pt-4 pb-2 px-8">
-               <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">分类目录</span>
-               <button 
-                  onClick={() => { if(!authToken) setIsAuthOpen(true); else setIsCatManagerOpen(true); }}
-                  className="p-1 text-slate-400 hover:text-blue-500 hover:bg-slate-100 dark:hover:bg-slate-700 rounded"
-                  title="管理分类"
-               >
-                  <Settings size={14} />
-               </button>
-            </div>
-
-            {categories.filter(c => !c.parentId).map(cat => {
-                const isLocked = cat.password && !unlockedCategoryIds.has(cat.id);
-                const subCats = categories.filter(c => c.parentId === cat.id);
-                return (
-                  <div 
-                    key={cat.id} 
-                    className="relative px-4"
-                    onMouseEnter={(e) => {
-                      setHoveredCategory(cat.id);
-                      setHoveredCategoryTop(e.currentTarget.getBoundingClientRect().top);
-                    }}
-                    onMouseLeave={() => setHoveredCategory(null)}
-                  >
-                    <button
-                      onClick={() => handleCategoryClick(cat)}
-                      onContextMenu={(e) => handleCategoryContextMenu(e, cat)}
-                      className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all group ${
-                        selectedCategory === cat.id || (subCats.some(sc => sc.id === selectedCategory))
-                          ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium' 
-                          : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'
-                      }`}
-                    >
-                      <div className={`p-1.5 rounded-lg transition-colors flex items-center justify-center ${selectedCategory === cat.id ? 'bg-blue-100 dark:bg-blue-800' : 'bg-slate-100 dark:bg-slate-800'}`}>
-                        {isLocked ? <Lock size={16} className="text-amber-500" /> : <Icon name={cat.icon} size={16} />}
-                      </div>
-                      <span className="truncate flex-1 text-left">{cat.name}</span>
-                      {(selectedCategory === cat.id || subCats.some(sc => sc.id === selectedCategory)) && <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>}
-                      {subCats.length > 0 && (
-                        <div className="text-slate-400 group-hover:text-blue-500 transition-colors">
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
-                        </div>
-                      )}
-                    </button>
-
-                    {/* 二级分类悬浮菜单 */}
-                    {hoveredCategory === cat.id && subCats.length > 0 && (
-                      <div 
-                          className="fixed left-64 w-[166px] bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 py-2 z-[60] animate-in fade-in slide-in-from-left-2 duration-200 hidden lg:block"
-                          style={{ top: hoveredCategoryTop }}
-                        >
-                        {/* 增加一个透明的遮罩层，防止鼠标移动到间隙时消失 */}
-                        <div className="absolute -left-4 top-0 bottom-0 w-4 bg-transparent" />
-                        
-                        <div className="px-4 py-1 mb-1 border-b border-slate-100 dark:border-slate-700">
-                          <span className="font-bold text-slate-400 uppercase tracking-widest" style={{ fontSize: '13px' }}>{cat.name} / 二级分类</span>
-                        </div>
-                        {subCats.map(subCat => {
-                          const isSubLocked = isCategoryLocked(subCat.id);
-                          return (
-                            <button
-                              key={subCat.id}
-                              onClick={() => handleCategoryClick(subCat)}
-                              onContextMenu={(e) => handleCategoryContextMenu(e, subCat)}
-                              className={`w-full flex items-center gap-3 px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors text-left ${
-                                selectedCategory === subCat.id ? 'text-blue-600 dark:text-blue-400 font-medium' : 'text-slate-600 dark:text-slate-400'
-                              }`}
-                            >
-                              {isSubLocked ? <Lock size={14} className="text-amber-500" /> : <Icon name={subCat.icon} size={14} />}
-                              <span className="text-sm truncate">{subCat.name}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                );
-            })}
-        </div>
-
-        {/* Footer Actions */}
-        <div className="p-4 border-t border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 shrink-0">
-            
-            <div className="grid grid-cols-3 gap-2 mb-2">
-                <button 
-                    onClick={() => { if(!authToken) setIsAuthOpen(true); else setIsImportModalOpen(true); }}
-                    className="flex flex-col items-center justify-center gap-1 p-2 text-xs text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-600 transition-all"
-                    title="导入书签"
-                >
-                    <Upload size={14} />
-                    <span>导入</span>
-                </button>
-                
-                <button 
-                    onClick={() => { if(!authToken) setIsAuthOpen(true); else setIsBackupModalOpen(true); }}
-                    className="flex flex-col items-center justify-center gap-1 p-2 text-xs text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-600 transition-all"
-                    title="备份与恢复"
-                >
-                    <CloudCog size={14} />
-                    <span>备份</span>
-                </button>
-
-                <button 
-                    onClick={() => setIsSettingsModalOpen(true)}
-                    className="flex flex-col items-center justify-center gap-1 p-2 text-xs text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-600 transition-all"
-                    title="AI 设置"
-                >
-                    <Settings size={14} />
-                    <span>设置</span>
-                </button>
-            </div>
-            
-            <div className="flex items-center justify-between text-xs px-2 mt-2">
-               <div className="flex items-center gap-1 text-slate-400">
-                 {syncStatus === 'saving' && <Loader2 className="animate-spin w-3 h-3 text-blue-500" />}
-                 {syncStatus === 'saved' && <CheckCircle2 className="w-3 h-3 text-green-500" />}
-                 {syncStatus === 'error' && <AlertCircle className="w-3 h-3 text-red-500" />}
-                 {authToken ? <span className="text-green-600">已同步</span> : <span className="text-amber-500">离线</span>}
-               </div>
-
-               <a 
-                 href={GITHUB_REPO_URL} 
-                 target="_blank" 
-                 rel="noopener noreferrer"
-                 className="flex items-center gap-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors"
-                 title="Fork this project on GitHub"
-               >
-                 <GitFork size={14} />
-                 <span>项目仓库 v1.8.2</span>
-               </a>
-            </div>
-        </div>
-      </aside>
-
-      {/* Main Content */}
-      <main className="flex-1 flex flex-col h-full bg-slate-50 dark:bg-slate-900 overflow-hidden relative">
-        
-        {/* Header */}
-        <header className="h-16 px-4 lg:px-8 flex items-center justify-between bg-white/80 dark:bg-slate-800/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-700 sticky top-0 z-10 shrink-0">
-          <div className="flex items-center gap-4 flex-1">
-            <button onClick={() => setSidebarOpen(true)} className="lg:hidden p-2 -ml-2 text-slate-600 dark:text-slate-300">
-              <Menu size={24} />
-            </button>
-
-            {/* 搜索模式切换 + 搜索框 */}
-            <div className="flex items-center gap-3 flex-1 min-w-0">
-              {/* 移动端搜索图标 - 仅在手机端显示，平板端隐藏 */}
-              <button 
-                onClick={() => {
-                  setIsMobileSearchOpen(!isMobileSearchOpen);
-                  // 手机端点击搜索图标时默认使用站外搜索
-                  if (searchMode !== 'external') {
-                    handleSearchModeChange('external');
-                  }
-                }}
-                className="sm:flex md:hidden lg:hidden p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full transition-colors"
-                title="搜索"
-              >
-                <Search size={20} />
-              </button>
-
-              {/* 搜索模式切换 - 平板端和桌面端显示，手机端隐藏 */}
-              <div className="hidden sm:hidden md:flex lg:flex items-center gap-2 flex-shrink-0">
-                <div className="flex items-center bg-slate-100 dark:bg-slate-700 rounded-full p-1">
+        <div className="flex-1 overflow-y-auto px-4 py-5 lg:px-6">
+          {pinnedLinks.length > 0 && !searchQuery && selectedCategory === 'all' && (
+            <section className="mb-4">
+              <div className="mb-2 flex items-center gap-1.5">
+                <Pin size={12} className="fill-blue-500 text-blue-500" />
+                <h2 className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">置顶</h2>
+                <span className="rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 dark:bg-blue-900/30 dark:text-blue-300">{pinnedLinks.length}</span>
+                {pinnedLinks.length > 6 && (
                   <button
-                    onClick={() => handleSearchModeChange('internal')}
-                    className={`px-3 py-1 text-xs font-medium rounded-full transition-all flex items-center justify-center min-h-[24px] min-w-[40px] ${
-                      searchMode === 'internal'
-                        ? 'bg-white dark:bg-slate-600 text-blue-600 dark:text-blue-400 shadow-sm'
-                        : 'text-slate-600 dark:text-slate-300 hover:text-slate-800 dark:hover:text-slate-100'
-                    }`}
-                    title="站内搜索"
+                    type="button"
+                    onClick={() => setSelectedCategory('pinned')}
+                    className="ml-auto text-[11px] text-slate-400 hover:text-blue-600"
                   >
-                    站内
-                  </button>
-                  <button
-                    onClick={() => handleSearchModeChange('external')}
-                    className={`px-3 py-1 text-xs font-medium rounded-full transition-all flex items-center justify-center min-h-[24px] min-w-[40px] ${
-                      searchMode === 'external'
-                        ? 'bg-white dark:bg-slate-600 text-blue-600 dark:text-blue-400 shadow-sm'
-                        : 'text-slate-600 dark:text-slate-300 hover:text-slate-800 dark:hover:text-slate-100'
-                    }`}
-                    title="站外搜索"
-                  >
-                    站外
-                  </button>
-                </div>
-                
-                {/* 搜索配置管理按钮 */}
-                {searchMode === 'external' && (
-                  <button
-                    onClick={() => setIsSearchConfigModalOpen(true)}
-                    className="p-1.5 text-slate-400 hover:text-blue-500 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full transition-colors"
-                    title="管理搜索源"
-                  >
-                    <Settings size={14} />
+                    查看全部 →
                   </button>
                 )}
               </div>
+              {/* 首页只放一条紧凑横条，置顶再多也不挤占主列表 */}
+              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                <SortableContext items={pinnedLinks.map(link => link.id)} strategy={rectSortingStrategy}>
+                  <BookmarkGrid
+                    links={pinnedLinks.slice(0, HOME_PIN_LIMIT)}
+                    cardStyle="simple"
+                    selectable={arrangeMode}
+                    selectedIds={selectedIds}
+                    draggable={canReorder(sortConfig)}
+                    {...cardHandlers}
+                  />
+                </SortableContext>
+              </DndContext>
+            </section>
+          )}
 
-              {/* 搜索框 */}
-              <div className={`relative w-full max-w-lg ${isMobileSearchOpen ? 'block' : 'hidden'} sm:block`}>
-                {/* 搜索源选择弹出窗口 */}
-                {searchMode === 'external' && showSearchSourcePopup && (
-                  <div 
-                    className="absolute left-0 top-full mt-2 w-full bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 p-3 z-50"
-                    onMouseEnter={() => setIsPopupHovered(true)}
-                    onMouseLeave={() => setIsPopupHovered(false)}
-                  >
-                    <div className="grid grid-cols-5 sm:grid-cols-5 gap-2">
-                      {externalSearchSources
-                        .filter(source => source.enabled)
-                        .map((source, index) => (
-                          <button
-                            key={index}
-                            onClick={() => handleSearchSourceSelect(source)}
-                            onMouseEnter={() => setHoveredSearchSource(source)}
-                            onMouseLeave={() => setHoveredSearchSource(null)}
-                            className="px-2 py-2 text-sm rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 flex items-center gap-1 justify-center"
-                          >
-                            <img 
-                              src={getSearchSourceIconUrl(source.url)}
-                              alt={source.name}
-                              className="w-4 h-4"
-                              onError={(e) => {
-                                const target = e.target as HTMLImageElement;
-                                target.src = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9ImN1cnJlbnRDb2xvciIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIGNsYXNzPSJsdWNpZGUgbHVjaWRlLXNlYXJjaCI+PHBhdGggZD0ibTIxIDIxLTQuMzQtNC4zNCI+PC9wYXRoPjxjaXJjbGUgY3g9IjExIiBjeT0iMTEiIHI9IjgiPjwvY2lyY2xlPjwvc3ZnPg==';
-                              }}
-                            />
-                            <span className="truncate hidden sm:inline">{source.name}</span>
-                          </button>
-                        ))}
-                    </div>
-                  </div>
-                )}
-                
-                {/* 搜索图标 */}
-                <div 
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 cursor-pointer"
-                  onMouseEnter={() => searchMode === 'external' && setIsIconHovered(true)}
-                  onMouseLeave={() => setIsIconHovered(false)}
-                  onClick={() => {
-                    // 移动端点击事件：显示搜索源选择窗口
-                    if (searchMode === 'external') {
-                      setShowSearchSourcePopup(!showSearchSourcePopup);
-                    }
-                  }}
-                >
-                  {searchMode === 'internal' ? (
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-search">
-                      <path d="m21 21-4.35-4.35"></path>
-                      <circle cx="11" cy="11" r="8"></circle>
-                    </svg>
-                  ) : (hoveredSearchSource || selectedSearchSource) ? (
-                    <img 
-                      src={getSearchSourceIconUrl((hoveredSearchSource || selectedSearchSource).url)}
-                      alt={(hoveredSearchSource || selectedSearchSource).name}
-                      className="w-4 h-4"
-                      onError={(e) => {
-                        const target = e.target as HTMLImageElement;
-                        target.src = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9ImN1cnJlbnRDb2xvciIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIGNsYXNzPSJsdWNpZGUgbHVjaWRlLXNlYXJjaCI+PHBhdGggZD0ibTIxIDIxLTQuMzQtNC4zNCI+PC9wYXRoPjxjaXJjbGUgY3g9IjExIiBjeT0iMTEiIHI9IjgiPjwvY2lyY2xlPjwvc3ZnPg==';
-                      }}
-                    />
-                  ) : (
-                    <Search size={16} />
-                  )}
-                </div>
-                
-                <input
-                  type="text"
-                  placeholder={
-                    searchMode === 'internal' 
-                      ? "搜索站内内容..." 
-                      : selectedSearchSource 
-                        ? `在${selectedSearchSource.name}搜索内容` 
-                        : "搜索站外内容..."
-                  }
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && searchMode === 'external') {
-                      handleExternalSearch();
-                    }
-                  }}
-                  className="w-full pl-9 pr-20 py-2 rounded-full bg-slate-100 dark:bg-slate-700/50 border-none text-sm focus:ring-2 focus:ring-blue-500 dark:text-white placeholder-slate-400 outline-none transition-all"
-                  // 移动端优化：防止页面缩放
-                  style={{ fontSize: '16px' }}
-                  inputMode="search"
-                  enterKeyHint="search"
-                />
-                
-                {searchMode === 'external' && searchQuery.trim() && (
-                  <button
-                    onClick={handleExternalSearch}
-                    className="absolute right-16 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-blue-500"
-                    title="执行站外搜索"
-                  >
-                    <ExternalLink size={14} />
-                  </button>
-                )}
-                
-                {searchMode === 'internal' && (
-                  <button
-                    onClick={() => setIsAdvancedFilterOpen(open => !open)}
-                    className={`absolute right-9 top-1/2 -translate-y-1/2 p-1 rounded-full transition-all ${advancedFilterActive ? 'text-blue-600 bg-blue-100 dark:bg-blue-900/40 dark:text-blue-300' : 'text-slate-400 hover:text-blue-500 hover:bg-slate-200 dark:hover:bg-slate-600'}`}
-                    title="高级筛选"
-                  >
-                    <Filter size={14} />
-                  </button>
-                )}
-
-                <AdvancedSearchBar
-                  isOpen={isAdvancedFilterOpen && searchMode === 'internal'}
-                  onClose={() => setIsAdvancedFilterOpen(false)}
-                  tags={allTags}
-                  workspaces={[]}
-                  filters={advancedFilters}
-                  onFilterChange={(next) => setAdvancedFilters(current => ({ ...current, ...next }))}
-                />
-
-                {searchQuery.trim() && (
-                  <button
-                    onClick={() => setSearchQuery('')}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center rounded-full bg-slate-200 dark:bg-slate-600 text-slate-500 dark:text-slate-300 hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-500 dark:hover:text-red-400 transition-all"
-                    title="清空搜索"
-                  >
-                    <X size={12} strokeWidth={2.5} />
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {/* 视图切换控制器 - 移动端：搜索框展开时隐藏，桌面端始终显示 */}
-            <div className={`${isMobileSearchOpen ? 'hidden' : 'flex'} lg:flex items-center bg-slate-100 dark:bg-slate-700 rounded-full p-1`}>
-              <button
-                onClick={() => handleViewModeChange('simple')}
-                className={`px-3 py-1 text-xs font-medium rounded-full transition-all ${
-                  siteSettings.cardStyle === 'simple'
-                    ? 'bg-white dark:bg-slate-600 text-blue-600 dark:text-blue-400 shadow-sm'
-                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-800 dark:hover:text-slate-100'
-                }`}
-                title="简约版视图"
-              >
-                简约
-              </button>
-              <button
-                onClick={() => handleViewModeChange('detailed')}
-                className={`px-3 py-1 text-xs font-medium rounded-full transition-all ${
-                  siteSettings.cardStyle === 'detailed'
-                    ? 'bg-white dark:bg-slate-600 text-blue-600 dark:text-blue-400 shadow-sm'
-                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-800 dark:hover:text-slate-100'
-                }`}
-                title="详情版视图"
-              >
-                详情
-              </button>
-            </div>
-
-            {authToken && !isOrganizeMode && inboxLinks.length > 0 && (
-              <button onClick={() => { setSelectedCategory(INBOX_ID); setOrganizeIndex(0); setIsOrganizeMode(true); }}
-                className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-300 rounded-full hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors"
-              >
-                整理 {inboxLinks.length}
-              </button>
-            )}
-
-            {/* 主题切换按钮 - 移动端：搜索框展开时隐藏，桌面端始终显示 */}
-            <button onClick={toggleTheme} className={`${isMobileSearchOpen ? 'hidden' : 'flex'} lg:flex p-2 rounded-full text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700`}>
-              {darkMode ? <Sun size={18} /> : <Moon size={18} />}
-            </button>
-
-            {/* 登录/退出按钮 - 移动端：搜索框展开时隐藏，桌面端始终显示 */}
-            <div className={`${isMobileSearchOpen ? 'hidden' : 'flex'}`}>
-              {!authToken ? (
-                  <button onClick={() => setIsAuthOpen(true)} className="flex items-center gap-2 bg-slate-200 dark:bg-slate-700 px-3 py-1.5 rounded-full text-xs font-medium">
-                      <Cloud size={14} /> <span className="hidden sm:inline">登录</span>
-                  </button>
-              ) : (
-                  <button onClick={handleLogout} className="flex items-center gap-2 bg-slate-200 dark:bg-slate-700 px-3 py-1.5 rounded-full text-xs font-medium">
-                      <LogOut size={14} /> <span className="hidden sm:inline">退出</span>
-                  </button>
-              )}
-            </div>
-
-            {/* 添加按钮 - 移动端：搜索框展开时隐藏，桌面端始终显示 */}
-            <div className={`${isMobileSearchOpen ? 'hidden' : 'flex'}`}>
-              <button
-                onClick={() => { if(!authToken) setIsAuthOpen(true); else { setEditingLink(undefined); setIsModalOpen(true); }}}
-                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-full text-sm font-medium shadow-lg shadow-blue-500/30"
-              >
-                <Plus size={16} /> <span className="hidden sm:inline">添加</span>
-              </button>
-            </div>
-          </div>
-        </header>
-
-        {/* Content Scroll Area */}
-        <div className="flex-1 overflow-y-auto p-4 lg:p-8 space-y-8">
-
-            <OrganizeModeBar
-              isActive={isOrganizeMode}
-              totalCount={inboxLinks.length}
-              currentIndex={Math.min(organizeIndex, Math.max(inboxLinks.length - 1, 0))}
-              onAccept={() => {
-                const current = inboxLinks[organizeIndex];
-                if (!current) { setIsOrganizeMode(false); setOrganizeIndex(0); return; }
-                const nextLinks = links.map(l => l.id === current.id ? { ...l, categoryId: 'common', status: 'read' as const, updatedAt: Date.now() } : l);
-                updateData(nextLinks, categories);
-                if (organizeIndex < inboxLinks.length - 1) setOrganizeIndex(i => i + 1);
-                else { setIsOrganizeMode(false); setOrganizeIndex(0); }
-              }}
-              onDelete={() => {
-                const current = inboxLinks[organizeIndex];
-                if (!current) { setIsOrganizeMode(false); setOrganizeIndex(0); return; }
-                updateData(links.filter(l => l.id !== current.id), categories);
-                if (organizeIndex < inboxLinks.length - 1) setOrganizeIndex(i => i + 1);
-                else { setIsOrganizeMode(false); setOrganizeIndex(0); }
-              }}
-              onSkip={() => {
-                if (organizeIndex < inboxLinks.length - 1) setOrganizeIndex(i => i + 1);
-                else { setIsOrganizeMode(false); setOrganizeIndex(0); }
-              }}
-              onAiOrganize={handleAiOrganizeCurrent}
-              isAiOrganizing={isAiOrganizing}
-              onExit={() => { setIsOrganizeMode(false); setOrganizeIndex(0); }}
+          <section>
+            <BookmarkToolbar
+              title={viewTitle}
+              count={displayedLinks.length}
+              total={displayedLinks.length}
+              cardStyle={siteSettings.cardStyle}
+              sort={sortConfig}
+              arrangeMode={arrangeMode}
+              selectedCount={selectedIds.size}
+              onCardStyleChange={changeCardStyle}
+              onSortChange={changeSort}
+              onToggleArrange={toggleArrange}
+              onSelectAll={selectAll}
+              syncStatus={syncStatus}
+              onClearSelection={clearSelection}
             />
 
-            {!searchQuery && selectedCategory === 'all' && (
-              <HomeDashboard
-                links={links}
-                categories={categories}
-                onOpenInbox={() => { setSelectedCategory(INBOX_ID); setOrganizeIndex(0); setIsOrganizeMode(true); }}
-                onClickLink={(link) => { recordVisit(link.id); window.open(link.url, '_blank'); }}
-                onSelectCategory={(categoryId) => {
-                  const category = categories.find(c => c.id === categoryId);
-                  if (category) handleCategoryClick(category);
-                }}
-                onOpenHealthCheck={() => {
-                  if (!authToken) setIsAuthOpen(true);
-                  else { setSettingsInitialTab('health'); setIsSettingsModalOpen(true); }
-                }}
-              />
-            )}
-
-            {/* 1. Pinned Area (Custom Top Area) */}
-            {pinnedLinks.length > 0 && !searchQuery && (selectedCategory === 'all') && (
-                <section>
-                    <div className="flex items-center justify-between mb-4">
-                        <div className="flex items-center gap-2">
-                            <Pin size={16} className="text-blue-500 fill-blue-500" />
-                            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                                置顶 / 常用
-                            </h2>
-                            <span className="ml-2 px-2 py-0.5 text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300 rounded-full">
-                                {pinnedLinks.length}
-                            </span>
-                        </div>
-                        {isSortingPinned ? (
-                            <div className="flex gap-2">
-                                <button 
-                                    onClick={savePinnedSorting}
-                                    className="flex items-center gap-1 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-medium rounded-full transition-colors"
-                                    title="保存顺序"
-                                >
-                                    <Save size={14} />
-                                    <span>保存顺序</span>
-                                </button>
-                                <button 
-                                    onClick={cancelPinnedSorting}
-                                    className="px-3 py-1.5 bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs font-medium rounded-full hover:bg-slate-300 dark:hover:bg-slate-600 transition-all"
-                                    title="取消排序"
-                                >
-                                    取消
-                                </button>
-                            </div>
-                        ) : (
-                            <button 
-                                onClick={() => setIsSortingPinned(true)}
-                                className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-full transition-colors"
-                                title="排序"
-                            >
-                                <GripVertical size={14} />
-                                <span>排序</span>
-                            </button>
-                        )}
-                    </div>
-                    {isSortingPinned ? (
-                        <DndContext
-                            sensors={sensors}
-                            collisionDetection={closestCorners}
-                            onDragEnd={handlePinnedDragEnd}
-                        >
-                            <SortableContext
-                                items={pinnedLinks.map(link => link.id)}
-                                strategy={rectSortingStrategy}
-                            >
-                                <div className={`grid gap-3 ${
-                                  siteSettings.cardStyle === 'detailed' 
-                                    ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6' 
-                                    : 'grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8'
-                                }`}>
-                                    {pinnedLinks.map(link => (
-                                        <SortableLinkCard key={link.id} link={link} />
-                                    ))}
-                                </div>
-                            </SortableContext>
-                        </DndContext>
-                    ) : (
-                        <div className={`grid gap-3 ${
-                          siteSettings.cardStyle === 'detailed' 
-                            ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6' 
-                            : 'grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8'
-                        }`}>
-                            {pinnedLinks.map(link => renderLinkCard(link))}
-                        </div>
-                    )}
-                </section>
-            )}
-
-            {/* 2. Main Grid */}
-            <section>
-
-                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-                     <div className="flex items-center flex-wrap gap-y-2">
-                         <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2 mr-4">
-                             {selectedCategory === 'all' 
-                                ? (searchQuery ? '搜索结果' : '所有链接') 
-                                : (() => {
-                                    const currentCat = categories.find(c => c.id === selectedCategory);
-                                    const primaryCat = currentCat?.parentId 
-                                      ? categories.find(c => c.id === currentCat.parentId) 
-                                      : currentCat;
-                                    
-                                    if (!primaryCat) return '未知分类';
-
-                                    const subCats = categories.filter(c => c.parentId === primaryCat.id);
-                                    
-                                    return (
-                                      <div className="flex items-center gap-3">
-                                        <div className="flex items-center gap-2">
-                                          <Icon name={primaryCat.icon} size={20} className="text-blue-500" />
-                                          <button 
-                                            onClick={() => handleCategoryClick(primaryCat)}
-                                            className={`hover:text-blue-600 transition-colors ${selectedCategory === primaryCat.id ? 'text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400 font-medium'}`}
-                                          >
-                                            {primaryCat.name}
-                                          </button>
-                                          {isCategoryLocked(primaryCat.id) && <Lock size={14} className="text-amber-500" />}
-                                        </div>
-
-                                        {subCats.length > 0 && (
-                                          <>
-                                            <div className="h-4 w-[1px] bg-slate-300 dark:bg-slate-600 mx-1" />
-                                            <div className="flex items-center gap-4 overflow-x-auto no-scrollbar py-1">
-                                              {subCats.map(sub => (
-                                                <button
-                                                  key={sub.id}
-                                                  onClick={() => handleCategoryClick(sub)}
-                                                  className={`text-sm whitespace-nowrap transition-all relative py-1 ${
-                                                    selectedCategory === sub.id 
-                                                      ? 'text-blue-600 dark:text-blue-400 font-bold' 
-                                                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 font-medium'
-                                                  }`}
-                                                >
-                                                  <div className="flex items-center gap-1">
-                                                    {sub.name}
-                                                    {isCategoryLocked(sub.id) && <Lock size={12} className="text-amber-500" />}
-                                                  </div>
-                                                  {selectedCategory === sub.id && (
-                                                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-500 rounded-full animate-in fade-in zoom-in duration-300" />
-                                                  )}
-                                                </button>
-                                              ))}
-                                            </div>
-                                          </>
-                                        )}
-                                      </div>
-                                    );
-                                  })()
-                             }
-                         </h2>
-                         {selectedCategory !== 'all' && (
-                           <span className="px-2 py-0.5 text-xs font-semibold bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300 rounded-full">
-                             {displayedLinks.length}
-                           </span>
-                         )}
-                     </div>
-                     {selectedCategory !== 'all' && !isCategoryLocked(selectedCategory) && (
-                         isSortingMode === selectedCategory ? (
-                             <div className="flex gap-2">
-                                 <button 
-                                     onClick={saveSorting}
-                                     className="flex items-center gap-1 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-medium rounded-full transition-colors"
-                                     title="保存顺序"
-                                 >
-                                     <Save size={14} />
-                                     <span>保存顺序</span>
-                                 </button>
-                                 <button 
-                                     onClick={cancelSorting}
-                                     className="px-3 py-1.5 bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs font-medium rounded-full hover:bg-slate-300 dark:hover:bg-slate-600 transition-all"
-                                     title="取消排序"
-                                 >
-                                     取消
-                                 </button>
-                             </div>
-                         ) : (
-                             <div className="flex gap-2">
-                                 <button 
-                                     onClick={toggleBatchEditMode}
-                                     className={`flex items-center gap-1 px-3 py-1.5 text-white text-xs font-medium rounded-full transition-colors ${
-                                         isBatchEditMode 
-                                             ? 'bg-red-600 hover:bg-red-700' 
-                                             : 'bg-blue-600 hover:bg-blue-700'
-                                     }`}
-                                     title={isBatchEditMode ? "退出批量编辑" : "批量编辑"}
-                                 >
-                                     {isBatchEditMode ? '取消' : '批量编辑'}
-                                 </button>
-                                 {isBatchEditMode ? (
-                                     <>
-                                         <button 
-                                             onClick={handleBatchDelete}
-                                             className="flex items-center gap-1 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-medium rounded-full transition-colors"
-                                             title="批量删除"
-                                         >
-                                             <Trash2 size={14} />
-                                             <span>批量删除</span>
-                                         </button>
-                                         <button 
-                                             onClick={handleSelectAll}
-                                             className="flex items-center gap-1 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-medium rounded-full transition-colors"
-                                             title="全选/取消全选"
-                                         >
-                                             <CheckSquare size={14} />
-                                             <span>{selectedLinks.size === displayedLinks.length ? '取消全选' : '全选'}</span>
-                                         </button>
-                                         <div className="relative group">
-                                              <button 
-                                                  className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-full transition-colors"
-                                                  title="批量移动"
-                                              >
-                                                  <Upload size={14} />
-                                                  <span>批量移动</span>
-                                              </button>
-                                              <div className="absolute top-full right-0 mt-1 w-56 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 z-20 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 overflow-hidden max-h-[500px] overflow-y-auto no-scrollbar">
-                                                  {(() => {
-                                                    const flattened = [];
-                                                    const parents = categories.filter(c => !c.parentId);
-                                                    
-                                                    for (const parent of parents) {
-                                                      if (parent.id !== selectedCategory) {
-                                                        flattened.push({
-                                                          id: parent.id,
-                                                          displayName: parent.name
-                                                        });
-                                                      }
-                                                      
-                                                      const children = categories.filter(c => c.parentId === parent.id);
-                                                      for (const child of children) {
-                                                        if (child.id !== selectedCategory) {
-                                                          flattened.push({
-                                                            id: child.id,
-                                                            displayName: `${parent.name} / ${child.name}`
-                                                          });
-                                                        }
-                                                      }
-                                                    }
-                                                    
-                                                    return flattened.map(cat => (
-                                                      <button
-                                                          key={cat.id}
-                                                          onClick={() => handleBatchMove(cat.id)}
-                                                          className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-slate-300 hover:bg-blue-50 dark:hover:bg-blue-900/30 border-b border-slate-100 dark:border-slate-700 last:border-0 transition-colors"
-                                                      >
-                                                          {cat.displayName}
-                                                      </button>
-                                                    ));
-                                                  })()}
-                                              </div>
-                                          </div>
-                                     </>
-                                 ) : (
-                                     <button 
-                                         onClick={() => startSorting(selectedCategory)}
-                                         className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-full transition-colors"
-                                         title="排序"
-                                     >
-                                         <GripVertical size={14} />
-                                         <span>排序</span>
-                                     </button>
-                                 )}
-                             </div>
-                         )
-                     )}
-                 </div>
-
-                 {displayedLinks.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-20 text-slate-400 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl">
-                        {isCategoryLocked(selectedCategory) ? (
-                            <>
-                                <Lock size={40} className="text-amber-400 mb-4" />
-                                <p>该目录已锁定</p>
-                                <button onClick={() => setCatAuthModalData(categories.find(c => c.id === selectedCategory) || null)} className="mt-4 px-4 py-2 bg-amber-500 text-white rounded-lg">输入密码解锁</button>
-                            </>
-                        ) : (
-                            <>
-                                <Search size={40} className="opacity-30 mb-4" />
-                                <p>没有找到相关内容</p>
-                                {selectedCategory !== 'all' && (
-                                    <button onClick={() => setIsModalOpen(true)} className="mt-4 text-blue-500 hover:underline">添加一个?</button>
-                                )}
-                            </>
-                        )}
-                    </div>
-                 ) : (
-                    isSortingMode === selectedCategory ? (
-                        <DndContext
-                            sensors={sensors}
-                            collisionDetection={closestCorners}
-                            onDragEnd={handleDragEnd}
-                        >
-                            <SortableContext
-                                items={displayedLinks.map(link => link.id)}
-                                strategy={rectSortingStrategy}
-                            >
-                                <div className={`grid gap-3 ${
-                                  siteSettings.cardStyle === 'detailed' 
-                                    ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6' 
-                                    : 'grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8'
-                                }`}>
-                                    {displayedLinks.map(link => (
-                                        <SortableLinkCard key={link.id} link={link} />
-                                    ))}
-                                </div>
-                            </SortableContext>
-                        </DndContext>
-                    ) : (
-                        <div className={`grid gap-3 ${
-                          siteSettings.cardStyle === 'detailed' 
-                            ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6' 
-                            : 'grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8'
-                        }`}>
-                            {displayedLinks.map(link => renderLinkCard(link))}
-                        </div>
-                    )
-                 )}
-            </section>
-
-            {/* 其他目录搜索结果区域 */}
-            {searchQuery.trim() && selectedCategory !== 'all' && (
-              <section className="mt-8 pt-8 border-t-2 border-slate-200 dark:border-slate-700">
-                <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-2 mb-4">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-folder-search">
-                    <circle cx="11" cy="11" r="8"></circle>
-                    <path d="m21 21-4.35-4.35"></path>
-                    <path d="M11 11h.01"></path>
-                  </svg>
-                  其他目录搜索结果
-                  <span className="ml-2 px-2 py-0.5 text-xs font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-300 rounded-full">
-                    {Object.values(otherCategoryResults).flat().length}
-                  </span>
-                </h2>
-
-                {Object.keys(otherCategoryResults).length > 0 ? (
-                  Object.entries(otherCategoryResults).map(([categoryId, links]) => {
-                    const category = categories.find(c => c.id === categoryId);
-                    if (!category) return null;
-
-                    return (
-                      <div key={categoryId} className="mb-6 last:mb-0">
-                        <div className="flex items-center gap-2 mb-3">
-                          <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                            {category.name}
-                          </h3>
-                          <span className="px-2 py-0.5 text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 rounded-full">
-                            {links.length}
-                          </span>
-                        </div>
-
-                        <div className={`grid gap-3 ${
-                          siteSettings.cardStyle === 'detailed' 
-                            ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6' 
-                            : 'grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8'
-                        }`}>
-                          {links.map(link => renderLinkCard(link))}
-                        </div>
-                      </div>
-                    );
-                  })
+            {displayedLinks.length ? (
+              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                <SortableContext items={displayedLinks.map(link => link.id)} strategy={rectSortingStrategy}>
+                  <BookmarkGrid
+                    links={displayedLinks}
+                    cardStyle={siteSettings.cardStyle}
+                    selectable={arrangeMode}
+                    selectedIds={selectedIds}
+                    draggable={canReorder(sortConfig) && !arrangeMode}
+                    {...cardHandlers}
+                  />
+                </SortableContext>
+              </DndContext>
+            ) : (
+              <div className="rounded-xl border border-dashed border-slate-200 py-16 text-center dark:border-slate-700">
+                {searchQuery ? (
+                  <p className="text-[13px] text-slate-400">没有匹配的书签</p>
+                ) : selectedCategory === 'pinned' ? (
+                  <>
+                    <p className="text-[13px] text-slate-400">还没有置顶书签</p>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedCategory('all')}
+                      className="mt-2 text-[12px] text-blue-600 hover:underline dark:text-blue-400"
+                    >
+                      去全部链接挑选 →
+                    </button>
+                  </>
                 ) : (
-                  <div className="flex flex-col items-center justify-center py-12 text-slate-400 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="opacity-30 mb-4">
-                      <circle cx="11" cy="11" r="8"></circle>
-                      <path d="m21 21-4.35-4.35"></path>
-                    </svg>
-                    <p className="text-sm">其他目录中没有找到相关内容</p>
-                  </div>
+                  <>
+                    <p className="text-[13px] text-slate-400">这个分类还没有书签</p>
+                    <button
+                      type="button"
+                      onClick={() => { setEditingLink(undefined); setIsLinkModalOpen(true); }}
+                      className="mt-2 text-[12px] text-blue-600 hover:underline dark:text-blue-400"
+                    >
+                      添加第一个 →
+                    </button>
+                  </>
                 )}
-              </section>
+              </div>
             )}
+          </section>
         </div>
       </main>
 
-          <LinkModal
-            isOpen={isModalOpen}
-            onClose={() => { setIsModalOpen(false); setEditingLink(undefined); setPrefillLink(undefined); }}
-            onSave={editingLink ? handleEditLink : handleAddLink}
-            onDelete={editingLink ? handleDeleteLink : undefined}
-            categories={categories}
-            links={links}
-            initialData={editingLink || (prefillLink as LinkItem)}
-            aiConfig={aiConfig}
-            defaultCategoryId={selectedCategory !== 'all' ? selectedCategory : undefined}
-          />
-
-          {/* 右键菜单 */}
-          <ContextMenu
-            isOpen={contextMenu.isOpen}
-            position={contextMenu.position}
-            targetType={contextMenu.type}
-            isCategoryEditable={contextMenu.category?.id !== 'common'}
-            onClose={closeContextMenu}
-            onCopyLink={copyLinkToClipboard}
-            onShowQRCode={showQRCode}
-            onEditLink={editLinkFromContextMenu}
-            onDeleteLink={deleteLinkFromContextMenu}
-            onTogglePin={togglePinFromContextMenu}
-            onOpenCategory={openCategoryFromContextMenu}
-            onEditCategory={editCategoryFromContextMenu}
-            onOrganizeCategory={organizeCategoryFromContextMenu}
-            onRenameCategory={renameCategoryFromContextMenu}
-            onStructureCategory={structureCategoryFromContextMenu}
-            onDeleteCategory={deleteCategoryFromContextMenu}
-          />
-
-          <CategoryActionAuthModal
-            isOpen={categoryActionAuth.isOpen}
-            onClose={closeCategoryActionAuth}
-            onVerify={handleCategoryActionAuth}
-            onVerified={handleCategoryActionVerified}
-            actionType={categoryActionAuth.action}
-            categoryName={categoryActionAuth.categoryName}
-          />
-
-          {/* 二维码模态框 */}
-          <LinkDetailsDrawer
-            link={links.find(l => l.id === selectedLinkId) || null}
-            isOpen={!!selectedLinkId}
-            onClose={() => setSelectedLinkId(null)}
-            categories={categories}
-            onUpdate={(linkId, updates) => {
-              const nextLinks = links.map(l => l.id === linkId ? { ...l, ...updates, updatedAt: Date.now() } : l);
-              updateData(nextLinks, categories);
-            }}
-          />
-
-          <SyncConflictModal
-            isOpen={isSyncConflict}
-            onClose={() => { setIsSyncConflict(false); setSyncConflictResolve(null); }}
-            onUseLocal={() => { syncConflictResolve?.useLocal(); setIsSyncConflict(false); setSyncConflictResolve(null); }}
-            onUseCloud={() => { syncConflictResolve?.useCloud(); setIsSyncConflict(false); setSyncConflictResolve(null); }}
-            onMerge={() => { syncConflictResolve?.merge(); setIsSyncConflict(false); setSyncConflictResolve(null); }}
-          />
-
-          <QRCodeModal
-            isOpen={qrCodeModal.isOpen}
-            url={qrCodeModal.url || ''}
-            title={qrCodeModal.title || ''}
-            onClose={() => setQrCodeModal({ isOpen: false, url: '', title: '' })}
-          />
-        </>
-      )}
-    </div>
-  );
-}
+      <ArrangeActionBar
+        selectedCount={selectedIds.size}
+        categories={categories}
+        onMove={batchMove}
+        onTogglePin={batchPin}
+        onAddTag={batchAddTag}
+        onDelete={batchDelete}
+        onClear={clearSelection}
+      />
+      <LinkModal isOpen={isLinkModalOpen} onClose={() => { setIsLinkModalOpen(false); setEditingLink(undefined); setPrefillLink(undefined); }} onSave={editingLink ? handleEditLink : handleAddLink} onDelete={editingLink ? handleDeleteLink : undefined} categories={categories} links={links} initialData={editingLink || (prefillLink as LinkItem)} aiConfig={aiConfig} defaultCategoryId={selectedCategory !== 'all' ? selectedCategory : undefined} />
+      <ContextMenu isOpen={contextMenu.isOpen} position={contextMenu.position} targetType={contextMenu.type} isCategoryEditable={contextMenu.category?.id !== 'common'} onClose={closeContextMenu} onCopyLink={copyLinkToClipboard} onShowQRCode={showQRCode} onEditLink={editLinkFromContextMenu} onDeleteLink={deleteLinkFromContextMenu} onTogglePin={togglePinFromContextMenu} onOpenCategory={openCategoryFromContextMenu} onEditCategory={editCategoryFromContextMenu} onRenameCategory={renameCategoryFromContextMenu} onStructureCategory={structureCategoryFromContextMenu} onDeleteCategory={deleteCategoryFromContextMenu} />
+      <QRCodeModal isOpen={qrCode.isOpen} url={qrCode.url} title={qrCode.title} onClose={() => setQrCode({ isOpen: false, url: '', title: '' })} />
+      </Suspense>}
+  </div>
+};
 
 export default App;
-

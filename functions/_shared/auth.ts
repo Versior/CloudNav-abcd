@@ -12,11 +12,28 @@ const COOKIE_NAME = 'cloudnav_session';
 const SESSION_TTL_SECONDS = 7 * 24 * 60 * 60;
 const EXTENSION_TTL_SECONDS = 30 * 24 * 60 * 60;
 
+/**
+ * 同源优先：只有同源请求才回显 Origin。
+ * 扩展通过 Authorization 头访问，不依赖 Access-Control-Allow-Origin 通配。
+ */
 export const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
   'Access-Control-Max-Age': '86400',
+};
+
+export const buildCorsHeaders = (request?: Request) => {
+  const origin = request?.headers.get('Origin') || '';
+  if (!origin) return { ...corsHeaders };
+  try {
+    const requestUrl = new URL(request!.url);
+    if (new URL(origin).host === requestUrl.host) {
+      return { ...corsHeaders, 'Access-Control-Allow-Origin': origin, Vary: 'Origin' };
+    }
+  } catch {
+    // 非法 Origin 直接不回显
+  }
+  return { ...corsHeaders };
 };
 
 const encoder = new TextEncoder();
@@ -88,18 +105,18 @@ const verifyToken = async (token: string, env: AuthEnv, scope?: SessionPayload['
   }
 };
 
-export const jsonResponse = (body: unknown, init: ResponseInit = {}) => new Response(JSON.stringify(body), {
+export const jsonResponse = (body: unknown, init: ResponseInit = {}, request?: Request) => new Response(JSON.stringify(body), {
   ...init,
   headers: {
     'Content-Type': 'application/json',
-    ...corsHeaders,
+    ...buildCorsHeaders(request),
     ...(init.headers || {}),
   },
 });
 
-export const optionsResponse = () => new Response(null, {
+export const optionsResponse = (request?: Request) => new Response(null, {
   status: 204,
-  headers: corsHeaders,
+  headers: buildCorsHeaders(request),
 });
 
 export const createSessionCookie = async (env: AuthEnv) => {

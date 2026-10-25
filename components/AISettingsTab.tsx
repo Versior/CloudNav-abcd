@@ -1,13 +1,7 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { Key, Sparkles, PauseCircle, FolderTree, Check, X, Type, FolderPlus } from 'lucide-react';
-import { AIConfig, LinkItem, Category, INBOX_ID } from '../types';
-import {
-  generateLinkDescription,
-  suggestCategory,
-  testAIConnection,
-  suggestFolderRename,
-  suggestFolderStructure,
-} from '../services/geminiService';
+import React, { useEffect, useRef, useState } from 'react';
+import { Check, FolderPlus, FolderTree, PauseCircle, Sparkles, Type, X } from 'lucide-react';
+import { AIConfig, Category, LinkItem } from '../types';
+import { generateLinkDescription, suggestCategory, suggestFolderRename, suggestFolderStructure, testAIConnection } from '../services/geminiService';
 import { normalizeOpenAIEndpoint } from '../services/openaiEndpoint';
 
 interface AISettingsTabProps {
@@ -19,1025 +13,461 @@ interface AISettingsTabProps {
   onUpdateCategories?: (categories: Category[]) => void;
   onUpdateData?: (links: LinkItem[], categories: Category[]) => void;
   initialCategoryId?: string;
-  initialAIAction?: 'organize' | 'rename' | 'structure';
+  initialAIAction?: 'rename' | 'structure';
 }
 
-type CategorizeScope = 'all' | 'inbox' | 'uncategorized' | 'category';
-type RenameScope = 'all' | 'top' | 'category';
+type Scope = 'all' | 'category';
 
-type AIPreset = {
-  id: string;
-  label: string;
-  provider: AIConfig['provider'];
-  baseUrl: string;
-  model: string;
-  hint: string;
-};
-
-const AI_PRESETS: AIPreset[] = [
-  { id: 'gemini', label: 'Gemini', provider: 'gemini', baseUrl: '', model: 'gemini-2.5-flash', hint: 'Google Gemini 官方接口' },
-  { id: 'deepseek', label: 'DeepSeek', provider: 'openai', baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat', hint: '国内常用，分类速度快' },
-  { id: 'openrouter', label: 'OpenRouter', provider: 'openai', baseUrl: 'https://openrouter.ai', model: 'openai/gpt-4o-mini', hint: '多模型聚合接口' },
-  { id: 'openai', label: 'OpenAI', provider: 'openai', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini', hint: 'OpenAI 官方接口' },
-  { id: 'siliconflow', label: '硅基流动', provider: 'openai', baseUrl: 'https://api.siliconflow.cn/v1', model: 'Qwen/Qwen2.5-7B-Instruct', hint: 'OpenAI 兼容接口' },
-  { id: 'moonshot', label: 'Moonshot', provider: 'openai', baseUrl: 'https://api.moonshot.cn/v1', model: 'moonshot-v1-8k', hint: 'Kimi 开放平台' },
+const AI_PRESETS = [
+  { id: 'gemini', label: 'Gemini', provider: 'gemini' as const, baseUrl: '', model: 'gemini-2.5-flash', hint: 'GEMINI_API_KEY' },
+  { id: 'deepseek', label: 'DeepSeek', provider: 'openai' as const, baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat', hint: 'OPENAI_API_KEY' },
+  { id: 'openai', label: 'OpenAI', provider: 'openai' as const, baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini', hint: 'OPENAI_API_KEY' },
+  { id: 'openrouter', label: 'OpenRouter', provider: 'openai' as const, baseUrl: 'https://openrouter.ai', model: 'openai/gpt-4o-mini', hint: 'OPENAI_API_KEY' },
 ];
+const makeId = (prefix: string) => `${prefix}-${crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`}`;
 
-interface CategoryPreviewItem {
-  linkId: string;
-  title: string;
-  url: string;
-  fromCategoryId: string;
-  toCategoryId?: string;
-  error?: string;
-}
+/** 分区外壳，统一标题与说明的视觉层级。 */
+const Section: React.FC<{ title: string; desc?: string; children: React.ReactNode; action?: React.ReactNode }> = ({ title, desc, children, action }) => (
+  <section className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/40 p-4 space-y-3">
+    <div className="flex items-start justify-between gap-3">
+      <div>
+        <h4 className="text-sm font-semibold text-slate-800 dark:text-white">{title}</h4>
+        {desc && <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{desc}</p>}
+      </div>
+      {action}
+    </div>
+    {children}
+  </section>
+);
 
-interface FolderRenamePreviewItem {
-  categoryId: string;
-  fromName: string;
-  toName?: string;
-  sampleCount: number;
-  error?: string;
-}
-
-interface StructureFolderDraft {
-  tempId: string;
-  name: string;
-  linkIds: string[];
-  reason?: string;
-  selected: boolean;
-}
-
-interface StructurePreview {
-  parentId: string;
-  parentName: string;
-  renameParent?: string;
-  renameParentSelected: boolean;
-  reason?: string;
-  folders: StructureFolderDraft[];
-  keepInParent: string[];
-}
-
-const makeId = (prefix: string) => {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return `${prefix}-${crypto.randomUUID()}`;
-  }
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-};
-
-const AISettingsTab: React.FC<AISettingsTabProps> = ({
-  config,
-  onChange,
-  links,
-  categories,
-  onUpdateLinks,
-  onUpdateCategories,
-  onUpdateData,
-  initialCategoryId,
-  initialAIAction,
-}) => {
+const AISettingsTab: React.FC<AISettingsTabProps> = ({ config, onChange, links, categories, onUpdateLinks, onUpdateCategories, onUpdateData, initialCategoryId, initialAIAction }) => {
   const [isProcessing, setIsProcessing] = useState(false);
-  const [processingLabel, setProcessingLabel] = useState('');
+  const [label, setLabel] = useState('');
   const [progress, setProgress] = useState({ current: 0, total: 0 });
-  const [categorizeScope, setCategorizeScope] = useState<CategorizeScope>('all');
-  const [categorizeCategoryId, setCategorizeCategoryId] = useState('');
-  const [includeSubCategories, setIncludeSubCategories] = useState(true);
-  const [categoryPreview, setCategoryPreview] = useState<CategoryPreviewItem[]>([]);
-  const [selectedPreviewIds, setSelectedPreviewIds] = useState<Set<string>>(new Set());
-  const [renameScope, setRenameScope] = useState<RenameScope>('all');
-  const [renameCategoryId, setRenameCategoryId] = useState('');
-  const [renamePreview, setRenamePreview] = useState<FolderRenamePreviewItem[]>([]);
+  const [scope, setScope] = useState<Scope>('all');
+  const [categoryId, setCategoryId] = useState(initialCategoryId || '');
+  const [categoryPreview, setCategoryPreview] = useState<Array<{ id: string; title: string; from: string; to?: string; error?: string }>>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [renamePreview, setRenamePreview] = useState<Array<{ id: string; from: string; to?: string; error?: string }>>([]);
   const [selectedRenameIds, setSelectedRenameIds] = useState<Set<string>>(new Set());
-  const [structureCategoryId, setStructureCategoryId] = useState('');
-  const [structurePreview, setStructurePreview] = useState<StructurePreview | null>(null);
-  const [testMessage, setTestMessage] = useState('');
-  const shouldStopRef = useRef(false);
-
-  const getCategoryName = (id?: string) => categories.find(c => c.id === id)?.name || '未分类';
-
-  const applyPreset = (preset: AIPreset) => {
-    onChange('provider', preset.provider);
-    onChange('baseUrl', preset.baseUrl);
-    onChange('model', preset.model);
-    setTestMessage(`已套用 ${preset.label} 预设，请确认 API Key 后保存`);
-  };
+  const [renameScope, setRenameScope] = useState<Scope>('all');
+  const [structureId, setStructureId] = useState(initialCategoryId || '');
+  const [structurePreview, setStructurePreview] = useState<{ parentId: string; parentName: string; rename?: string; folders: Array<{ id: string; name: string; linkIds: string[]; selected: boolean }>; keep: string[] } | null>(null);
+  const [message, setMessage] = useState('');
+  const [messageTone, setMessageTone] = useState<'info' | 'error'>('info');
+  const [stop, setStop] = useState(false);
+  const stopRef = useRef(false);
+  useEffect(() => { stopRef.current = stop; }, [stop]);
 
   useEffect(() => {
     if (!initialCategoryId) return;
-    setCategorizeScope('category');
-    setCategorizeCategoryId(initialCategoryId);
-    setIncludeSubCategories(true);
-    setRenameScope('category');
-    setRenameCategoryId(initialCategoryId);
-    setStructureCategoryId(initialCategoryId);
-  }, [initialCategoryId]);
+    setCategoryId(initialCategoryId);
+    setStructureId(initialCategoryId);
+    if (initialAIAction === 'rename') setRenameScope('category');
+  }, [initialCategoryId, initialAIAction]);
 
-  useEffect(() => {
-    if (!initialAIAction || !initialCategoryId) return;
-    // keep scopes aligned when opened from context menu action
-    if (initialAIAction === 'rename') {
-      setRenameScope('category');
-      setRenameCategoryId(initialCategoryId);
-    }
-    if (initialAIAction === 'structure') {
-      setStructureCategoryId(initialCategoryId);
-    }
-  }, [initialAIAction, initialCategoryId]);
+  const notify = (text: string, tone: 'info' | 'error' = 'info') => {
+    setMessage(text);
+    setMessageTone(tone);
+  };
 
-  const finalOpenAIEndpoint = (() => {
+  const endpointPreview = (() => {
     if (config.provider !== 'openai' || !config.baseUrl.trim()) return '';
-    try {
-      return normalizeOpenAIEndpoint(config.baseUrl);
-    } catch (e) {
-      return e instanceof Error ? e.message : 'API 地址无效';
-    }
+    try { return normalizeOpenAIEndpoint(config.baseUrl); } catch (error) { return error instanceof Error ? error.message : 'API 地址无效'; }
   })();
 
-  const ensureApiReady = async (label: string) => {
-    if (!config.hasApiKey && !config.apiKey) {
-      alert('请先配置并保存 API Key');
-      return false;
-    }
-    setIsProcessing(true);
-    setProcessingLabel('正在测试 AI 接口');
-    shouldStopRef.current = false;
-    setProgress({ current: 0, total: 1 });
-    try {
-      await testAIConnection(config);
-      setProcessingLabel(label);
-      return true;
-    } catch (e) {
-      setIsProcessing(false);
-      setProcessingLabel('');
-      alert(e instanceof Error ? `AI 接口测试失败：${e.message}` : 'AI 接口测试失败');
-      return false;
-    }
+  const applyPreset = (preset: typeof AI_PRESETS[number]) => {
+    onChange('provider', preset.provider);
+    onChange('baseUrl', preset.baseUrl);
+    onChange('model', preset.model);
+    // Secret 提示已常驻在预设下方，切换时不再重复弹同一句。
+    setMessage('');
   };
 
-  const handleTestConnection = async () => {
-    if (!config.hasApiKey && !config.apiKey) {
-      setTestMessage('请先填写 API Key，并点击底部保存更改');
-      return;
-    }
-
+  const testConnection = async () => {
     setIsProcessing(true);
-    setProcessingLabel('正在测试 AI 接口');
-    setProgress({ current: 0, total: 1 });
-    setTestMessage('');
+    setLabel('正在测试 AI 接口');
+    setMessage('');
     try {
       await testAIConnection(config);
-      setProgress({ current: 1, total: 1 });
-      setTestMessage('AI 接口调用成功');
-    } catch (e) {
-      setTestMessage(e instanceof Error ? e.message : 'AI 接口测试失败');
+      notify('AI 接口调用成功');
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'AI 接口测试失败', 'error');
     } finally {
       setIsProcessing(false);
-      setProcessingLabel('');
+      setLabel('');
     }
   };
 
-  const getCategorizeTargets = () => {
-    const validCategoryIds = new Set(categories.map(c => c.id));
-    const source = links.filter(link => !link.deletedAt);
-    if (categorizeScope === 'inbox') return source.filter(link => link.categoryId === INBOX_ID);
-    if (categorizeScope === 'uncategorized') return source.filter(link => !validCategoryIds.has(link.categoryId) || link.categoryId === INBOX_ID);
-    if (categorizeScope === 'category') {
-      if (!categorizeCategoryId) return [];
-      const childIds = includeSubCategories ? categories.filter(c => c.parentId === categorizeCategoryId).map(c => c.id) : [];
-      const ids = new Set([categorizeCategoryId, ...childIds]);
-      return source.filter(link => ids.has(link.categoryId));
+  const targets = () => {
+    if (scope === 'category' && categoryId) {
+      const childIds = categories.filter(category => category.parentId === categoryId).map(category => category.id);
+      const ids = new Set([categoryId, ...childIds]);
+      return links.filter(link => !link.deletedAt && ids.has(link.categoryId));
     }
-    return source;
+    return links.filter(link => !link.deletedAt);
   };
 
-  const getRenameTargets = () => {
-    const editable = categories.filter(c => c.id !== INBOX_ID && c.id !== 'common' && !c.password);
-    if (renameScope === 'top') return editable.filter(c => !c.parentId);
-    if (renameScope === 'category') {
-      if (!renameCategoryId) return [];
-      return editable.filter(c => c.id === renameCategoryId);
+  const ensureReady = (nextLabel: string) => {
+    setIsProcessing(true);
+    setLabel(nextLabel);
+    setStop(false);
+    stopRef.current = false;
+    if (!config.model.trim()) {
+      setIsProcessing(false);
+      setLabel('');
+      notify('请填写模型名称', 'error');
+      return false;
     }
-    return editable;
-  };
-
-  const buildFolderSamples = (categoryId: string) => {
-    const childIds = categories.filter(c => c.parentId === categoryId).map(c => c.id);
-    const ids = new Set([categoryId, ...childIds]);
-    return links
-      .filter(l => !l.deletedAt && ids.has(l.categoryId))
-      .slice(0, 12)
-      .map(l => `${l.title} (${l.url})`);
-  };
-
-  const runCategorizePreview = async (targetLinks: LinkItem[], availableCategories: Array<Pick<Category, 'id' | 'name'>>) => {
-    const preview: CategoryPreviewItem[] = [];
-    let nextIndex = 0;
-    let completed = 0;
-    // Keep concurrency low to reduce provider 429 rate limits.
-    const workerCount = Math.min(2, targetLinks.length);
-
-    const worker = async () => {
-      while (!shouldStopRef.current && nextIndex < targetLinks.length) {
-        const link = targetLinks[nextIndex++];
-        try {
-          const categoryId = await suggestCategory(link.title, link.url, availableCategories, config);
-          const isValid = categoryId && availableCategories.some(c => c.id === categoryId);
-          preview.push({
-            linkId: link.id,
-            title: link.title,
-            url: link.url,
-            fromCategoryId: link.categoryId,
-            toCategoryId: isValid ? categoryId : undefined,
-            error: isValid ? undefined : 'AI 未返回可用分类',
-          });
-        } catch (e) {
-          preview.push({
-            linkId: link.id,
-            title: link.title,
-            url: link.url,
-            fromCategoryId: link.categoryId,
-            error: e instanceof Error ? e.message : '未知错误',
-          });
-        } finally {
-          completed += 1;
-          setProgress({ current: completed, total: targetLinks.length });
-        }
+    if (config.provider === 'openai') {
+      try { normalizeOpenAIEndpoint(config.baseUrl); } catch (error) {
+        setIsProcessing(false);
+        setLabel('');
+        notify(error instanceof Error ? error.message : 'API 地址无效', 'error');
+        return false;
       }
-    };
-
-    await Promise.all(Array.from({ length: workerCount }, () => worker()));
-    return preview;
+    }
+    return true;
   };
 
-  const isInvalidDescription = (description?: string) => !description || description.trim() === '生成描述失败';
-
-  const handleBulkGenerate = async () => {
-    if (!(await ensureApiReady('正在生成描述'))) return;
-
-    const missingLinks = links.filter(l => isInvalidDescription(l.description));
-    if (missingLinks.length === 0) {
-      setIsProcessing(false);
-      setProcessingLabel('');
-      alert('所有链接都已有描述！');
-      return;
-    }
-
-    if (!confirm(`发现 ${missingLinks.length} 个链接缺少描述，确定要使用 AI 自动生成吗？这可能需要一些时间。`)) {
-      setIsProcessing(false);
-      setProcessingLabel('');
-      return;
-    }
-
-    setProgress({ current: 0, total: missingLinks.length });
-    setProcessingLabel('正在生成描述');
-
-    let currentLinks = [...links];
-    let firstError = '';
-    let successCount = 0;
-    let failedCount = 0;
-
-    for (let i = 0; i < missingLinks.length; i++) {
-      if (shouldStopRef.current) break;
-
-      const link = missingLinks[i];
+  const generateDescriptions = async () => {
+    const missing = links.filter(link => !link.description?.trim() || link.description === '生成描述失败');
+    if (!missing.length) { notify('所有书签都已有描述'); return; }
+    if (!ensureReady('正在生成描述')) return;
+    setProgress({ current: 0, total: missing.length });
+    let next = [...links];
+    let success = 0;
+    for (let index = 0; index < missing.length && !stopRef.current; index += 1) {
+      const link = missing[index];
       try {
-        const desc = await generateLinkDescription(link.title, link.url, config);
-        if (!isInvalidDescription(desc)) {
-          successCount += 1;
-          currentLinks = currentLinks.map(l => l.id === link.id ? { ...l, description: desc } : l);
-          onUpdateLinks(currentLinks);
-        } else {
-          failedCount += 1;
-          firstError ||= 'AI 未返回有效描述';
-        }
-        setProgress({ current: i + 1, total: missingLinks.length });
-      } catch (e) {
-        failedCount += 1;
-        const message = e instanceof Error ? e.message : '未知错误';
-        firstError ||= message;
-        console.error(`Failed to generate for ${link.title}`, e);
-        setProgress({ current: i + 1, total: missingLinks.length });
-      }
+        const description = await generateLinkDescription(link.title, link.url, config);
+        if (description) { next = next.map(item => item.id === link.id ? { ...item, description, updatedAt: Date.now() } : item); success += 1; }
+      } catch (error) { notify(error instanceof Error ? error.message : '部分描述生成失败', 'error'); }
+      setProgress({ current: index + 1, total: missing.length });
     }
-
+    onUpdateLinks(next);
+    notify(`描述生成完成：成功 ${success} 个`);
     setIsProcessing(false);
-    setProcessingLabel('');
-    if (firstError) alert(`描述生成完成：成功 ${successCount} 个，失败 ${failedCount} 个。首个失败原因：${firstError}`);
+    setLabel('');
   };
 
-  const handleBulkCategorize = async () => {
-    const availableCategories = categories
-      .filter(c => c.id !== INBOX_ID && !c.password)
-      .map(c => ({ id: c.id, name: c.name }));
-    if (availableCategories.length === 0) {
-      alert('没有可用分类');
-      return;
+  const generateCategories = async () => {
+    const available = categories.map(category => ({ id: category.id, name: category.name }));
+    const target = targets();
+    if (!target.length) { notify('没有可处理的书签', 'error'); return; }
+    if (!ensureReady('正在生成分类预览')) return;
+    setProgress({ current: 0, total: target.length });
+    const preview: Array<{ id: string; title: string; from: string; to?: string; error?: string }> = [];
+    for (let index = 0; index < target.length && !stopRef.current; index += 1) {
+      const link = target[index];
+      try {
+        const to = await suggestCategory(link.title, link.url, available, config);
+        preview.push({ id: link.id, title: link.title, from: link.categoryId, to: to || undefined, error: to ? undefined : 'AI 未返回分类' });
+      } catch (error) { preview.push({ id: link.id, title: link.title, from: link.categoryId, error: error instanceof Error ? error.message : '生成失败' }); }
+      setProgress({ current: index + 1, total: target.length });
     }
-
-    const targetLinks = getCategorizeTargets();
-    if (targetLinks.length === 0) {
-      alert('没有可整理的书签');
-      return;
-    }
-
-    const scopeLabel = categorizeScope === 'category'
-      ? `文件夹「${getCategoryName(categorizeCategoryId)}」${includeSubCategories ? '及子文件夹' : ''}`
-      : categorizeScope === 'inbox'
-        ? '待整理'
-        : categorizeScope === 'uncategorized'
-          ? '未分类 / 待整理'
-          : '全部书签';
-
-    if (!confirm(`将使用 AI 为 ${scopeLabel} 中的 ${targetLinks.length} 个书签生成分类预览，会并发处理以加快速度，不会立即修改数据。确定继续吗？`)) return;
-    if (!(await ensureApiReady('正在生成分类预览'))) return;
-
-    setProgress({ current: 0, total: targetLinks.length });
-    setCategoryPreview([]);
-    setSelectedPreviewIds(new Set());
-
-    const preview = await runCategorizePreview(targetLinks, availableCategories);
-
-    const changedIds = new Set(preview.filter(item => item.toCategoryId && item.toCategoryId !== item.fromCategoryId).map(item => item.linkId));
     setCategoryPreview(preview);
-    setSelectedPreviewIds(changedIds);
+    setSelectedIds(new Set(preview.filter(item => item.to && item.to !== item.from).map(item => item.id)));
     setIsProcessing(false);
-    setProcessingLabel('');
+    setLabel('');
   };
 
-  const applyCategoryPreview = () => {
-    const selected = categoryPreview.filter(item => selectedPreviewIds.has(item.linkId) && item.toCategoryId && item.toCategoryId !== item.fromCategoryId);
-    if (selected.length === 0) {
-      alert('没有可应用的分类变更');
-      return;
-    }
-    const targetById = new Map(selected.map(item => [item.linkId, item.toCategoryId!]));
-    const nextLinks = links.map(link => targetById.has(link.id) ? { ...link, categoryId: targetById.get(link.id)!, updatedAt: Date.now() } : link);
-    onUpdateLinks(nextLinks);
+  const applyCategories = () => {
+    const changes = new Map(categoryPreview.filter(item => selectedIds.has(item.id) && item.to && item.to !== item.from).map(item => [item.id, item.to!]));
+    if (!changes.size) return;
+    onUpdateLinks(links.map(link => changes.has(link.id) ? { ...link, categoryId: changes.get(link.id), updatedAt: Date.now() } : link));
     setCategoryPreview([]);
-    setSelectedPreviewIds(new Set());
-    alert(`已应用 ${selected.length} 个分类变更`);
+    setSelectedIds(new Set());
   };
 
-  const handleBulkRenameFolders = async () => {
-    const targets = getRenameTargets();
-    if (targets.length === 0) {
-      alert('没有可重命名的文件夹');
-      return;
+  const renameTargets = () => {
+    const editable = categories.filter(category => category.id !== 'common' && !category.password);
+    if (renameScope === 'category' && categoryId) return editable.filter(category => category.id === categoryId);
+    if (renameScope === 'all') return editable;
+    return editable.filter(category => !category.parentId);
+  };
+
+  const renameFolders = async () => {
+    const target = renameTargets();
+    if (!target.length) { notify('没有可重命名的分类', 'error'); return; }
+    if (!ensureReady('正在生成分类名称')) return;
+    setProgress({ current: 0, total: target.length });
+    const preview: Array<{ id: string; from: string; to?: string; error?: string }> = [];
+    for (let index = 0; index < target.length && !stopRef.current; index += 1) {
+      const category = target[index];
+      const samples = links.filter(link => link.categoryId === category.id).slice(0, 12).map(link => `${link.title} (${link.url})`);
+      try {
+        const result = await suggestFolderRename(category.name, samples, config);
+        preview.push({ id: category.id, from: category.name, to: result.name, error: result.name === category.name ? '保持原名' : undefined });
+      } catch (error) { preview.push({ id: category.id, from: category.name, error: error instanceof Error ? error.message : '生成失败' }); }
+      setProgress({ current: index + 1, total: target.length });
     }
-
-    const scopeLabel = renameScope === 'category'
-      ? `文件夹「${getCategoryName(renameCategoryId)}」`
-      : renameScope === 'top'
-        ? '全部顶级文件夹'
-        : '全部文件夹';
-
-    if (!confirm(`将为 ${scopeLabel} 共 ${targets.length} 个文件夹生成 AI 重命名预览，不会立即修改。确定继续吗？`)) return;
-    if (!(await ensureApiReady('正在生成文件夹重命名预览'))) return;
-
-    setProgress({ current: 0, total: targets.length });
-    setRenamePreview([]);
-    setSelectedRenameIds(new Set());
-
-    const preview: FolderRenamePreviewItem[] = [];
-    let nextIndex = 0;
-    let completed = 0;
-    const workerCount = Math.min(2, targets.length);
-
-    const worker = async () => {
-      while (!shouldStopRef.current && nextIndex < targets.length) {
-        const category = targets[nextIndex++];
-        const samples = buildFolderSamples(category.id);
-        try {
-          if (samples.length === 0) {
-            preview.push({
-              categoryId: category.id,
-              fromName: category.name,
-              sampleCount: 0,
-              error: '该文件夹下没有书签样本',
-            });
-          } else {
-            const suggestion = await suggestFolderRename(category.name, samples, config);
-            const toName = suggestion.name;
-            preview.push({
-              categoryId: category.id,
-              fromName: category.name,
-              toName,
-              sampleCount: samples.length,
-              error: !toName || toName === category.name ? '建议保持原名' : undefined,
-            });
-          }
-        } catch (e) {
-          preview.push({
-            categoryId: category.id,
-            fromName: category.name,
-            sampleCount: samples.length,
-            error: e instanceof Error ? e.message : '未知错误',
-          });
-        } finally {
-          completed += 1;
-          setProgress({ current: completed, total: targets.length });
-        }
-      }
-    };
-
-    await Promise.all(Array.from({ length: workerCount }, () => worker()));
-    const changedIds = new Set(
-      preview
-        .filter(item => item.toName && item.toName !== item.fromName && !item.error)
-        .map(item => item.categoryId)
-    );
-    // also allow selecting "建议保持原名" only if name actually differs due to cleanup edge cases
-    preview.forEach(item => {
-      if (item.toName && item.toName !== item.fromName) changedIds.add(item.categoryId);
-    });
     setRenamePreview(preview);
-    setSelectedRenameIds(changedIds);
+    setSelectedRenameIds(new Set(preview.filter(item => item.to && item.to !== item.from).map(item => item.id)));
     setIsProcessing(false);
-    setProcessingLabel('');
+    setLabel('');
   };
 
-  const applyRenamePreview = () => {
-    if (!onUpdateCategories && !onUpdateData) {
-      alert('当前环境不支持更新分类');
-      return;
-    }
-    const selected = renamePreview.filter(item =>
-      selectedRenameIds.has(item.categoryId) &&
-      item.toName &&
-      item.toName !== item.fromName
-    );
-    if (selected.length === 0) {
-      alert('没有可应用的重命名变更');
-      return;
-    }
-
-    const nameById = new Map(selected.map(item => [item.categoryId, item.toName!]));
-    const nextCategories = categories.map(cat =>
-      nameById.has(cat.id) ? { ...cat, name: nameById.get(cat.id)! } : cat
-    );
-
-    if (onUpdateData) onUpdateData(links, nextCategories);
-    else onUpdateCategories?.(nextCategories);
-
+  const applyRenames = () => {
+    const names = new Map(renamePreview.filter(item => selectedRenameIds.has(item.id) && item.to && item.to !== item.from).map(item => [item.id, item.to!]));
+    if (!names.size) return;
+    const next = categories.map(category => names.has(category.id) ? { ...category, name: names.get(category.id)! } : category);
+    if (onUpdateData) onUpdateData(links, next); else onUpdateCategories?.(next);
     setRenamePreview([]);
     setSelectedRenameIds(new Set());
-    alert(`已重命名 ${selected.length} 个文件夹`);
   };
 
-  const handleSuggestStructure = async () => {
-    if (!structureCategoryId) {
-      alert('请先选择要拆分的文件夹');
-      return;
-    }
-    const parent = categories.find(c => c.id === structureCategoryId);
-    if (!parent) {
-      alert('文件夹不存在');
-      return;
-    }
-    if (parent.id === INBOX_ID) {
-      alert('待整理不支持直接拆分，请先选择具体分类');
-      return;
-    }
-
-    const parentLinks = links.filter(l => !l.deletedAt && l.categoryId === parent.id);
-    if (parentLinks.length < 2) {
-      alert('该文件夹至少需要 2 个书签才能建议子文件夹');
-      return;
-    }
-
-    if (!confirm(`将分析「${parent.name}」下 ${parentLinks.length} 个书签，生成子文件夹拆分预览，不会立即修改。确定继续吗？`)) return;
-    if (!(await ensureApiReady('正在生成子文件夹建议'))) return;
-
-    setProgress({ current: 0, total: 1 });
-    setStructurePreview(null);
-
+  const suggestStructure = async () => {
+    const parent = categories.find(category => category.id === structureId);
+    const parentLinks = links.filter(link => link.categoryId === structureId);
+    if (!parent || parentLinks.length < 2) { notify('请选择至少包含两个书签的分类', 'error'); return; }
+    if (!ensureReady('正在生成子分类建议')) return;
     try {
-      const existingNames = categories
-        .filter(c => c.id !== parent.id)
-        .map(c => c.name);
-      const suggestion = await suggestFolderStructure(
-        parent.name,
-        parentLinks.map(l => ({ id: l.id, title: l.title, url: l.url, description: l.description })),
-        existingNames,
-        config
-      );
-      setProgress({ current: 1, total: 1 });
-
-      const folders: StructureFolderDraft[] = suggestion.folders.map(folder => ({
-        tempId: makeId('new-folder'),
-        name: folder.name,
-        linkIds: folder.linkIds,
-        reason: folder.reason,
-        selected: true,
-      }));
-
-      setStructurePreview({
-        parentId: parent.id,
-        parentName: parent.name,
-        renameParent: suggestion.rename && suggestion.rename !== parent.name ? suggestion.rename : undefined,
-        renameParentSelected: Boolean(suggestion.rename && suggestion.rename !== parent.name),
-        reason: suggestion.reason,
-        folders,
-        keepInParent: suggestion.keepInParent,
-      });
-    } catch (e) {
-      alert(e instanceof Error ? e.message : '生成子文件夹建议失败');
-    } finally {
-      setIsProcessing(false);
-      setProcessingLabel('');
-    }
+      const result = await suggestFolderStructure(parent.name, parentLinks, categories.map(category => category.name), config);
+      setStructurePreview({ parentId: parent.id, parentName: parent.name, rename: result.rename, folders: result.folders.map(folder => ({ id: makeId('folder'), name: folder.name, linkIds: folder.linkIds, selected: true })), keep: result.keepInParent });
+    } catch (error) { notify(error instanceof Error ? error.message : '生成子分类建议失败', 'error'); }
+    finally { setIsProcessing(false); setLabel(''); }
   };
 
-  const applyStructurePreview = () => {
+  const applyStructure = () => {
     if (!structurePreview) return;
-    if (!onUpdateData && !(onUpdateCategories && onUpdateLinks)) {
-      alert('当前环境不支持同时更新分类和书签');
-      return;
-    }
-
-    const selectedFolders = structurePreview.folders.filter(f => f.selected && f.name.trim() && f.linkIds.length > 0);
-    const shouldRenameParent = structurePreview.renameParentSelected && structurePreview.renameParent;
-
-    if (selectedFolders.length === 0 && !shouldRenameParent) {
-      alert('请至少勾选一个新建文件夹，或勾选父文件夹重命名');
-      return;
-    }
-
-    let nextCategories = [...categories];
-    if (shouldRenameParent) {
-      nextCategories = nextCategories.map(c =>
-        c.id === structurePreview.parentId ? { ...c, name: structurePreview.renameParent! } : c
-      );
-    }
-
-    const created: Category[] = selectedFolders.map(folder => ({
-      id: folder.tempId,
-      name: folder.name.trim(),
-      icon: 'Folder',
-      parentId: structurePreview.parentId,
-      color: categories.find(c => c.id === structurePreview.parentId)?.color,
-    }));
-    nextCategories = [...nextCategories, ...created];
-
-    const moveMap = new Map<string, string>();
-    selectedFolders.forEach(folder => {
-      folder.linkIds.forEach(linkId => moveMap.set(linkId, folder.tempId));
-    });
-
-    const nextLinks = links.map(link =>
-      moveMap.has(link.id)
-        ? { ...link, categoryId: moveMap.get(link.id)!, updatedAt: Date.now() }
-        : link
-    );
-
-    if (onUpdateData) onUpdateData(nextLinks, nextCategories);
-    else {
-      onUpdateCategories?.(nextCategories);
-      onUpdateLinks(nextLinks);
-    }
-
+    const selected = structurePreview.folders.filter(folder => folder.selected && folder.name.trim());
+    const created: Category[] = selected.map(folder => ({ id: folder.id, name: folder.name.trim(), icon: 'Folder', parentId: structurePreview.parentId }));
+    const moves = new Map(selected.flatMap(folder => folder.linkIds.map(id => [id, folder.id] as const)));
+    const nextLinks = links.map(link => moves.has(link.id) ? { ...link, categoryId: moves.get(link.id)!, updatedAt: Date.now() } : link);
+    const nextCategories = [...categories.map(category => category.id === structurePreview.parentId && structurePreview.rename ? { ...category, name: structurePreview.rename } : category), ...created];
+    if (onUpdateData) onUpdateData(nextLinks, nextCategories); else { onUpdateLinks(nextLinks); onUpdateCategories?.(nextCategories); }
     setStructurePreview(null);
-    alert(`已应用：新建 ${selectedFolders.length} 个子文件夹${shouldRenameParent ? '，并重命名父文件夹' : ''}`);
   };
 
-  const togglePreviewSelection = (id: string) => {
-    setSelectedPreviewIds(current => {
-      const next = new Set(current);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  const editableCategories = categories.filter(category => category.id !== 'common');
+  const progressPercent = progress.total ? Math.round(progress.current / progress.total * 100) : 0;
+  // 预设高亮以 Base URL 主机为准（模型名可能重复）；Gemini 只看 provider。
+  const hostOf = (value: string) => {
+    try { return new URL(value).hostname.toLowerCase(); } catch { return ''; }
   };
-
-  const toggleRenameSelection = (id: string) => {
-    setSelectedRenameIds(current => {
-      const next = new Set(current);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const getChangedCategoryPreviewIds = () =>
-    categoryPreview
-      .filter(item => Boolean(item.toCategoryId) && item.toCategoryId !== item.fromCategoryId && !item.error)
-      .map(item => item.linkId);
-
-  const getChangedRenameIds = () =>
-    renamePreview
-      .filter(item => Boolean(item.toName) && item.toName !== item.fromName)
-      .map(item => item.categoryId);
-
-  const selectAllCategoryChanges = () => {
-    const changedIds = getChangedCategoryPreviewIds();
-    if (changedIds.length === 0) {
-      alert('当前没有可勾选的分类变更（可能 AI 建议与原分类相同，或全部失败）');
-      return;
-    }
-    const allSelected = changedIds.every(id => selectedPreviewIds.has(id));
-    setSelectedPreviewIds(allSelected ? new Set() : new Set(changedIds));
-  };
-
-  const selectAllRenameChanges = () => {
-    const changedIds = getChangedRenameIds();
-    if (changedIds.length === 0) {
-      alert('当前没有可勾选的重命名变更（可能建议保持原名，或全部失败）');
-      return;
-    }
-    const allSelected = changedIds.every(id => selectedRenameIds.has(id));
-    setSelectedRenameIds(allSelected ? new Set() : new Set(changedIds));
-  };
-
-  const editableCategories = categories.filter(c => c.id !== INBOX_ID);
-  const changedCategoryCount = getChangedCategoryPreviewIds().length;
-  const selectedChangedCategoryCount = getChangedCategoryPreviewIds().filter(id => selectedPreviewIds.has(id)).length;
-  const changedRenameCount = getChangedRenameIds().length;
-  const selectedChangedRenameCount = getChangedRenameIds().filter(id => selectedRenameIds.has(id)).length;
+  const activePreset = (() => {
+    if (config.provider === 'gemini') return 'gemini';
+    const host = hostOf(config.baseUrl);
+    if (!host) return '';
+    return AI_PRESETS.find(preset => preset.provider === 'openai' && hostOf(preset.baseUrl) === host)?.id || '';
+  })();
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-300">
-      <div>
-        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">AI 提供商</label>
-        <select
-          value={config.provider}
-          onChange={(e) => onChange('provider', e.target.value)}
-          className="w-full p-2 rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-blue-500"
-        >
-          <option value="gemini">Google Gemini</option>
-          <option value="openai">OpenAI Compatible (ChatGPT, DeepSeek, Claude...)</option>
-        </select>
-      </div>
-
-      <div className="rounded-xl border border-slate-200 dark:border-slate-700 p-3 bg-slate-50 dark:bg-slate-800/60">
-        <div className="text-sm font-medium text-slate-700 dark:text-slate-200 mb-2">常用配置预设</div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-          {AI_PRESETS.map(preset => (
-            <button
-              key={preset.id}
-              type="button"
-              onClick={() => applyPreset(preset)}
-              className={`text-left rounded-lg border px-3 py-2 transition-colors hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 ${config.provider === preset.provider && config.baseUrl === preset.baseUrl && config.model === preset.model ? 'border-blue-400 bg-blue-50 dark:bg-blue-900/20' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800'}`}
-            >
-              <div className="text-sm font-medium text-slate-700 dark:text-slate-100">{preset.label}</div>
-              <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{preset.hint}</div>
-            </button>
-          ))}
+    <div className="space-y-4 animate-in fade-in duration-300">
+      <Section title="连接配置" desc="API Key 只从 Cloudflare Secrets 读取，不会进入浏览器或备份。">
+        <div className="flex flex-wrap gap-1.5">
+          {AI_PRESETS.map(preset => {
+            const active = activePreset === preset.id;
+            return (
+              <button
+                key={preset.id}
+                type="button"
+                onClick={() => applyPreset(preset)}
+                aria-pressed={active}
+                className={`rounded-lg border px-3 py-1.5 text-[12px] font-medium transition-colors ${active
+                  ? 'border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-500 dark:bg-blue-900/30 dark:text-blue-300'
+                  : 'border-slate-200 text-slate-600 hover:border-blue-300 dark:border-slate-600 dark:text-slate-300'}`}
+              >
+                {preset.label}
+              </button>
+            );
+          })}
         </div>
-      </div>
+        <p className="text-[11px] text-slate-400">
+          Secret：<code className="text-slate-500 dark:text-slate-400">{(AI_PRESETS.find(item => item.id === activePreset) || AI_PRESETS[0]).hint}</code>
+        </p>
 
-      <div>
-        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">API Key</label>
-        <div className="relative">
-          <Key size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="password"
-            value={config.apiKey}
-            onChange={(e) => onChange('apiKey', e.target.value)}
-            placeholder="sk-..."
-            className="w-full pl-10 p-2 rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 font-mono"
-          />
-        </div>
-        <p className="text-xs text-slate-500 mt-1">Key 仅存储在当前浏览器，不会同步到 Cloudflare KV 或 WebDAV 备份。</p>
-      </div>
-
-      {config.provider === 'openai' && (
-        <div>
-          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Base URL (API 地址)</label>
-          <input
-            type="text"
-            value={config.baseUrl}
-            onChange={(e) => onChange('baseUrl', e.target.value)}
-            placeholder="https://api.openai.com/v1"
-            className="w-full p-2 rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <p className="text-xs text-slate-500 mt-1">必须是 API 地址，例如 https://api.openai.com/v1；不要填网页登录地址或控制台地址。</p>
-          {finalOpenAIEndpoint && (
-            <div className={`mt-2 text-xs rounded-lg p-2 ${finalOpenAIEndpoint.startsWith('http') ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300' : 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-300'}`}>
-              最终请求地址：{finalOpenAIEndpoint}
-            </div>
-          )}
-          <div className="mt-2 grid gap-1 text-[11px] text-slate-500 dark:text-slate-400">
-            <span>OpenAI：<code>https://api.openai.com/v1</code></span>
-            <span>OpenRouter：<code>https://openrouter.ai</code></span>
-            <span>DeepSeek：<code>https://api.deepseek.com</code></span>
-          </div>
-        </div>
-      )}
-
-      <div>
-        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">模型名称 (Model Name)</label>
-        <input
-          type="text"
-          value={config.model}
-          onChange={(e) => onChange('model', e.target.value)}
-          placeholder={config.provider === 'gemini' ? 'gemini-2.5-flash' : 'gpt-3.5-turbo'}
-          className="w-full p-2 rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-blue-500"
-        />
-      </div>
-
-      <div className="rounded-xl border border-slate-200 dark:border-slate-700 p-3 bg-slate-50 dark:bg-slate-800/60">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        {config.provider === 'openai' && (
           <div>
-            <div className="text-sm font-medium text-slate-700 dark:text-slate-200">接口自检</div>
-            <div className="text-xs text-slate-500 dark:text-slate-400">保存配置后测试，能提前发现网页地址、模型名和密钥问题。</div>
+            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">Base URL</label>
+            <input
+              value={config.baseUrl}
+              onChange={event => onChange('baseUrl', event.target.value)}
+              className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-2 text-sm text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="https://api.openai.com/v1"
+            />
+            {endpointPreview && (
+              <p className={`mt-1 break-all text-[11px] ${endpointPreview.startsWith('http') ? 'text-slate-500 dark:text-slate-400' : 'text-red-500'}`}>
+                最终地址：{endpointPreview}
+              </p>
+            )}
           </div>
+        )}
+
+        <div>
+          <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">模型名称</label>
+          <input
+            value={config.model}
+            onChange={event => onChange('model', event.target.value)}
+            className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-2 text-sm text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+
+        <div className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 dark:bg-slate-900/40 px-3 py-2">
+          <span className="text-xs text-slate-500 dark:text-slate-400">配置完成后先测一次接口</span>
           <button
-            onClick={handleTestConnection}
+            onClick={testConnection}
             disabled={isProcessing}
-            className="px-3 py-2 text-sm rounded-lg bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 disabled:opacity-50"
+            className="shrink-0 rounded-lg bg-slate-900 dark:bg-slate-100 px-3 py-1.5 text-xs font-medium text-white dark:text-slate-900 disabled:opacity-50"
           >
-            测试 AI 接口
+            测试连接
           </button>
         </div>
-        {testMessage && (
-          <div className={`mt-2 text-xs ${testMessage.includes('成功') ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>{testMessage}</div>
-        )}
-      </div>
 
-      <div className="pt-4 border-t border-slate-100 dark:border-slate-700">
-        <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-          <h4 className="text-sm font-semibold dark:text-slate-200">批量操作</h4>
-          {categorizeScope === 'category' && categorizeCategoryId && (
-            <span className="text-xs rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300 px-2 py-1">
-              当前范围：{getCategoryName(categorizeCategoryId)}{includeSubCategories ? '及子文件夹' : ''}
-            </span>
-          )}
-        </div>
-        {isProcessing ? (
+        {message && (
+          <p className={`rounded-lg px-3 py-2 text-xs ${messageTone === 'error' ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-300' : 'bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-300'}`}>
+            {message}
+          </p>
+        )}
+      </Section>
+
+      <Section title="批量操作" desc="逐条调用 AI，可随时停止；结果先预览再应用。">
+        {isProcessing && (
           <div className="space-y-2">
-            <div className="flex justify-between text-xs text-slate-600 dark:text-slate-400">
-              <span>{processingLabel || '正在处理'}... ({progress.current}/{progress.total})</span>
-              <button onClick={() => { shouldStopRef.current = true; }} className="text-red-500 flex items-center gap-1 hover:underline">
-                <PauseCircle size={12}/> 停止
+            <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+              <span>{label} {progress.current}/{progress.total}</span>
+              <button onClick={() => setStop(true)} className="flex items-center gap-1 text-red-500">
+                <PauseCircle size={13} />停止
               </button>
             </div>
-            <div className="w-full h-2 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
-              <div className="h-full bg-blue-500 transition-all duration-300" style={{ width: `${progress.total ? (progress.current / progress.total) * 100 : 0}%` }}></div>
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            <div className="flex flex-wrap gap-2">
-              <button
-                onClick={handleBulkGenerate}
-                className="flex items-center gap-2 text-sm text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 px-3 py-2 rounded-lg transition-colors border border-purple-200 dark:border-purple-800"
-              >
-                <Sparkles size={16} /> 一键补全所有缺失的描述
-              </button>
-              <button
-                onClick={handleBulkCategorize}
-                className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 px-3 py-2 rounded-lg transition-colors border border-blue-200 dark:border-blue-800"
-              >
-                <FolderTree size={16} /> 生成 AI 分类预览
-              </button>
-              <button
-                onClick={handleBulkRenameFolders}
-                className="flex items-center gap-2 text-sm text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 px-3 py-2 rounded-lg transition-colors border border-amber-200 dark:border-amber-800"
-              >
-                <Type size={16} /> AI 重命名文件夹
-              </button>
-              <button
-                onClick={handleSuggestStructure}
-                className="flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 px-3 py-2 rounded-lg transition-colors border border-emerald-200 dark:border-emerald-800"
-              >
-                <FolderPlus size={16} /> 按内容拆分子文件夹
-              </button>
-            </div>
-
-            <div className="grid gap-3">
-              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-                <span>分类范围</span>
-                <select value={categorizeScope} onChange={(e) => setCategorizeScope(e.target.value as CategorizeScope)} className="px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 outline-none">
-                  <option value="all">全部书签</option>
-                  <option value="inbox">待整理</option>
-                  <option value="uncategorized">未分类 / 待整理</option>
-                  <option value="category">指定文件夹</option>
-                </select>
-                {categorizeScope === 'category' && (
-                  <>
-                    <select value={categorizeCategoryId} onChange={(e) => setCategorizeCategoryId(e.target.value)} className="min-w-40 px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 outline-none">
-                      <option value="">选择文件夹</option>
-                      {editableCategories.map(category => (
-                        <option key={category.id} value={category.id}>{category.parentId ? '— ' : ''}{category.name}</option>
-                      ))}
-                    </select>
-                    <label className="inline-flex items-center gap-1">
-                      <input type="checkbox" checked={includeSubCategories} onChange={e => setIncludeSubCategories(e.target.checked)} />
-                      含子文件夹
-                    </label>
-                  </>
-                )}
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-                <span>重命名范围</span>
-                <select value={renameScope} onChange={(e) => setRenameScope(e.target.value as RenameScope)} className="px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 outline-none">
-                  <option value="all">全部文件夹</option>
-                  <option value="top">仅顶级文件夹</option>
-                  <option value="category">指定文件夹</option>
-                </select>
-                {renameScope === 'category' && (
-                  <select value={renameCategoryId} onChange={(e) => setRenameCategoryId(e.target.value)} className="min-w-40 px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 outline-none">
-                    <option value="">选择文件夹</option>
-                    {editableCategories.filter(c => c.id !== 'common').map(category => (
-                      <option key={category.id} value={category.id}>{category.parentId ? '— ' : ''}{category.name}</option>
-                    ))}
-                  </select>
-                )}
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-                <span>拆分目标</span>
-                <select value={structureCategoryId} onChange={(e) => setStructureCategoryId(e.target.value)} className="min-w-40 px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 outline-none">
-                  <option value="">选择文件夹</option>
-                  {editableCategories.filter(c => c.id !== 'common').map(category => (
-                    <option key={category.id} value={category.id}>{category.parentId ? '— ' : ''}{category.name}</option>
-                  ))}
-                </select>
-              </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-700">
+              <div className="h-full rounded-full bg-blue-500 transition-all" style={{ width: `${progressPercent}%` }} />
             </div>
           </div>
         )}
-      </div>
 
-      {categoryPreview.length > 0 && !isProcessing && (
-        <div className="rounded-2xl border border-blue-100 dark:border-blue-900/50 bg-blue-50/50 dark:bg-blue-900/10 p-4 space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-100">AI 分类预览</h4>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                只会应用勾选且分类发生变化的条目。变更 {changedCategoryCount} 项，已勾选 {selectedChangedCategoryCount} 项。
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={selectAllCategoryChanges}
-                className="px-3 py-1.5 text-xs rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700"
-              >
-                {changedCategoryCount > 0 && selectedChangedCategoryCount === changedCategoryCount ? '取消全选' : '全选变更'}
-              </button>
-              <button type="button" onClick={() => { setCategoryPreview([]); setSelectedPreviewIds(new Set()); }} className="px-3 py-1.5 text-xs rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center gap-1 hover:bg-slate-50 dark:hover:bg-slate-700"><X size={12} /> 关闭</button>
-              <button type="button" onClick={applyCategoryPreview} className="px-3 py-1.5 text-xs rounded-lg bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1"><Check size={12} /> 应用勾选</button>
-            </div>
+        <div className="grid grid-cols-2 gap-2">
+          <button onClick={generateDescriptions} disabled={isProcessing} className="flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-600 px-3 py-2 text-xs font-medium text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 disabled:opacity-40">
+            <Sparkles size={14} />补全描述
+          </button>
+          <button onClick={generateCategories} disabled={isProcessing} className="flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-600 px-3 py-2 text-xs font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 disabled:opacity-40">
+            <FolderTree size={14} />生成分类
+          </button>
+          <button onClick={renameFolders} disabled={isProcessing} className="flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-600 px-3 py-2 text-xs font-medium text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 disabled:opacity-40">
+            <Type size={14} />重命名分类
+          </button>
+          <button onClick={suggestStructure} disabled={isProcessing} className="flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-600 px-3 py-2 text-xs font-medium text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 disabled:opacity-40">
+            <FolderPlus size={14} />拆分子分类
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 border-t border-slate-100 dark:border-slate-700 pt-3">
+          <div>
+            <label className="block text-[11px] text-slate-400 mb-1">分类范围</label>
+            <select value={scope} onChange={event => setScope(event.target.value as Scope)} className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 px-2 py-1.5 text-xs text-slate-700 dark:text-slate-200">
+              <option value="all">全部书签</option>
+              <option value="category">指定分类</option>
+            </select>
           </div>
-          <div className="max-h-72 overflow-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 divide-y divide-slate-100 dark:divide-slate-700">
-            {categoryPreview.map(item => {
-              const changed = Boolean(item.toCategoryId) && item.toCategoryId !== item.fromCategoryId && !item.error;
-              return (
-                <label key={item.linkId} className={`grid grid-cols-[auto_minmax(0,1fr)_minmax(5rem,7.5rem)_minmax(5rem,7.5rem)] gap-3 items-center px-3 py-2 text-xs ${changed ? 'cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50' : 'opacity-70'}`}>
-                  <input
-                    type="checkbox"
-                    disabled={!changed}
-                    checked={changed && selectedPreviewIds.has(item.linkId)}
-                    onChange={() => {
-                      if (!changed) return;
-                      togglePreviewSelection(item.linkId);
-                    }}
-                  />
-                  <div className="min-w-0">
-                    <div className="font-medium text-slate-700 dark:text-slate-200 truncate">{item.title}</div>
-                    <div className="text-slate-400 truncate">{item.error || item.url}</div>
-                  </div>
-                  <span className="truncate text-slate-500 dark:text-slate-400">{getCategoryName(item.fromCategoryId)}</span>
-                  <span className={changed ? 'truncate text-blue-600 dark:text-blue-300 font-medium' : 'truncate text-slate-400'}>
-                    {item.error ? '失败' : item.toCategoryId ? (changed ? getCategoryName(item.toCategoryId) : '保持原分类') : '失败'}
-                  </span>
-                </label>
-              );
-            })}
+          <div>
+            <label className="block text-[11px] text-slate-400 mb-1">重命名范围</label>
+            <select value={renameScope} onChange={event => setRenameScope(event.target.value as Scope)} className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 px-2 py-1.5 text-xs text-slate-700 dark:text-slate-200">
+              <option value="all">全部分类</option>
+              <option value="category">指定分类</option>
+            </select>
           </div>
         </div>
+
+        {(scope === 'category' || renameScope === 'category') && (
+          <div>
+            <label className="block text-[11px] text-slate-400 mb-1">目标分类</label>
+            <select value={categoryId} onChange={event => setCategoryId(event.target.value)} className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 px-2 py-1.5 text-xs text-slate-700 dark:text-slate-200">
+              <option value="">选择分类</option>
+              {editableCategories.map(category => <option key={category.id} value={category.id}>{category.name}</option>)}
+            </select>
+          </div>
+        )}
+
+        {structurePreview === null && (
+          <div>
+            <label className="block text-[11px] text-slate-400 mb-1">拆分子分类的父分类</label>
+            <select value={structureId} onChange={event => setStructureId(event.target.value)} className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 px-2 py-1.5 text-xs text-slate-700 dark:text-slate-200">
+              <option value="">选择分类</option>
+              {editableCategories.map(category => <option key={category.id} value={category.id}>{category.name}</option>)}
+            </select>
+          </div>
+        )}
+      </Section>
+
+      {categoryPreview.length > 0 && (
+        <Section
+          title="分类预览"
+          desc={`${categoryPreview.filter(item => item.to && item.to !== item.from).length} 条可应用`}
+          action={<button onClick={applyCategories} className="flex items-center gap-1 rounded-lg bg-blue-600 px-2.5 py-1 text-xs font-medium text-white"><Check size={12} />应用</button>}
+        >
+          <div className="max-h-64 space-y-1 overflow-y-auto">
+            {categoryPreview.map(item => (
+              <label key={item.id} className="flex items-center gap-2 rounded px-1 py-0.5 text-xs hover:bg-slate-50 dark:hover:bg-slate-700/40">
+                <input
+                  type="checkbox"
+                  disabled={!item.to || item.to === item.from}
+                  checked={selectedIds.has(item.id)}
+                  onChange={() => setSelectedIds(current => {
+                    const next = new Set(current);
+                    if (next.has(item.id)) next.delete(item.id); else next.add(item.id);
+                    return next;
+                  })}
+                />
+                <span className="truncate text-slate-600 dark:text-slate-300">{item.title}</span>
+                <span className={`shrink-0 ${item.error ? 'text-red-500' : 'text-slate-400'}`}>{item.error || `${item.from} → ${item.to}`}</span>
+              </label>
+            ))}
+          </div>
+        </Section>
       )}
 
-      {renamePreview.length > 0 && !isProcessing && (
-        <div className="rounded-2xl border border-amber-100 dark:border-amber-900/50 bg-amber-50/50 dark:bg-amber-900/10 p-4 space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-100">AI 文件夹重命名预览</h4>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                根据文件夹内书签样本生成名称。变更 {changedRenameCount} 项，已勾选 {selectedChangedRenameCount} 项。
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={selectAllRenameChanges}
-                className="px-3 py-1.5 text-xs rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700"
-              >
-                {changedRenameCount > 0 && selectedChangedRenameCount === changedRenameCount ? '取消全选' : '全选变更'}
-              </button>
-              <button type="button" onClick={() => { setRenamePreview([]); setSelectedRenameIds(new Set()); }} className="px-3 py-1.5 text-xs rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center gap-1 hover:bg-slate-50 dark:hover:bg-slate-700"><X size={12} /> 关闭</button>
-              <button type="button" onClick={applyRenamePreview} className="px-3 py-1.5 text-xs rounded-lg bg-amber-600 hover:bg-amber-700 text-white flex items-center gap-1"><Check size={12} /> 应用勾选</button>
-            </div>
+      {renamePreview.length > 0 && (
+        <Section
+          title="重命名预览"
+          desc={`${renamePreview.filter(item => item.to && item.to !== item.from).length} 项可应用`}
+          action={<button onClick={applyRenames} className="flex items-center gap-1 rounded-lg bg-amber-600 px-2.5 py-1 text-xs font-medium text-white"><Check size={12} />应用</button>}
+        >
+          <div className="max-h-64 space-y-1 overflow-y-auto">
+            {renamePreview.map(item => (
+              <label key={item.id} className="flex items-center gap-2 rounded px-1 py-0.5 text-xs hover:bg-slate-50 dark:hover:bg-slate-700/40">
+                <input
+                  type="checkbox"
+                  disabled={!item.to || item.to === item.from}
+                  checked={selectedRenameIds.has(item.id)}
+                  onChange={() => setSelectedRenameIds(current => {
+                    const next = new Set(current);
+                    if (next.has(item.id)) next.delete(item.id); else next.add(item.id);
+                    return next;
+                  })}
+                />
+                <span className="text-slate-600 dark:text-slate-300">{item.from}</span>
+                <span className={item.error ? 'text-red-500' : 'text-slate-400'}>→ {item.error || item.to}</span>
+              </label>
+            ))}
           </div>
-          <div className="max-h-72 overflow-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 divide-y divide-slate-100 dark:divide-slate-700">
-            {renamePreview.map(item => {
-              const changed = Boolean(item.toName) && item.toName !== item.fromName;
-              return (
-                <label key={item.categoryId} className={`grid grid-cols-[auto_minmax(0,1fr)_minmax(5rem,8.5rem)_minmax(5rem,8.5rem)] gap-3 items-center px-3 py-2 text-xs ${changed ? 'cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50' : 'opacity-70'}`}>
-                  <input
-                    type="checkbox"
-                    disabled={!changed}
-                    checked={changed && selectedRenameIds.has(item.categoryId)}
-                    onChange={() => {
-                      if (!changed) return;
-                      toggleRenameSelection(item.categoryId);
-                    }}
-                  />
-                  <div className="min-w-0">
-                    <div className="font-medium text-slate-700 dark:text-slate-200 truncate">{item.fromName}</div>
-                    <div className="text-slate-400 truncate">{item.error || `样本 ${item.sampleCount} 个`}</div>
-                  </div>
-                  <span className="truncate text-slate-500 dark:text-slate-400">{item.fromName}</span>
-                  <span className={changed ? 'truncate text-amber-600 dark:text-amber-300 font-medium' : 'truncate text-slate-400'}>
-                    {item.toName ? (changed ? item.toName : '保持原名') : '失败'}
-                  </span>
-                </label>
-              );
-            })}
-          </div>
-        </div>
+        </Section>
       )}
 
-      {structurePreview && !isProcessing && (
-        <div className="rounded-2xl border border-emerald-100 dark:border-emerald-900/50 bg-emerald-50/50 dark:bg-emerald-900/10 p-4 space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-100">按内容新建子文件夹</h4>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                父文件夹：{structurePreview.parentName}
-                {structurePreview.reason ? ` · ${structurePreview.reason}` : ''}
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <button onClick={() => setStructurePreview(null)} className="px-3 py-1.5 text-xs rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center gap-1"><X size={12} /> 关闭</button>
-              <button onClick={applyStructurePreview} className="px-3 py-1.5 text-xs rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1"><Check size={12} /> 应用勾选</button>
-            </div>
-          </div>
-
-          {structurePreview.renameParent && (
-            <label className="flex items-center gap-2 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2">
-              <input
-                type="checkbox"
-                checked={structurePreview.renameParentSelected}
-                onChange={(e) => setStructurePreview(prev => prev ? { ...prev, renameParentSelected: e.target.checked } : prev)}
-              />
-              <span className="text-slate-500">同时重命名父文件夹：</span>
-              <input
-                type="text"
-                value={structurePreview.renameParent}
-                onChange={(e) => setStructurePreview(prev => prev ? { ...prev, renameParent: e.target.value } : prev)}
-                className="flex-1 min-w-0 px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-600 dark:bg-slate-700 dark:text-white outline-none"
-              />
-            </label>
-          )}
-
-          <div className="space-y-2 max-h-80 overflow-auto">
-            {structurePreview.folders.length === 0 ? (
-              <div className="text-xs text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-4">
-                AI 未建议新建子文件夹，可保留当前结构。
-              </div>
-            ) : structurePreview.folders.map((folder, index) => (
-              <div key={folder.tempId} className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-3 space-y-2">
-                <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={folder.selected}
-                    onChange={(e) => setStructurePreview(prev => {
-                      if (!prev) return prev;
-                      const folders = prev.folders.map((f, i) => i === index ? { ...f, selected: e.target.checked } : f);
-                      return { ...prev, folders };
-                    })}
-                  />
-                  <input
-                    type="text"
-                    value={folder.name}
-                    onChange={(e) => setStructurePreview(prev => {
-                      if (!prev) return prev;
-                      const folders = prev.folders.map((f, i) => i === index ? { ...f, name: e.target.value } : f);
-                      return { ...prev, folders };
-                    })}
-                    className="flex-1 min-w-0 px-2 py-1 text-sm rounded-lg border border-slate-200 dark:border-slate-600 dark:bg-slate-700 dark:text-white outline-none"
-                  />
-                  <span className="text-xs text-slate-400 whitespace-nowrap">{folder.linkIds.length} 个书签</span>
-                </div>
-                {folder.reason && <div className="text-[11px] text-slate-400">{folder.reason}</div>}
-                <div className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2">
-                  {folder.linkIds
-                    .map(id => links.find(l => l.id === id)?.title || id)
-                    .slice(0, 6)
-                    .join(' · ')}
-                  {folder.linkIds.length > 6 ? ' …' : ''}
-                </div>
+      {structurePreview && (
+        <Section
+          title={`子分类预览：${structurePreview.parentName}`}
+          desc={`${structurePreview.folders.filter(folder => folder.selected).length} 个分组待创建`}
+          action={<button onClick={applyStructure} className="flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white"><Check size={12} />应用</button>}
+        >
+          <div className="space-y-1">
+            {structurePreview.folders.map((folder, index) => (
+              <div key={folder.id} className="flex items-center gap-2 text-xs">
+                <input
+                  type="checkbox"
+                  checked={folder.selected}
+                  onChange={event => setStructurePreview(current => current ? { ...current, folders: current.folders.map((item, itemIndex) => itemIndex === index ? { ...item, selected: event.target.checked } : item) } : current)}
+                />
+                <input
+                  value={folder.name}
+                  onChange={event => setStructurePreview(current => current ? { ...current, folders: current.folders.map((item, itemIndex) => itemIndex === index ? { ...item, name: event.target.value } : item) } : current)}
+                  className="flex-1 rounded border border-slate-300 dark:border-slate-600 dark:bg-slate-700 px-2 py-1 text-xs text-slate-700 dark:text-slate-200"
+                />
+                <span className="shrink-0 text-slate-400">{folder.linkIds.length} 个</span>
               </div>
             ))}
           </div>
-
-          <div className="text-xs text-slate-500 dark:text-slate-400">
-            保留在父文件夹：{structurePreview.keepInParent.length} 个
-          </div>
-        </div>
+        </Section>
       )}
     </div>
   );

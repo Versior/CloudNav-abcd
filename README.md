@@ -16,8 +16,8 @@
 #### 版本v1.7
 - 1、同步更新设置页面的界面和功能
 - 2、同步升级浏览器扩展工具浏览器插件（功能提升）
-- 3、新增带有时间戳的WebDAV双重备份功能
-- 4、调整鼠标悬浮和排序状态下的站点卡片背景颜色
+- 3、调整鼠标悬浮和排序状态下的站点卡片背景颜色
+- 4、新增链接编辑页面网址图标实时预览效果
 - 5、新增链接编辑页面网址图标实时预览效果
 
 
@@ -51,13 +51,12 @@
 - 5、站点图标缓存优化
 
 #### 版本V1.2
-更新内容：
 - 1、解决站点卡片标题文字超出卡片边框的问题
 - 2、批量编辑增加全选功能
 - 3、在某个分类下新增新链接自动默认归属到当前分类
 - 4、添加新站点增加自动获取网站图标的功能
-- 5、WebDAV备份增加InfiniCloud网盘
-- 6、增加退出功能，非私有电脑保护隐私
+- 5、增加退出功能，非私有电脑保护隐私
+- 6、Chrome 扩展菜单改为中文
 - 7、Chrome 扩展菜单改为中文
 
 #### 版本V1.1
@@ -144,11 +143,22 @@
 *   **智能分类**: 添加链接时，AI 自动分析网页内容并推荐最合适的分类目录。
 
 ### ☁️ 数据同步与安全
-*   **Cloudflare KV 同步**: 利用边缘存储技术，公司、家里、手机三端数据秒级同步。
-*   **WebDAV 双重备份**: 支持坚果云、Nextcloud 等 WebDAV 网盘备份，数据自主掌控。
+*   **Cloudflare KV 同步**: 利用边缘存储技术实现多端数据同步。
+*   **R2 最新备份**: 只保留本项目固定键 `cloudnav/latest.json`，数据未变化时跳过上传。
 *   **隐私加密体系**:
     *   **全局锁**: 部署时设置访问密码，防止他人查看。
-    *   **目录锁**: 支持对“私有资源”等特定分类单独设置密码，隐藏敏感内容。
+    *   **目录锁**: 支持对特定分类单独设置密码，隐藏敏感内容。
+### 2. 配置 AI 服务
+点击侧边栏底部的 **“设置”** -> **“AI 设置”**：
+*   **提供商**: Google Gemini 或 OpenAI 兼容 (DeepSeek 等)。
+*   **模型与地址**: 填写模型名称；OpenAI-compatible 还需填写 API 地址。
+*   **Secret**: API Key 由 Cloudflare `GEMINI_API_KEY` / `OPENAI_API_KEY` Secret 提供，浏览器不保存 Key。
+*   **一键补全**: 在 AI 设置中生成描述、分类或文件夹建议。
+
+### 3. 本地数据导出
+从命令面板选择 **“导出 HTML”** 或 **“导出 JSON”**。
+*   生成的 HTML 文件兼容 Chrome、Edge、Firefox 等主流浏览器。
+*   JSON 导入会自动去重，并清洗旧版本已移除字段。
 
 ### 🎨 极致体验
 *   **Chrome 扩展插件**: 提供官方代码生成，支持点击浏览器图标后**手动选择分类**保存，体验媲美原生。
@@ -178,25 +188,24 @@
 
 ---
 
-## 🚀 部署教程 (免费)
+## Cloudflare Pages 部署
 
-本应用完全基于 **Cloudflare Pages** + **KV** 构建，无需服务器，永久免费。
+CloudNav 由一个 Cloudflare Pages 项目提供前端和 Pages Functions。KV 保存当前数据，R2 只保存本项目的唯一最新对象 `cloudnav/latest.json`。
 
-> **📥 [点击下载完整图文教程 (.docx)](图文教程.docx)**
+1. 在 Pages 创建项目，构建命令使用 `npm run build`，输出目录使用 `dist`。
+2. 创建 KV 命名空间，并绑定为 `NAVIX_KV`。迁移期间也兼容旧绑定名 `CLOUDNAV_KV`。
+3. 创建 R2 bucket，并绑定为 `NAVIX_BACKUPS`。
+4. 配置 `PASSWORD`；需要 AI 时再配置 `GEMINI_API_KEY` 或 `OPENAI_API_KEY` Secret。AI key 不会写入浏览器、KV 或 R2。
+5. 参考 `wrangler.toml.example` 检查绑定名称，重新部署 Pages。
 
-### 📋 简明部署步骤 (适合有经验用户)
+书签实际发生变化时才会覆盖固定的 R2 对象；重复内容会跳过上传，不生成时间戳历史文件。旧的 `cloudnav/` 项目备份可以在确认只属于本项目后，通过受保护的 `pruneBackup` 路径清理，不会触碰 bucket 中其他前缀。
 
-1.  **使用项目仓库**: 克隆或连接 `https://github.com/Versior/CloudNav-abcd` 到您的 GitHub / Cloudflare Pages。
-2.  **创建 Pages 应用**: 登录 Cloudflare Dashboard -> Workers & Pages -> 创建应用程序 -> Pages -> 连接到 Git -> 选择您的 NaviX 仓库
-3.  **配置构建**:
-    *   框架预设: **无 (None)**
-    *   构建命令: `npm run build`
-    *   输出目录: `dist`
-4.  **创建数据库**: 在 Workers & Pages -> KV 中创建一个新的命名空间，建议命名为 `NAVIX_DB`
-5.  **绑定变量**:
-    *   进入 Pages 项目设置 -> 绑定 (Bindings) -> 添加 KV 命名空间 -> 变量名优先填 `NAVIX_KV`，旧部署的 `CLOUDNAV_KV` 仍兼容，值选择刚才创建的 `NAVIX_DB`
-    *   进入 环境变量 (Environment variables) -> 添加变量 `PASSWORD`，值为您的访问密码。
-6.  **部署**: 重新部署项目即可。
+## 使用说明
+
+- 导入导出支持 JSON 和浏览器 HTML 文件。
+- AI 设置只填写提供商、模型和 OpenAI-compatible 地址；密钥由 Cloudflare Secret 提供。
+- 页面首次打开、回到前台或重新获得焦点时低频读取云端版本，不使用后台轮询。
+- WebDAV、健康检测、账号密码保险箱和待整理入口已移除。旧 `__inbox__` 书签会迁移到 `common`，旧 `credentials` 字段会在保存时丢弃。
 
 ---
 <details>

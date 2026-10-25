@@ -5,7 +5,12 @@ export interface StorageEnv {
   NAVIX_KV?: KVNamespace;
   CLOUDNAV_KV?: KVNamespace;
   NAVIX_BACKUPS?: R2Bucket;
+  CLOUDNAV_BACKUPS?: R2Bucket;
 }
+
+/** R2 绑定：兼容新旧两种命名，避免部署时绑定了旧名导致备份静默失效。 */
+export const getBackupBucket = (env: StorageEnv): R2Bucket | undefined =>
+  env.NAVIX_BACKUPS || env.CLOUDNAV_BACKUPS;
 
 export interface StoredData {
   links: Record<string, unknown>[];
@@ -100,8 +105,8 @@ export const readStoredData = async (env: StorageEnv): Promise<StoredData> =>
 let latestBackupQueue: Promise<void> = Promise.resolve();
 
 export const writeLatestBackup = async (env: StorageEnv, data: StoredData, hash: string) => {
-  if (!env.NAVIX_BACKUPS) return { status: 'missing-binding' as const };
-
+  const bucket = getBackupBucket(env);
+  if (!bucket) return { status: 'missing-binding' as const };
   const operation = latestBackupQueue.then(async () => {
     // Do not let an older request overwrite a newer KV version after a race.
     const current = await readStoredData(env);
@@ -109,14 +114,14 @@ export const writeLatestBackup = async (env: StorageEnv, data: StoredData, hash:
       return { status: 'skipped' as const, key: LATEST_BACKUP_KEY };
     }
 
-    const existing = await env.NAVIX_BACKUPS!.head(LATEST_BACKUP_KEY);
+    const existing = await bucket.head(LATEST_BACKUP_KEY);
     const existingHash = existing?.customMetadata?.contentHash;
     const existingVersion = Number(existing?.customMetadata?.version || NaN);
     if (existingHash === hash || (Number.isFinite(existingVersion) && existingVersion > data.version)) {
       return { status: 'skipped' as const, key: LATEST_BACKUP_KEY };
     }
 
-    await env.NAVIX_BACKUPS!.put(LATEST_BACKUP_KEY, JSON.stringify(data), {
+    await bucket.put(LATEST_BACKUP_KEY, JSON.stringify(data), {
       httpMetadata: { contentType: 'application/json; charset=utf-8' },
       customMetadata: { contentHash: hash, version: String(data.version) },
     });
@@ -129,19 +134,20 @@ export const writeLatestBackup = async (env: StorageEnv, data: StoredData, hash:
 };
 
 export const pruneLatestBackups = async (env: StorageEnv) => {
-  if (!env.NAVIX_BACKUPS) return { status: 'missing-binding' as const, deleted: [] as string[] };
+  const bucket = getBackupBucket(env);
+  if (!bucket) return { status: 'missing-binding' as const, deleted: [] as string[] };
 
   const deleted: string[] = [];
   let cursor: string | undefined;
   do {
-    const page = await env.NAVIX_BACKUPS.list({
+    const page = await bucket.list({
       prefix: 'cloudnav/',
       limit: 1000,
       ...(cursor ? { cursor } : {}),
     });
     for (const object of page.objects || []) {
       if (object.key === LATEST_BACKUP_KEY) continue;
-      await env.NAVIX_BACKUPS.delete(object.key);
+      await bucket.delete(object.key);
       deleted.push(object.key);
     }
     cursor = page.truncated ? page.cursor : undefined;

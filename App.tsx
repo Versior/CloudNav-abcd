@@ -727,7 +727,7 @@ const App: React.FC = () => {
       <SearchConfigModal isOpen={isSearchConfigOpen} onClose={() => setIsSearchConfigOpen(false)} sources={externalSearchSources} onSave={sources => void persistSearchConfig(sources, searchMode)} />
       <CommandPalette isOpen={isPaletteOpen} onClose={() => setIsPaletteOpen(false)} links={links} categories={categories} actions={actions} onOpenLink={link => { recordVisit(link.id); window.open(link.url, '_blank', 'noopener,noreferrer'); }} onSelectCategory={id => { setSelectedCategory(id); setIsPaletteOpen(false); }} />
       <SyncConflictModal isOpen={!!syncConflict} onClose={() => { syncBlockedRef.current = false; setSyncConflict(null); setSyncStatus('idle'); }} onUseLocal={() => { if (syncConflict) { syncBlockedRef.current = false; void syncToCloud(syncConflict.local.links, syncConflict.local.categories); setSyncConflict(null); } }} onUseCloud={() => { if (syncConflict) { syncBlockedRef.current = false; applyCloudData(syncConflict.cloud); setSyncConflict(null); setSyncStatus('idle'); } }} onMerge={() => { if (!syncConflict) return; const linkMap = new Map([...syncConflict.cloud.links, ...syncConflict.local.links].map(link => [link.id, link])); const catMap = new Map([...syncConflict.cloud.categories, ...syncConflict.local.categories].map(category => [category.id, category])); syncBlockedRef.current = false; dataVersionRef.current = syncConflict.cloud.version; updateData([...linkMap.values()], [...catMap.values()]); setSyncConflict(null); }} />
-      <main className="flex min-w-0 flex-1 flex-col bg-slate-50 dark:bg-slate-900">
+      <main className="flex min-w-0 flex-1 flex-col bg-canvas">
         <TopBar
           searchQuery={searchQuery}
           searchMode={searchMode}

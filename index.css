@@ -3,24 +3,186 @@
 @source "./*.tsx";
 @source "./components/**/*.tsx";
 @source "./services/**/*.tsx";
-@source "./hooks/**/*.tsx";
 @custom-variant dark (&:where(.dark, .dark *));
 
-body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+/* ==========================================================================
+   设计令牌
+   参考 Karakeep / Linkwarden / Omnivore 的做法：语义化命名 + HSL 分量，
+   运行时由 .dark 覆盖，组件只引用语义名，不直接写 slate-400 这类色阶。
+   ========================================================================== */
+@layer base {
+  :root {
+    /* 表面层次：canvas(底层) < surface(卡片) < raised(浮层) */
+    --canvas: 0 0% 99%;
+    --surface: 0 0% 100%;
+    --raised: 0 0% 100%;
+    --sunken: 240 6% 97%;
+
+    /* 文本 */
+    --text: 240 8% 12%;
+    --text-soft: 240 5% 38%;
+    --text-muted: 240 4% 55%;
+    --text-inverse: 0 0% 100%;
+
+    /* 描边 */
+    --line: 240 6% 90%;
+    --line-strong: 240 6% 84%;
+
+    /* 强调色（单一主色，克制使用） */
+    --accent: 221 83% 53%;
+    --accent-soft: 221 90% 96%;
+    --accent-text: 221 83% 45%;
+
+    /* 语义色 */
+    --danger: 0 72% 51%;
+    --danger-soft: 0 86% 97%;
+    --warn: 32 95% 44%;
+    --warn-soft: 38 92% 95%;
+
+    /* 形状与质感 */
+    --radius: 10px;
+    --radius-sm: 7px;
+    --radius-lg: 14px;
+    --shadow-card: 0 1px 2px hsl(240 8% 12% / 0.04);
+    --shadow-float: 0 12px 32px -12px hsl(240 8% 12% / 0.18);
+  }
+
+  .dark {
+    /* 近黑而非 slate-900 的蓝调，层次靠 +3% 亮度递增 */
+    --canvas: 240 6% 5%;
+    --surface: 240 5% 8%;
+    --raised: 240 5% 10.5%;
+    --sunken: 240 6% 4%;
+
+    --text: 0 0% 95%;
+    --text-soft: 240 5% 68%;
+    --text-muted: 240 4% 50%;
+    --text-inverse: 240 6% 6%;
+
+    --line: 240 5% 15%;
+    --line-strong: 240 5% 22%;
+
+    --accent: 217 91% 62%;
+    --accent-soft: 217 60% 16%;
+    --accent-text: 213 94% 72%;
+
+    --danger: 0 84% 66%;
+    --danger-soft: 0 40% 14%;
+    --warn: 38 92% 60%;
+    --warn-soft: 38 50% 14%;
+
+    --shadow-card: 0 1px 2px hsl(0 0% 0% / 0.5);
+    --shadow-float: 0 16px 40px -16px hsl(0 0% 0% / 0.8);
+  }
 }
 
-/* Custom scrollbar for sidebar */
-.scrollbar-hide::-webkit-scrollbar {
-  display: none;
-}
-.scrollbar-hide {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
+/* 把令牌接进 Tailwind，生成 bg-canvas / text-muted / border-line 等工具类 */
+@theme inline {
+  --color-canvas: hsl(var(--canvas));
+  --color-surface: hsl(var(--surface));
+  --color-raised: hsl(var(--raised));
+  --color-sunken: hsl(var(--sunken));
+
+  --color-ink: hsl(var(--text));
+  --color-ink-inverse: hsl(var(--text-inverse));
+  --color-ink-soft: hsl(var(--text-soft));
+  --color-ink-muted: hsl(var(--text-muted));
+
+  --color-line: hsl(var(--line));
+  --color-line-strong: hsl(var(--line-strong));
+
+  --color-accent: hsl(var(--accent));
+  --color-accent-soft: hsl(var(--accent-soft));
+  --color-accent-ink: hsl(var(--accent-text));
+
+  --color-danger: hsl(var(--danger));
+  --color-danger-soft: hsl(var(--danger-soft));
+  --color-warn: hsl(var(--warn));
+  --color-warn-soft: hsl(var(--warn-soft));
+
+  --radius-base: var(--radius);
+  --radius-sm: var(--radius-sm);
+  --radius-lg: var(--radius-lg);
 }
 
-/* Simple CSS-only tooltip transition */
-.tooltip-custom {
-  transition: opacity 0.2s, visibility 0.2s;
-  pointer-events: none;
+@layer base {
+  * {
+    border-color: hsl(var(--line));
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: hsl(var(--canvas));
+    color: hsl(var(--text));
+    /* 轻微的字距收紧，观感更接近现代桌面应用 */
+    letter-spacing: -0.006em;
+  }
+
+  /* 焦点可见但不刺眼 */
+  :focus-visible {
+    outline: 2px solid hsl(var(--accent) / 0.55);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: hsl(var(--accent) / 0.22);
+  }
+}
+
+@layer components {
+  /* 卡片：细边 + 极轻阴影，hover 只抬一点点，不做花哨位移 */
+  .card-surface {
+    background: hsl(var(--surface));
+    border: 1px solid hsl(var(--line));
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-card);
+    transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
+  }
+
+  .card-surface:hover {
+    border-color: hsl(var(--line-strong));
+    box-shadow: var(--shadow-float);
+  }
+
+  /* 浮层（弹窗、下拉、palette） */
+  .float-surface {
+    background: hsl(var(--raised));
+    border: 1px solid hsl(var(--line));
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-float);
+  }
+
+  /* 细滚动条，仅悬停时可见，避免界面出现粗重导轨 */
+  .scrollbar-hide::-webkit-scrollbar { display: none; }
+  .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+
+  .scrollbar-slim::-webkit-scrollbar { width: 8px; height: 8px; }
+  .scrollbar-slim::-webkit-scrollbar-track { background: transparent; }
+  .scrollbar-slim::-webkit-scrollbar-thumb {
+    background: hsl(var(--text-muted) / 0.22);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  .scrollbar-slim:hover::-webkit-scrollbar-thumb {
+    background: hsl(var(--text-muted) / 0.38);
+    background-clip: content-box;
+  }
+
+  .tooltip-custom {
+    transition: opacity 0.16s, visibility 0.16s;
+    pointer-events: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

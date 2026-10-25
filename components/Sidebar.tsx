@@ -59,9 +59,9 @@ const Sidebar: React.FC<SidebarProps> = ({
   return (
     <>
       {open && <div className="fixed inset-0 z-30 bg-slate-900/40 backdrop-blur-sm lg:hidden" onClick={onClose} aria-hidden="true" />}
-      <aside className={`fixed inset-y-0 left-0 z-40 flex w-60 shrink-0 transform flex-col border-r border-slate-200/80 bg-white transition-transform duration-200 lg:static lg:translate-x-0 dark:border-slate-700/60 dark:bg-slate-800 ${open ? 'translate-x-0' : '-translate-x-full'}`}>
-        <div className="flex h-14 items-center justify-between border-b border-slate-100 px-4 dark:border-slate-700/60">
-          <span className="truncate text-[15px] font-semibold tracking-tight text-slate-800 dark:text-slate-100">{navTitle || 'CloudNav'}</span>
+      <aside className={`fixed inset-y-0 left-0 z-40 flex w-60 shrink-0 transform flex-col border-r border-line bg-sunken transition-transform duration-200 lg:static lg:translate-x-0 ${open ? 'translate-x-0' : '-translate-x-full'}`}>
+        <div className="flex h-14 items-center justify-between border-b border-line px-4">
+          <span className="truncate text-[15px] font-semibold tracking-tight text-ink">{navTitle || 'CloudNav'}</span>
           <button type="button" onClick={onClose} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 lg:hidden dark:hover:bg-slate-700" aria-label="关闭导航">
             <X size={16} />
           </button>

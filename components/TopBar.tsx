@@ -34,7 +34,7 @@ const TopBar: React.FC<TopBarProps> = ({
   onToggleAdvanced, onCloseAdvanced, onFilterChange,
   onToggleTheme, onLogout, onAdd, onOpenSidebar, onOpenPalette,
 }) => (
-  <header className="flex h-14 shrink-0 items-center gap-2 border-b border-slate-200/80 bg-white/80 px-3 backdrop-blur-md lg:px-6 dark:border-slate-700/60 dark:bg-slate-800/70">
+  <header className="flex h-14 shrink-0 items-center gap-2 border-b border-line bg-canvas/85 px-3 backdrop-blur-xl lg:px-6">
     <button type="button" onClick={onOpenSidebar} className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 lg:hidden dark:hover:bg-slate-700" aria-label="打开导航">
       <Menu size={18} />
     </button>

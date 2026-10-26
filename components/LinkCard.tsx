@@ -82,14 +82,14 @@ const Favicon: React.FC<{ link: LinkItem; size: 'sm' | 'md'; density: Density }>
 
   if (!src) {
     return (
-      <span className={`${box} flex shrink-0 items-center justify-center overflow-hidden bg-sunken`}>
-        <span className="text-[11px] font-semibold text-ink-soft">{(link.title || '?').slice(0, 1).toUpperCase()}</span>
+      <span className={`${box} flex shrink-0 items-center justify-center overflow-hidden bg-gradient-to-br from-accent-soft to-sunken ring-1 ring-line/60`}>
+        <span className="text-[12px] font-semibold text-accent-ink">{(link.title || '?').slice(0, 1).toUpperCase()}</span>
       </span>
     );
   }
 
   return (
-    <span className={`${box} flex shrink-0 items-center justify-center overflow-hidden bg-sunken`}>
+    <span className={`${box} flex shrink-0 items-center justify-center overflow-hidden bg-gradient-to-br from-accent-soft/70 to-sunken ring-1 ring-line/60`}>
       <img
         key={src}
         data-fav={`${index}-${link.id}`}
@@ -222,22 +222,22 @@ const LinkCard: React.FC<LinkCardProps> = ({
       className={`${shell} flex h-full items-stretch gap-1 ${tokens.cardPadding}`}
     >
       {dragHandle}
-      <div className="flex min-w-0 flex-1 flex-col pr-1">
-        <div className="flex min-w-0 items-start gap-2.5">
+      <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex min-w-0 items-start gap-3">
           <Favicon link={link} size="md" density={density} />
           <div className="flex min-w-0 flex-1 flex-col self-stretch">
             <div className="flex items-center gap-1.5">
               {selectable && <SelectBox selected={selected} />}
-              <span className={`min-w-0 flex-1 truncate ${tokens.titleSize} font-semibold text-ink`}>{link.title}</span>
+              <span className={`min-w-0 flex-1 truncate ${tokens.titleSize} font-semibold tracking-tight text-ink`}>{link.title}</span>
               {pinRow}
             </div>
-            <p className={`mt-1 line-clamp-2 min-h-[2.1em] ${tokens.descSize} leading-relaxed text-ink-soft`}>
+            <p className={`mt-1.5 line-clamp-2 min-h-[2.1em] ${tokens.descSize} leading-relaxed text-ink-soft`}>
               {link.description || hostOf(link.url)}
             </p>
             {link.tags?.length ? (
-              <div className="mt-auto flex gap-1 overflow-hidden pt-1.5">
+              <div className="mt-auto flex gap-1.5 overflow-hidden pt-2">
                 {link.tags.slice(0, 3).map(tag => (
-                  <span key={tag} className="shrink-0 rounded bg-sunken px-1.5 py-0.5 text-[11px] text-ink-soft">{tag}</span>
+                  <span key={tag} className="shrink-0 rounded-full bg-sunken px-2 py-0.5 text-[11px] text-ink-soft">{tag}</span>
                 ))}
               </div>
             ) : null}

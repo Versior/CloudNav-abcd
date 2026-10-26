@@ -12,26 +12,27 @@
    ========================================================================== */
 @layer base {
   :root {
-    /* 表面层次：canvas(底层) < surface(卡片) < raised(浮层) */
-    --canvas: 0 0% 99%;
+    /* 表面层次：canvas(底层) < surface(卡片) < raised(浮层)
+       背景带一点冷调，和纯白卡片拉开层次——纯白压纯白会显得平。 */
+    --canvas: 240 24% 97%;
     --surface: 0 0% 100%;
     --raised: 0 0% 100%;
-    --sunken: 240 6% 97%;
+    --sunken: 240 18% 95%;
 
     /* 文本 */
-    --text: 240 8% 12%;
-    --text-soft: 240 5% 38%;
+    --text: 240 10% 11%;
+    --text-soft: 240 6% 34%;
     --text-muted: 240 5% 44%;
     --text-inverse: 0 0% 100%;
 
     /* 描边 */
-    --line: 240 6% 90%;
-    --line-strong: 240 6% 84%;
+    --line: 240 10% 91%;
+    --line-strong: 240 10% 84%;
 
-    /* 强调色（单一主色，克制使用） */
-    --accent: 221 83% 53%;
-    --accent-soft: 221 90% 96%;
-    --accent-text: 221 83% 45%;
+    /* 强调色：偏靛蓝，比纯蓝更有质感，也更克制 */
+    --accent: 245 75% 60%;
+    --accent-soft: 245 90% 96%;
+    --accent-text: 245 65% 50%;
 
     /* 语义色 */
     --danger: 0 72% 51%;
@@ -39,40 +40,61 @@
     --warn: 32 95% 44%;
     --warn-soft: 38 92% 95%;
 
-    /* 形状与质感 */
-    --radius: 10px;
-    --radius-sm: 7px;
-    --radius-lg: 14px;
-    --shadow-card: 0 1px 2px hsl(240 8% 12% / 0.04);
-    --shadow-float: 0 12px 32px -12px hsl(240 8% 12% / 0.18);
+    /* 形状与质感：大圆角 + 多层柔和阴影 */
+    --radius: 16px;
+    --radius-sm: 10px;
+    --radius-lg: 20px;
+    --shadow-card:
+      0 1px 2px hsl(240 30% 25% / 0.04),
+      0 3px 8px -2px hsl(240 30% 25% / 0.05),
+      0 10px 24px -8px hsl(240 30% 25% / 0.07);
+    --shadow-hover:
+      0 2px 4px hsl(240 30% 25% / 0.05),
+      0 8px 20px -4px hsl(240 30% 25% / 0.09),
+      0 18px 40px -12px hsl(240 30% 25% / 0.10);
+    --shadow-float:
+      0 2px 6px hsl(240 30% 25% / 0.05),
+      0 12px 28px -8px hsl(240 30% 25% / 0.14),
+      0 24px 56px -16px hsl(240 30% 25% / 0.16);
   }
 
   .dark {
-    /* 近黑而非 slate-900 的蓝调，层次靠 +3% 亮度递增 */
-    --canvas: 240 6% 5%;
-    --surface: 240 5% 8%;
-    --raised: 240 5% 10.5%;
-    --sunken: 240 6% 4%;
+    /* 深色层次靠亮度递增，保持冷调但不过蓝 */
+    --canvas: 240 8% 6%;
+    --surface: 240 7% 10%;
+    --raised: 240 7% 13%;
+    --sunken: 240 8% 4.5%;
 
-    --text: 0 0% 95%;
-    --text-soft: 240 5% 68%;
-    --text-muted: 240 5% 58%;
-    --text-inverse: 240 6% 6%;
+    --text: 0 0% 96%;
+    --text-soft: 240 6% 70%;
+    --text-muted: 240 5% 60%;
+    --text-inverse: 240 8% 7%;
 
-    --line: 240 5% 15%;
-    --line-strong: 240 5% 22%;
+    --line: 240 6% 18%;
+    --line-strong: 240 6% 26%;
 
-    --accent: 217 91% 62%;
-    --accent-soft: 217 60% 16%;
-    --accent-text: 213 94% 72%;
+    --accent: 245 85% 74%;
+    --accent-soft: 245 45% 20%;
+    --accent-text: 245 90% 78%;
 
     --danger: 0 84% 66%;
     --danger-soft: 0 40% 14%;
     --warn: 38 92% 60%;
     --warn-soft: 38 50% 14%;
 
-    --shadow-card: 0 1px 2px hsl(0 0% 0% / 0.5);
-    --shadow-float: 0 16px 40px -16px hsl(0 0% 0% / 0.8);
+    /* 深色下阴影要更实，否则卡片会"浮"不起来 */
+    --shadow-card:
+      0 1px 2px hsl(0 0% 0% / 0.5),
+      0 4px 10px -2px hsl(0 0% 0% / 0.45),
+      0 12px 28px -8px hsl(0 0% 0% / 0.55);
+    --shadow-hover:
+      0 2px 4px hsl(0 0% 0% / 0.55),
+      0 8px 20px -4px hsl(0 0% 0% / 0.5),
+      0 20px 44px -12px hsl(0 0% 0% / 0.6);
+    --shadow-float:
+      0 2px 6px hsl(0 0% 0% / 0.55),
+      0 14px 32px -8px hsl(0 0% 0% / 0.6),
+      0 28px 64px -16px hsl(0 0% 0% / 0.7);
   }
 }
 
@@ -135,18 +157,27 @@
 }
 
 @layer components {
-  /* 卡片：细边 + 极轻阴影，hover 只抬一点点，不做花哨位移 */
+  /* 卡片：柔和拟物——无边框、多层阴影托起，hover 轻微上浮 */
   .card-surface {
     background: hsl(var(--surface));
-    border: 1px solid hsl(var(--line));
+    border: 1px solid hsl(var(--line) / 0.55);
     border-radius: var(--radius);
     box-shadow: var(--shadow-card);
-    transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
+    transition:
+      border-color 180ms ease,
+      box-shadow 180ms ease,
+      transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   .card-surface:hover {
-    border-color: hsl(var(--line-strong));
-    box-shadow: var(--shadow-float);
+    border-color: hsl(var(--line) / 0.9);
+    box-shadow: var(--shadow-hover);
+    transform: translateY(-2px);
+  }
+
+  .card-surface:active {
+    transform: translateY(0);
+    box-shadow: var(--shadow-card);
   }
 
   /* 浮层（弹窗、下拉、palette） */

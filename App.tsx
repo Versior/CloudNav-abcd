@@ -8,6 +8,7 @@ import { AIConfig, Category, DEFAULT_CATEGORIES, ExternalSearchSource, INITIAL_L
 import { LOCAL_STORAGE_KEY, AI_CONFIG_KEY, SEARCH_CONFIG_KEY, SITE_SETTINGS_KEY, SORT_CONFIG_KEY } from './constants/storageKeys';
 import { applyReorder, applySort, canReorder, normalizeSortConfig, type SortConfig } from './services/sorting';
 import { normalizeDensity } from './services/density';
+import { computeFillCount, useElementHeight, useGridColumns } from './services/fillScreen';
 
 import { normalizeAppData } from './services/dataNormalization';
 import { parseBookmarks } from './services/bookmarkParser';
@@ -36,6 +37,13 @@ const SyncConflictModal = React.lazy(() => import('./components/SyncConflictModa
 
 /** 首页置顶横条最多显示的条目数，超出时引导去置顶页。 */
 const HOME_PIN_LIMIT = 6;
+/** 各密度档的卡片估算高度与行间距，用于计算首屏可容纳条数。 */
+const CARD_HEIGHTS: Record<Density, number> = { compact: 76, cozy: 92, spacious: 108 };
+const DENSITY_GAPS: Record<Density, number> = {
+  compact: 8,
+  cozy: 12,
+  spacious: 16,
+};
 const DEFAULT_SITE_SETTINGS = { title: 'CloudNav - 我的导航', navTitle: 'CloudNav', favicon: '', cardStyle: 'detailed' as const, density: 'cozy' as const, passwordExpiryDays: 7 };
 
 type SyncStatus = 'idle' | 'saving' | 'saved' | 'error' | 'conflict';
@@ -638,6 +646,17 @@ const App: React.FC = () => {
   const changeDensity = (next: Density) => persistSiteSettings({ density: next });
   const density = normalizeDensity(siteSettings.density);
 
+  // 置顶页自适应铺满首屏：按内容区高度、卡片高度与列数算首屏条数，
+  // 避免宽屏下方留出大片空白。仅读几何信息，不轮询。
+  const [contentRef, contentHeight] = useElementHeight();
+  const [gridRef, gridColumns] = useGridColumns(`${density}:${siteSettings.cardStyle}`);
+  const pinnedFillCount = useMemo(() => computeFillCount(contentHeight, {
+    total: pinnedLinks.length,
+    cardHeight: CARD_HEIGHTS[density],
+    columns: gridColumns,
+    rowGap: DENSITY_GAPS[density],
+  }), [contentHeight, pinnedLinks.length, density, gridColumns]);
+
   const exitArrange = () => { setArrangeMode(false); setSelectedIds(new Set()); };
   const toggleArrange = () => { if (arrangeMode) exitArrange(); else setArrangeMode(true); };
   const toggleSelect = (id: string) => setSelectedIds(current => {
@@ -786,18 +805,18 @@ const App: React.FC = () => {
           onOpenPalette={() => setIsPaletteOpen(true)}
         />
 
-        <div className="flex-1 overflow-y-auto px-4 py-5 lg:px-6">
+        <div ref={contentRef} className="flex-1 overflow-y-auto px-4 py-6 lg:px-8">
           {pinnedLinks.length > 0 && !searchQuery && selectedCategory === 'all' && (
             <section className="mb-4">
-              <div className="mb-2 flex items-center gap-1.5">
-                <Pin size={12} className="fill-blue-500 text-blue-500" />
-                <h2 className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">置顶</h2>
-                <span className="rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 dark:bg-blue-900/30 dark:text-blue-300">{pinnedLinks.length}</span>
+              <div className="mb-3 flex items-center gap-2">
+                <Pin size={13} className="fill-accent text-accent" />
+                <h2 className="text-[13px] font-semibold tracking-tight text-ink">置顶</h2>
+                <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-medium text-accent-ink">{pinnedLinks.length}</span>
                 {pinnedLinks.length > 6 && (
                   <button
                     type="button"
                     onClick={() => setSelectedCategory('pinned')}
-                    className="ml-auto text-[11px] text-slate-400 hover:text-blue-600"
+                    className="ml-auto text-[12px] text-ink-muted transition-colors hover:text-accent"
                   >
                     查看全部 →
                   </button>
@@ -838,17 +857,21 @@ const App: React.FC = () => {
             />
 
             {displayedLinks.length ? (
-                <SortableContext items={displayedLinks.map(link => link.id)} strategy={rectSortingStrategy}>
-                  <BookmarkGrid
-                    links={displayedLinks}
-                    cardStyle={siteSettings.cardStyle}
-                    density={density}
-                    selectable={arrangeMode}
-                    selectedIds={selectedIds}
-                    draggable={canReorder(sortConfig) && !arrangeMode}
-                    {...cardHandlers}
-                  />
-                </SortableContext>
+                <div ref={gridRef}>
+                  <SortableContext items={displayedLinks.map(link => link.id)} strategy={rectSortingStrategy}>
+                    <BookmarkGrid
+                      links={selectedCategory === 'pinned' && !searchQuery && !arrangeMode
+                        ? displayedLinks.slice(0, pinnedFillCount)
+                        : displayedLinks}
+                      cardStyle={siteSettings.cardStyle}
+                      density={density}
+                      selectable={arrangeMode}
+                      selectedIds={selectedIds}
+                      draggable={canReorder(sortConfig) && !arrangeMode}
+                      {...cardHandlers}
+                    />
+                  </SortableContext>
+                </div>
             ) : (
               <div className="rounded-xl border border-dashed border-slate-200 py-16 text-center dark:border-slate-700">
                 {searchQuery ? (

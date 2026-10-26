@@ -99,31 +99,62 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-      <div ref={modalRef} role="dialog" aria-modal="true" className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden border border-slate-200 dark:border-slate-700 flex max-h-[90vh] flex-col md:flex-row">
-        <div className="w-full md:w-48 bg-slate-50 dark:bg-slate-800/50 border-r border-slate-200 dark:border-slate-700 flex flex-row md:flex-col p-2 gap-1 overflow-x-auto shrink-0">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4 backdrop-blur-md">
+      <div
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        className="float-surface flex max-h-[88vh] w-full max-w-4xl flex-col overflow-hidden md:flex-row"
+      >
+        {/* macOS 系统设置式侧栏 */}
+        <div className="material-sidebar flex shrink-0 flex-row gap-1 overflow-x-auto p-2 md:w-52 md:flex-col">
           {tabs.map(tab => (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${activeTab === tab.id ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'}`}>
-              <tab.icon size={18} />
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center gap-2.5 whitespace-nowrap rounded-[7px] px-2.5 py-1.5 text-[13px] transition-colors ${activeTab === tab.id
+                ? 'bg-accent text-ink-inverse shadow-sm'
+                : 'text-ink-soft hover:bg-white/35 dark:hover:bg-white/10'}`}
+            >
+              <tab.icon size={15} />
               {tab.label}
             </button>
           ))}
         </div>
 
-        <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden bg-white dark:bg-slate-800">
-          <div className="flex justify-between items-center p-4 border-b border-slate-200 dark:border-slate-700 shrink-0">
-            <h3 className="text-lg font-semibold dark:text-white">设置</h3>
-            <button onClick={onClose} aria-label="关闭" className="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full"><X className="w-5 h-5 dark:text-slate-400" /></button>
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          <div className="flex shrink-0 items-center justify-between px-5 pb-2 pt-4">
+            <h3 className="text-[15px] font-semibold tracking-tight text-ink">
+              {tabs.find(t => t.id === activeTab)?.label || '设置'}
+            </h3>
+            <button
+              onClick={onClose}
+              aria-label="关闭"
+              className="rounded-full p-1 text-ink-muted transition-colors hover:bg-white/40 hover:text-ink dark:hover:bg-white/10"
+            >
+              <X className="h-4 w-4" />
+            </button>
           </div>
-          <div className="flex-1 overflow-y-auto p-6 pb-12">
+          <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-4">
             {activeTab === 'site' && <SiteSettingsTab value={localSiteSettings} onChange={handleSiteChange} />}
             {activeTab === 'backup' && <BackupSettingsTab onExportJson={onExportJson} onOpenImport={onOpenImport} lastBackup={lastBackup} />}
             {activeTab === 'ai' && <AISettingsTab config={localConfig} onChange={handleChange} links={links} categories={categories} onUpdateLinks={onUpdateLinks} onUpdateCategories={onUpdateCategories} onUpdateData={onUpdateData} initialCategoryId={initialAICategoryId} initialAIAction={initialAIAction} />}
             {activeTab === 'duplicates' && <DuplicateLinksPanel links={links} categories={categories} onUpdateLinks={onUpdateLinks} onEditLink={onEditLink} />}
             {activeTab === 'tools' && <ExtensionToolsTab authToken={authToken} extensionToken={extensionToken} favicon={localSiteSettings.favicon} navTitle={localSiteSettings.navTitle} />}
           </div>
-          <div className="p-4 border-t border-slate-200 dark:border-slate-700 flex justify-end bg-slate-50 dark:bg-slate-800/50 shrink-0">
-            <button onClick={() => { onSave(localConfig, localSiteSettings); onClose(); }} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium shadow-lg shadow-blue-500/20"><Save size={18} /> 保存更改</button>
+          <div className="flex shrink-0 justify-end gap-2 px-5 py-3" style={{ boxShadow: 'inset 0 0.5px 0 hsl(var(--line) / 0.8)' }}>
+            <button
+              onClick={onClose}
+              className="rounded-[7px] px-3 py-1.5 text-[13px] text-ink-soft transition-colors hover:bg-white/40 dark:hover:bg-white/10"
+            >
+              取消
+            </button>
+            <button
+              onClick={() => { onSave(localConfig, localSiteSettings); onClose(); }}
+              className="flex items-center gap-1.5 rounded-[7px] bg-accent px-4 py-1.5 text-[13px] font-medium text-ink-inverse shadow-sm transition-opacity hover:opacity-90"
+            >
+              <Save size={14} /> 保存
+            </button>
           </div>
         </div>
       </div>

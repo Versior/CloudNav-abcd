@@ -1,5 +1,5 @@
 import React from 'react';
-import { Check, Edit2, GripVertical, Pin } from 'lucide-react';
+import { Check, Edit2, GripHorizontal, GripVertical, Pin } from 'lucide-react';
 import type { CardStyle, Density, LinkItem } from '../types';
 import { DENSITY_TOKENS } from '../services/density';
 
@@ -104,6 +104,45 @@ const Favicon: React.FC<{ link: LinkItem; size: 'sm' | 'md'; density: Density }>
   );
 };
 
+/**
+ * 启动台图标：macOS 应用图标的感觉——大圆角方块、柔和渐变底、居中 favicon。
+ * 与 Favicon 分开实现，因为它要更大、更"实"，还要有 macOS 那种光泽。
+ */
+const LaunchIcon: React.FC<{ link: LinkItem; density: Density }> = ({ link, density }) => {
+  const tokens = DENSITY_TOKENS[density];
+  const candidates = React.useMemo(() => {
+    const list = fallbackIcons(link.url);
+    return link.icon ? [link.icon, ...list] : list;
+  }, [link.icon, link.url]);
+  const [index, setIndex] = React.useState(0);
+  React.useEffect(() => { setIndex(0); }, [link.icon, link.url]);
+  const src = candidates[index] || '';
+  const initial = (link.title || '?').trim().slice(0, 1).toUpperCase();
+
+  return (
+    <span
+      className={`${tokens.launchIcon} relative flex shrink-0 items-center justify-center overflow-hidden shadow-[0_2px_8px_-1px_hsl(240_30%_30%/0.18),0_1px_2px_hsl(240_30%_30%/0.12)]`}
+    >
+      {/* 底：macOS 图标的柔和渐变 */}
+      <span className="absolute inset-0 bg-gradient-to-br from-white to-[hsl(240_20%_92%)] dark:from-[hsl(240_8%_26%)] dark:to-[hsl(240_10%_18%)]" />
+      {/* 顶部高光，做出玻璃/搪瓷的立体感 */}
+      <span className="absolute inset-x-0 top-0 h-1/2 rounded-t-[inherit] bg-gradient-to-b from-white/70 to-transparent dark:from-white/12" />
+      {src ? (
+        <img
+          key={src}
+          src={src}
+          alt=""
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          className="relative h-[58%] w-[58%] object-contain"
+          onError={() => setIndex(current => current + 1)}
+        />
+      ) : (
+        <span className="relative text-[22px] font-semibold text-ink-soft">{initial}</span>
+      )}
+    </span>
+  );
+};
 const PinMark: React.FC<{ visible?: boolean }> = ({ visible }) =>
   visible ? <Pin size={10} className="shrink-0 fill-accent text-accent" /> : null;
 
@@ -168,7 +207,46 @@ const LinkCard: React.FC<LinkCardProps> = ({
     </span>
   );
 
-  const pinRow = <PinMark visible={link.pinned} />;
+  // 置顶标记不再常显：只在卡片悬停/聚焦时浮现，避免每张卡右上角挂个蓝钉子
+  const pinRow = (
+    <span className="opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+      <PinMark visible={link.pinned} />
+    </span>
+  );
+
+  // icon：macOS 启动台风格——无卡片底，大圆角图标居中，标题压在图标下方
+  if (cardStyle === 'icon') {
+    return (
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={selectable ? handleClick : undefined}
+        onDoubleClick={event => { event.preventDefault(); onOpen(link); }}
+        onKeyDown={handleKey}
+        onContextMenu={event => onContextMenu?.(event, link)}
+        className="group relative flex flex-col items-center gap-1.5 rounded-xl px-1 py-2 transition-colors hover:bg-white/25 dark:hover:bg-white/10"
+      >
+        {selectable && <div className="absolute left-1 top-1 z-10"><SelectBox selected={selected} /></div>}
+        {/* 拖拽把手：只在手动排序时出现，悬停才显形，不占布局 */}
+        {draggable && (
+          <span
+            ref={activatorRef}
+            role="button"
+            tabIndex={-1}
+            aria-label="拖动排序"
+            className="absolute inset-x-0 top-0 z-10 mx-auto flex h-4 w-8 cursor-grab touch-none items-center justify-center rounded-b-[6px] text-ink-muted/0 transition-colors group-hover:text-ink-muted/70 active:cursor-grabbing"
+          >
+            <GripHorizontal size={12} />
+          </span>
+        )}
+        <LaunchIcon link={link} density={density} />
+        <span className="flex w-full items-center justify-center gap-1">
+          {link.pinned ? <Pin size={9} className="shrink-0 fill-accent text-accent" /> : null}
+          <span className="min-w-0 truncate text-center text-[12px] font-medium text-ink">{link.title}</span>
+        </span>
+      </div>
+    );
+  }
 
   if (cardStyle === 'list') {
     return (

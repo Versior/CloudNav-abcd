@@ -29,6 +29,7 @@ interface BookmarkToolbarProps {
 }
 
 const STYLE_BUTTONS: Array<{ style: CardStyle; label: string; icon: React.ReactNode }> = [
+  { style: 'icon', label: '图标', icon: <Grid3x3 size={13} /> },
   { style: 'detailed', label: '详情', icon: <LayoutGrid size={13} /> },
   { style: 'simple', label: '简约', icon: <Rows3 size={13} /> },
   { style: 'list', label: '列表', icon: <List size={13} /> },
@@ -43,10 +44,13 @@ const DENSITY_ICONS: Record<Density, React.ReactNode> = {
   cozy: <Grid2x2 size={13} />,
   spacious: <RectangleHorizontal size={13} />,
 };
-const segmentBase = 'flex items-center rounded-lg bg-sunken p-0.5';
+/* macOS 分段控件：胶囊底 + 选中项白底微投影 */
+const segmentBase = 'flex items-center rounded-[7px] bg-white/40 p-[2px] shadow-[inset_0_0_0_0.5px_hsl(0_0%_100%/0.6)] dark:bg-black/20 dark:shadow-[inset_0_0_0_0.5px_hsl(0_0%_100%/0.1)]';
 const segmentItem = (active: boolean) =>
-  `flex items-center gap-1 rounded-[6px] px-2 py-1 text-[12px] font-medium transition-colors ${
-    active ? 'bg-raised text-accent shadow-sm' : 'text-ink-soft hover:text-ink'
+  `flex items-center gap-1 rounded-[5px] px-1.5 py-[3px] text-[12px] font-medium transition-colors ${
+    active
+      ? 'bg-white text-ink shadow-[0_1px_2px_hsl(240_30%_25%/0.12)] dark:bg-[hsl(240_8%_24%)] dark:text-ink'
+      : 'text-ink-soft hover:text-ink'
   }`;
 
 const BookmarkToolbar: React.FC<BookmarkToolbarProps> = ({

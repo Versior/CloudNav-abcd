@@ -13,7 +13,10 @@ interface SortableCardProps {
   selectable?: boolean;
   selected?: boolean;
   /** 显示拖拽把手（仅手动排序且非整理模式）。 */
+  /** 显示拖拽把手（仅手动排序且非整理模式）。 */
   draggable?: boolean;
+  /** dnd-kit 的 activator ref，挂到把手上。 */
+  activatorRef?: (node: HTMLElement | null) => void;
   onOpen: (link: LinkItem) => void;
   onEdit: (link: LinkItem) => void;
   onToggleSelect?: (id: string) => void;
@@ -27,13 +30,16 @@ interface SortableCardProps {
  */
 const SortableCard: React.FC<SortableCardProps> = props => {
   const sortable = useSortable({ id: props.link.id, disabled: !props.draggable });
+  // 拖拽监听不要挂在外层 div 上：dnd-kit 会接管 pointer/context 事件，
+  // 导致卡片的右键菜单失效。只在没有把手（不可拖）时才挂外层。
+  const useOuterListeners = props.draggable && !props.activatorRef;
   return (
     <div
       ref={sortable.setNodeRef}
       style={{ transform: CSS.Transform.toString(sortable.transform), transition: sortable.transition }}
       className={sortable.isDragging ? 'z-10 opacity-60' : undefined}
-      {...(props.draggable ? sortable.attributes : {})}
-      {...(props.draggable ? sortable.listeners : {})}
+      {...(useOuterListeners ? sortable.attributes : {})}
+      {...(useOuterListeners ? sortable.listeners : {})}
     >
       <LinkCard {...props} activatorRef={props.draggable ? sortable.setActivatorNodeRef : undefined} />
     </div>

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Globe, RefreshCw } from 'lucide-react';
 import { SiteSettings } from '../types';
+import { WALLPAPER_OPTIONS } from '../services/wallpaper';
 
 const getRandomColor = () => {
  const h = Math.floor(Math.random() * 360);
@@ -126,6 +127,50 @@ const SiteSettingsTab: React.FC<SiteSettingsTabProps> = ({ value, onChange }) =>
  </button>
  ))}
  </div>
+ </div>
+ </div>
+ <div>
+ <label className="block text-sm font-medium text-ink mb-2">壁纸</label>
+ <div className="grid grid-cols-5 gap-2">
+ {WALLPAPER_OPTIONS.map(option => {
+ const active = (value.wallpaperPreset || 'sonoma') === option.id;
+ return (
+ <button
+ key={option.id}
+ type="button"
+ onClick={() => onChange('wallpaperPreset', option.id)}
+ className={`group flex flex-col items-center gap-1.5 rounded-lg p-1.5 transition-all ${active ? 'bg-accent-soft ring-2 ring-accent' : 'hover:bg-sunken'}`}
+ >
+ <span className="h-10 w-full rounded-md border border-line/60 shadow-sm" style={{ background: option.swatch }} />
+ <span className={`text-[11px] ${active ? 'font-medium text-accent-ink' : 'text-ink-soft'}`}>{option.label}</span>
+ </button>
+ );
+ })}
+ </div>
+ {(value.wallpaperPreset || 'sonoma') === 'custom' && (
+ <input
+ type="text"
+ value={value.wallpaper || ''}
+ onChange={(e) => onChange('wallpaper', e.target.value)}
+ placeholder="https://example.com/wallpaper.jpg"
+ className="mt-2 w-full p-2 rounded-lg border border-line-strong dark:text-white outline-none focus:ring-2 focus:ring-accent"
+ />
+ )}
+ <div className="mt-3">
+ <div className="flex items-center justify-between mb-1">
+ <span className="text-xs text-ink-soft">壁纸亮度压制</span>
+ <span className="text-xs tabular-nums text-ink-muted">{typeof value.wallpaperDim === 'number' ? value.wallpaperDim : 12}%</span>
+ </div>
+ <input
+ type="range"
+ min="0"
+ max="80"
+ step="2"
+ value={typeof value.wallpaperDim === 'number' ? value.wallpaperDim : 12}
+ onChange={(e) => onChange('wallpaperDim', Number(e.target.value))}
+ className="w-full accent-[hsl(var(--accent))]"
+ />
+ <p className="mt-1 text-xs text-ink-soft">调高会让壁纸更淡，文字更清晰</p>
  </div>
  </div>
  <div>

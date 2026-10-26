@@ -28,6 +28,8 @@ export interface Category {
 }
 
 export type CardStyle = SiteSettings['cardStyle'];
+/** 内置壁纸预设。 */
+export type WallpaperPreset = 'sonoma' | 'ventura' | 'monterey' | 'graphite' | 'custom';
 /** 全局密度：同时控制书签卡片与侧栏分类的尺寸。 */
 export type Density = 'compact' | 'cozy' | 'spacious';
 
@@ -35,9 +37,15 @@ export interface SiteSettings {
   title: string;
   navTitle: string;
   favicon: string;
-  cardStyle: 'detailed' | 'simple' | 'list';
+  cardStyle: 'detailed' | 'simple' | 'list' | 'icon';
   /** 卡片与侧栏的尺寸档位，缺省视为 cozy。 */
   density?: Density;
+  /** 壁纸：预设 id（如 'sonoma'）或自定义图片 URL；留空用默认渐变。 */
+  wallpaper?: string;
+  /** 壁纸预设 id，缺省视为 sonoma。 */
+  wallpaperPreset?: WallpaperPreset;
+  /** 壁纸暗化程度 0-100，越大字越清晰。 */
+  wallpaperDim?: number;
   passwordExpiryDays: number;
 }
 

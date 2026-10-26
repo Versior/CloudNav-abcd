@@ -1,6 +1,6 @@
 import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Cloud, Loader2, Lock, Moon, Pin, Plus, Save, Settings, Sun, Upload,
+  Cloud, Loader2, Lock, Moon, Pin, Plus, Save, Search, Settings, Sun, Upload,
 } from 'lucide-react';
 import { DndContext, DragEndEvent, PointerSensor, closestCenter, useSensor, useSensors, KeyboardSensor } from '@dnd-kit/core';
 import { SortableContext, sortableKeyboardCoordinates, rectSortingStrategy } from '@dnd-kit/sortable';
@@ -9,6 +9,7 @@ import { LOCAL_STORAGE_KEY, AI_CONFIG_KEY, SEARCH_CONFIG_KEY, SITE_SETTINGS_KEY,
 import { applyReorder, applySort, canReorder, normalizeSortConfig, type SortConfig } from './services/sorting';
 import { normalizeDensity } from './services/density';
 import { computeFillCount, useElementHeight, useGridColumns } from './services/fillScreen';
+import { applyWallpaper } from './services/wallpaper';
 
 import { normalizeAppData } from './services/dataNormalization';
 import { parseBookmarks } from './services/bookmarkParser';
@@ -21,6 +22,7 @@ import TopBar from './components/TopBar';
 import BookmarkToolbar from './components/BookmarkToolbar';
 import BookmarkGrid from './components/BookmarkGrid';
 import ArrangeActionBar from './components/ArrangeActionBar';
+import Launchpad from './components/Launchpad';
 import { ToastProvider, useToast } from './components/Toast';
 import AuthModal from './components/AuthModal';
 import CategoryAuthModal from './components/CategoryAuthModal';
@@ -44,7 +46,7 @@ const DENSITY_GAPS: Record<Density, number> = {
   cozy: 12,
   spacious: 16,
 };
-const DEFAULT_SITE_SETTINGS = { title: 'CloudNav - 我的导航', navTitle: 'CloudNav', favicon: '', cardStyle: 'detailed' as const, density: 'cozy' as const, passwordExpiryDays: 7 };
+const DEFAULT_SITE_SETTINGS = { title: 'CloudNav - 我的导航', navTitle: 'CloudNav', favicon: '', cardStyle: 'icon' as const, density: 'cozy' as const, wallpaperPreset: 'sonoma' as const, wallpaperDim: 12, passwordExpiryDays: 7 };
 
 type SyncStatus = 'idle' | 'saving' | 'saved' | 'error' | 'conflict';
 const DEFAULT_AI_CONFIG: AIConfig = { provider: 'gemini', baseUrl: '', model: 'gemini-2.5-flash' };
@@ -115,6 +117,19 @@ const App: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [darkMode, setDarkMode] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  /** 菜单栏时钟：每分钟更新一次，只影响这一小块文本。 */
+  /**
+   * 菜单栏时钟：拆成"日期 / 星期 / 时间"三段。
+   * macOS 的菜单栏就是这样分层的——日期和星期是次要信息，时间才是主体。
+   */
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 20_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const clockDate = `${now.getMonth() + 1}月${now.getDate()}日`;
+  const clockWeekday = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][now.getDay()];
+  const clockTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
   const [sortConfig, setSortConfig] = useState<SortConfig>(() => normalizeSortConfig(readJson<unknown>(SORT_CONFIG_KEY, null)));
   const [arrangeMode, setArrangeMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -130,7 +145,14 @@ const App: React.FC = () => {
   const [aiConfig, setAiConfig] = useState<AIConfig>(() => readAIConfig());
   const [siteSettings, setSiteSettings] = useState<SiteSettings>(() => {
     const stored = readJson<Partial<SiteSettings>>(SITE_SETTINGS_KEY, {});
-    return { ...DEFAULT_SITE_SETTINGS, ...stored, density: normalizeDensity(stored.density) };
+    return {
+      ...DEFAULT_SITE_SETTINGS,
+      ...stored,
+      density: normalizeDensity(stored.density),
+      // 桌面模式改造：旧数据里的详情/简约/列表统一迁到图标式，
+      // 否则老用户永远看不到新的桌面观感。
+      cardStyle: 'icon',
+    };
   });
   const [authToken, setAuthToken] = useState(false);
   const [requiresAuth, setRequiresAuth] = useState<boolean | null>(null);
@@ -357,6 +379,11 @@ const App: React.FC = () => {
     link.href = siteSettings.favicon;
     document.head.appendChild(link);
   }, [siteSettings.title, siteSettings.favicon]);
+
+  // 壁纸：预设或自定义图片写进 --wallpaper，主题切换时重新应用
+  useEffect(() => {
+    applyWallpaper(siteSettings, darkMode);
+  }, [siteSettings.wallpaper, siteSettings.wallpaperPreset, siteSettings.wallpaperDim, darkMode]);
 
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
@@ -613,6 +640,24 @@ const App: React.FC = () => {
     [links, categories, unlockedCategoryIds, sortConfig],
   );
 
+  /**
+   * 启动台：按"常用点击"排序。
+   * 优先访问次数，其次最近访问；都没访问过时用置顶 + 添加时间兜底，
+   * 保证新用户打开也有内容，而不是空 Dock。
+   */
+  const dockLinks = useMemo(() => {
+    const visible = links.filter(link => !link.deletedAt && !isCategoryLocked(link.categoryId));
+    return [...visible].sort((a, b) => {
+      const byVisit = (b.visitCount || 0) - (a.visitCount || 0);
+      if (byVisit !== 0) return byVisit;
+      const byRecent = (b.lastVisitedAt || 0) - (a.lastVisitedAt || 0);
+      if (byRecent !== 0) return byRecent;
+      const byPin = Number(!!b.pinned) - Number(!!a.pinned);
+      if (byPin !== 0) return byPin;
+      return b.createdAt - a.createdAt;
+    });
+  }, [links, categories, unlockedCategoryIds]);
+
   /** 侧栏计数：父分类含其子分类的书签。 */
   const categoryCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -649,13 +694,15 @@ const App: React.FC = () => {
   // 置顶页自适应铺满首屏：按内容区高度、卡片高度与列数算首屏条数，
   // 避免宽屏下方留出大片空白。仅读几何信息，不轮询。
   const [contentRef, contentHeight] = useElementHeight();
-  const [gridRef, gridColumns] = useGridColumns(`${density}:${siteSettings.cardStyle}`);
+  const [gridRef, gridColumns, gridTileHeight] = useGridColumns(`${density}:${siteSettings.cardStyle}`);
   const pinnedFillCount = useMemo(() => computeFillCount(contentHeight, {
     total: pinnedLinks.length,
-    cardHeight: CARD_HEIGHTS[density],
+    // 优先用实测格子高度：图标视图和详情视图的格子高差很多，
+    // 写死估算值会让自适应算错行数。
+    cardHeight: gridTileHeight || CARD_HEIGHTS[density],
     columns: gridColumns,
     rowGap: DENSITY_GAPS[density],
-  }), [contentHeight, pinnedLinks.length, density, gridColumns]);
+  }), [contentHeight, pinnedLinks.length, density, gridColumns, gridTileHeight]);
 
   const exitArrange = () => { setArrangeMode(false); setSelectedIds(new Set()); };
   const toggleArrange = () => { if (arrangeMode) exitArrange(); else setArrangeMode(true); };
@@ -748,10 +795,52 @@ const App: React.FC = () => {
 
   if (isLoading) return <div className="min-h-screen flex items-center justify-center text-slate-400"><Loader2 className="animate-spin" /></div>;
 
-  return <div className="flex h-screen overflow-hidden bg-canvas text-ink">
+  return <div className="mac-desktop flex h-screen overflow-hidden text-ink">
     {requiresAuth && !authToken && <div className="fixed inset-0 z-50 bg-canvas flex items-center justify-center"><div className="w-full max-w-md p-6 text-center"><div className="mx-auto w-16 h-16 bg-accent-soft rounded-full flex items-center justify-center mb-4"><Lock className="w-8 h-8 text-accent" /></div><h1 className="text-2xl font-bold mb-2">需要身份验证</h1><p className="text-ink-soft mb-6">请输入访问密码以继续使用导航。</p><AuthModal isOpen onLogin={handleLogin} /></div></div>}
     {(!requiresAuth || authToken) && <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
     <Suspense fallback={null}>
+    <div className="mac-desktop">
+    {/* 顶部菜单栏 */}
+    <div className="mac-menubar">
+      {/* 左侧：应用名 + 菜单项，macOS 的 menubar 是紧凑等距的 */}
+      <span className="flex items-center gap-1.5 pr-1">
+        <span className="grid h-4 w-4 place-items-center rounded-[4px] bg-accent text-[9px] font-bold text-ink-inverse">N</span>
+        <span className="font-semibold tracking-tight">{siteSettings.navTitle || 'CloudNav'}</span>
+      </span>
+      {[
+        { label: '书签', onClick: () => { setSelectedCategory('pinned'); setSidebarOpen(false); } },
+        { label: '设置', onClick: () => setIsSettingsOpen(true) },
+        { label: '外观', onClick: toggleTheme },
+      ].map(item => (
+        <button
+          key={item.label}
+          type="button"
+          onClick={item.onClick}
+          className="rounded-[5px] px-2 py-[3px] text-[13px] text-ink-soft transition-colors hover:bg-white/30 hover:text-ink dark:hover:bg-white/10"
+        >
+          {item.label}
+        </button>
+      ))}
+
+      {/* 右侧：时钟 + 主题切换，用细竖线分隔 */}
+      <span className="ml-auto flex items-center gap-2.5">
+        <span className="flex items-center gap-2 text-[12.5px] tabular-nums text-ink-soft">
+          <span>{clockDate}</span>
+          <span className="text-ink-muted">{clockWeekday}</span>
+          <span className="font-medium text-ink">{clockTime}</span>
+        </span>
+        <span className="h-3 w-px bg-line" />
+        <button
+          type="button"
+          onClick={toggleTheme}
+          className="rounded-[5px] p-1 text-ink-soft transition-colors hover:bg-white/30 hover:text-ink dark:hover:bg-white/10"
+          aria-label="切换主题"
+        >
+          {darkMode ? <Sun size={13} /> : <Moon size={13} />}
+        </button>
+      </span>
+    </div>
+    <div className="mac-desktop-body">
     <Sidebar
       navTitle={siteSettings.navTitle}
       categories={categories}
@@ -775,37 +864,28 @@ const App: React.FC = () => {
       <SearchConfigModal isOpen={isSearchConfigOpen} onClose={() => setIsSearchConfigOpen(false)} sources={externalSearchSources} onSave={sources => void persistSearchConfig(sources, searchMode)} />
       <CommandPalette isOpen={isPaletteOpen} onClose={() => setIsPaletteOpen(false)} links={links} categories={categories} actions={actions} onOpenLink={link => { recordVisit(link.id); window.open(link.url, '_blank', 'noopener,noreferrer'); }} onSelectCategory={id => { setSelectedCategory(id); setIsPaletteOpen(false); }} />
       <SyncConflictModal isOpen={!!syncConflict} onClose={() => { syncBlockedRef.current = false; setSyncConflict(null); setSyncStatus('idle'); }} onUseLocal={() => { if (syncConflict) { syncBlockedRef.current = false; void syncToCloud(syncConflict.local.links, syncConflict.local.categories); setSyncConflict(null); } }} onUseCloud={() => { if (syncConflict) { syncBlockedRef.current = false; applyCloudData(syncConflict.cloud); setSyncConflict(null); setSyncStatus('idle'); } }} onMerge={() => { if (!syncConflict) return; const linkMap = new Map([...syncConflict.cloud.links, ...syncConflict.local.links].map(link => [link.id, link])); const catMap = new Map([...syncConflict.cloud.categories, ...syncConflict.local.categories].map(category => [category.id, category])); syncBlockedRef.current = false; dataVersionRef.current = syncConflict.cloud.version; updateData([...linkMap.values()], [...catMap.values()]); setSyncConflict(null); }} />
-      <main className="flex min-w-0 flex-1 flex-col bg-canvas">
-        <TopBar
-          searchQuery={searchQuery}
-          searchMode={searchMode}
-          placeholder={searchMode === 'internal' ? '搜索书签、标签、备注…' : '搜索互联网…'}
-          darkMode={darkMode}
-          authenticated={authToken}
-          mobileSearchOpen={isMobileSearchOpen}
-          advancedOpen={isAdvancedFilterOpen}
-          advancedActive={advancedFilterActive}
-          tags={allTags}
-          filters={advancedFilters}
-          onSearchChange={setSearchQuery}
-          onSubmitSearch={() => {
-            if (searchMode !== 'external' || !searchQuery.trim()) return;
-            const source = selectedSearchSource || externalSearchSources.find(item => item.enabled) || getDefaultSearchSources()[0];
-            window.open(source.url.replace('{query}', encodeURIComponent(searchQuery)), '_blank', 'noopener,noreferrer');
-          }}
-          onToggleSearchMode={() => setSearchMode(current => current === 'internal' ? 'external' : 'internal')}
-          onToggleMobileSearch={() => setIsMobileSearchOpen(open => !open)}
-          onToggleAdvanced={() => setIsAdvancedFilterOpen(open => !open)}
-          onCloseAdvanced={() => setIsAdvancedFilterOpen(false)}
-          onFilterChange={next => setAdvancedFilters(current => ({ ...current, ...next }))}
-          onToggleTheme={toggleTheme}
-          onLogout={handleLogout}
-          onAdd={() => { setEditingLink(undefined); openExclusive('link'); }}
-          onOpenSidebar={() => setSidebarOpen(true)}
-          onOpenPalette={() => setIsPaletteOpen(true)}
-        />
-
-        <div ref={contentRef} className="flex-1 overflow-y-auto px-4 py-6 lg:px-8">
+      <main className="material-content flex min-w-0 flex-1 flex-col">
+        {/* 桌面模式：搜索并入顶部菜单栏，不再单独占一条工具栏 */}
+        <div className="flex items-center gap-2 px-4 pb-1 pt-3">
+          <div className="relative w-full max-w-md">
+            <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-muted" />
+            <input
+              value={searchQuery}
+              onChange={event => setSearchQuery(event.target.value)}
+              placeholder="搜索书签…"
+              className="material-sunken w-full rounded-[8px] py-1.5 pl-8 pr-3 text-[13px] text-ink outline-none transition-shadow placeholder:text-ink-muted focus:shadow-[inset_0_0_0_2px_hsl(var(--accent)/0.55)]"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => { setEditingLink(undefined); openExclusive('link'); }}
+            className="ml-auto flex items-center gap-1.5 rounded-[8px] bg-accent px-2.5 py-1.5 text-[12.5px] font-medium text-ink-inverse shadow-sm transition-opacity hover:opacity-90"
+          >
+            <Plus size={13} />
+            添加
+          </button>
+        </div>
+        <div ref={contentRef} className="scrollbar-slim flex-1 overflow-y-auto px-4 pb-32 pt-6 lg:px-8">
           {pinnedLinks.length > 0 && !searchQuery && selectedCategory === 'all' && (
             <section className="mb-4">
               <div className="mb-3 flex items-center gap-2">
@@ -904,7 +984,15 @@ const App: React.FC = () => {
           </section>
         </div>
       </main>
-
+    </div>
+    </div>
+      <Launchpad
+        links={dockLinks}
+        density={density}
+        onOpen={openLink}
+        onEdit={link => { setEditingLink(link); setIsLinkModalOpen(true); }}
+        onContextMenu={handleContextMenu}
+      />
       <ArrangeActionBar
         selectedCount={selectedIds.size}
         categories={categories}

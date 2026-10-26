@@ -29,6 +29,54 @@ const IconSlot: React.FC<{ name?: string; active: boolean; size: number }> = ({ 
   <Icon name={name || 'Folder'} size={size} className={active ? 'shrink-0' : 'shrink-0 opacity-70'} />
 );
 
+/**
+ * macOS 风格文件夹图标：双层梯形，蓝色渐变。
+ * 比线性 Folder 图标更像真实的 macOS 文件夹，符合"桌面"观感。
+ */
+const FolderGlyph: React.FC<{ active?: boolean; size?: number; locked?: boolean }> = ({ active, size = 18, locked }) => {
+  const w = size;
+  const h = Math.round(size * 0.82);
+  return (
+    <span className="relative shrink-0" style={{ width: w, height: h }} aria-hidden="true">
+      <svg viewBox="0 0 24 20" width={w} height={h} fill="none">
+        <defs>
+          <linearGradient id="folderFront" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={active ? '#5ac8fa' : '#6fb6f5'} />
+            <stop offset="100%" stopColor={active ? '#0a84ff' : '#3f8fdd'} />
+          </linearGradient>
+          <linearGradient id="folderBack" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={active ? '#7fd4ff' : '#9ccdf8'} />
+            <stop offset="100%" stopColor={active ? '#3aa0f0' : '#6ba9e6'} />
+          </linearGradient>
+        </defs>
+        {/* 后层：文件夹背板 */}
+        <path d="M2 4.5C2 3.4 2.9 2.5 4 2.5h5.2c.6 0 1.1.3 1.5.8l1 1.4H20c1.1 0 2 .9 2 2v1.3H2V4.5Z" fill="url(#folderBack)" />
+        {/* 前层：翻开的那片 */}
+        <path d="M2 7.6h20v9.9c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V7.6Z" fill="url(#folderFront)" />
+        {/* 顶部高光 */}
+        <path d="M2 7.6h20v1.6H2z" fill="#fff" opacity="0.28" />
+      </svg>
+      {locked ? <Lock size={9} className="absolute -bottom-0.5 -right-0.5 text-warn" /> : null}
+    </span>
+  );
+};
+/**
+ * 图标底座：macOS 侧边栏/系统设置里的圆角方块图标。
+ * 让"全部链接""置顶"和文件夹保持同一视觉重量，不会一个线性图标一个实心图标。
+ */
+const GlyphTile: React.FC<{ active?: boolean; size?: number; tint?: 'blue' | 'amber'; children: React.ReactNode }> = ({
+  active, size = 20, tint = 'blue', children,
+}) => (
+  <span
+    className={`grid shrink-0 place-items-center rounded-[6px] transition-colors ${tint === 'amber'
+      ? 'bg-gradient-to-b from-amber-400 to-amber-500'
+      : 'bg-gradient-to-b from-[#5ac8fa] to-[#0a84ff]'} ${active ? 'shadow-[0_1px_3px_hsl(211_100%_45%/0.35)]' : 'opacity-90'}`}
+    style={{ width: size, height: size }}
+  >
+    {children}
+  </span>
+);
+
 /** 可接收书签的分类行：拖入时高亮，作为移动目标。 */
 const DroppableCategory: React.FC<{
   id: string;
@@ -50,14 +98,16 @@ const DroppableCategory: React.FC<{
       type="button"
       onClick={onClick}
       onContextMenu={onContextMenu}
-      className={`group flex w-full items-center gap-2.5 rounded-lg px-3 ${tokens.navItemPadding} ${tokens.navItemText} transition-all ${isOver
-        ? 'bg-accent-soft text-accent ring-1 ring-accent/40'
+      className={`group flex w-full items-center gap-2.5 rounded-lg px-2.5 ${tokens.navItemPadding} ${tokens.navItemText} transition-all ${isOver
+        ? 'bg-accent/25 text-accent ring-1 ring-accent/50'
         : active
-          ? 'bg-accent-soft font-medium text-accent'
-          : 'text-ink-soft hover:bg-raised'}`}
-      style={depth ? { paddingLeft: 12 + depth * 14 } : undefined}
+          ? 'bg-white/50 font-medium text-ink shadow-[inset_0_0_0_0.5px_hsl(0_0%_100%/0.7)] dark:bg-[hsl(240_8%_22%)] dark:shadow-[inset_0_0_0_0.5px_hsl(0_0%_100%/0.12)]'
+          : 'text-ink-soft hover:bg-white/30 dark:hover:bg-white/8'}`}
+      style={depth ? { paddingLeft: 10 + depth * 14 } : undefined}
+      title={`双击打开「${label}」`}
     >
-      <IconSlot name={icon} active={active || isOver} size={tokens.navIconSize} />
+      {/* 文件夹图标：macOS 蓝色文件夹，比线性图标更有"文件夹"的感觉 */}
+      <FolderGlyph active={active || isOver} size={tokens.navIconSize + 5} locked={!!locked} />
       <span className="min-w-0 flex-1 truncate text-left">{label}</span>
       {locked && <Lock size={11} className="shrink-0 text-warn" />}
       <span className="ml-auto text-[11px] font-normal tabular-nums text-ink-muted">{countText}</span>
@@ -73,9 +123,9 @@ const Sidebar: React.FC<SidebarProps> = ({
   const childrenOf = (id: string) => categories.filter(category => category.parentId === id);
 
   const tokens = DENSITY_TOKENS[density];
-  const itemClass = (active: boolean) => `group flex w-full items-center gap-2.5 rounded-lg px-3 ${tokens.navItemPadding} ${tokens.navItemText} transition-colors ${active
-    ? 'bg-accent-soft font-medium text-accent'
-    : 'text-ink-soft hover:bg-raised'}`;
+  const itemClass = (active: boolean) => `group flex w-full items-center gap-2.5 rounded-lg px-2.5 ${tokens.navItemPadding} ${tokens.navItemText} transition-colors ${active
+    ? 'bg-white/50 font-medium text-ink shadow-[inset_0_0_0_0.5px_hsl(0_0%_100%/0.7)] dark:bg-[hsl(240_8%_22%)] dark:shadow-[inset_0_0_0_0.5px_hsl(0_0%_100%/0.12)]'
+    : 'text-ink-soft hover:bg-white/30 dark:hover:bg-white/8'}`;
 
   const renderCategory = (category: Category, depth: number) => (
     <React.Fragment key={category.id}>
@@ -98,22 +148,27 @@ const Sidebar: React.FC<SidebarProps> = ({
   return (
     <>
       {open && <div className="fixed inset-0 z-30 bg-black/40 backdrop-blur-sm lg:hidden" onClick={onClose} aria-hidden="true" />}
-      <aside className={`fixed inset-y-0 left-0 z-40 flex w-60 shrink-0 transform flex-col border-r border-line bg-sunken transition-transform duration-200 lg:static lg:translate-x-0 ${open ? 'translate-x-0' : '-translate-x-full'}`}>
-        <div className="flex h-14 items-center justify-between border-b border-line px-4">
-          <span className="truncate text-[15px] font-semibold tracking-tight text-ink">{navTitle || 'CloudNav'}</span>
-          <button type="button" onClick={onClose} className="rounded-md p-1 text-ink-muted hover:bg-raised lg:hidden" aria-label="关闭导航">
-            <X size={16} />
+      <aside className={`mac-folderbar fixed inset-y-0 left-0 z-40 flex w-52 shrink-0 transform flex-col transition-transform duration-200 lg:static lg:translate-x-0 ${open ? 'translate-x-0' : '-translate-x-full'}`}>
+        <div className="flex h-9 items-center justify-between px-2">
+          <span className="truncate text-[12px] font-semibold uppercase tracking-wide text-ink-muted">{navTitle || 'CloudNav'}</span>
+          <button type="button" onClick={onClose} className="rounded-md p-1 text-ink-muted hover:bg-white/30 lg:hidden" aria-label="关闭导航">
+            <X size={14} />
           </button>
         </div>
 
-        <nav className="flex-1 space-y-0.5 overflow-y-auto p-2.5">
+        <nav className="scrollbar-hide flex-1 space-y-0.5 overflow-y-auto px-1.5 pb-3">
+          {/* macOS 侧边栏：全部 / 置顶用系统图标底座，和文件夹保持同一视觉重量 */}
           <button type="button" onClick={() => onSelect('all')} className={itemClass(selectedCategory === 'all')}>
-            <LayoutGrid size={tokens.navIconSize} className="shrink-0" />
+            <GlyphTile active={selectedCategory === 'all'} size={tokens.navIconSize + 5}>
+              <LayoutGrid size={Math.round((tokens.navIconSize + 5) * 0.58)} className="text-white" />
+            </GlyphTile>
             <span className="min-w-0 flex-1 truncate text-left">全部链接</span>
             <span className="ml-auto text-[11px] tabular-nums text-ink-muted">{totalCount || ''}</span>
           </button>
           <button type="button" onClick={() => onSelect('pinned')} className={itemClass(selectedCategory === 'pinned')}>
-            <Pin size={tokens.navIconSize} className="shrink-0" />
+            <GlyphTile active={selectedCategory === 'pinned'} size={tokens.navIconSize + 5} tint="amber">
+              <Pin size={Math.round((tokens.navIconSize + 5) * 0.58)} className="text-white" />
+            </GlyphTile>
             <span className="min-w-0 flex-1 truncate text-left">置顶</span>
             <span className="ml-auto text-[11px] tabular-nums text-ink-muted">{pinnedCount || ''}</span>
           </button>
@@ -131,9 +186,11 @@ const Sidebar: React.FC<SidebarProps> = ({
           )}
         </nav>
 
-        <div className="border-t border-line p-2.5">
+        <div className="px-1.5 pb-2 pt-2" style={{ boxShadow: 'inset 0 0.5px 0 hsl(var(--line) / 0.7)' }}>
           <button type="button" onClick={onOpenSettings} className={itemClass(false)}>
-            <Settings size={tokens.navIconSize} className="shrink-0" />
+            <GlyphTile size={tokens.navIconSize + 5} tint="blue">
+              <Settings size={Math.round((tokens.navIconSize + 5) * 0.58)} className="text-white" />
+            </GlyphTile>
             <span className="min-w-0 flex-1 truncate text-left">设置</span>
           </button>
         </div>

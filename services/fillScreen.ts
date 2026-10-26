@@ -28,7 +28,7 @@ interface Options {
 
 const DEFAULT_ROW_GAP = 12;
 const DEFAULT_MIN = 6;
-const DEFAULT_MAX = 60;
+const DEFAULT_MAX = 240;
 
 /**
  * 根据容器高度算出铺满首屏需要的条目数（向上取整到整行）。
@@ -42,10 +42,10 @@ export const computeFillCount = (
   if (!Number.isFinite(cardHeight) || cardHeight <= 0) return Math.min(total, min);
 
   const cols = Math.max(1, Math.floor(columns));
-  // 每行占用高度 = 卡片高 + 行间距
+  // 每行占用高度 = 格子高 + 行间距
   const rowHeight = cardHeight + rowGap;
-  // 多留一行，让首屏底部露出"还有更多"的迹象，而不是刚好卡在边缘
-  const visibleRows = Math.max(1, Math.floor(containerHeight / rowHeight) + 1);
+  // 刚好铺满可视高度即可：多算一行会顶出滚动条，看起来像"多塞了一行"
+  const visibleRows = Math.max(1, Math.floor(containerHeight / rowHeight));
   const bounded = Math.max(min, Math.min(visibleRows * cols, max));
   // 向上取整到整行，避免最后一行只有半个
   const aligned = Math.ceil(bounded / cols) * cols;
@@ -78,9 +78,11 @@ export const useElementHeight = (): [(node: HTMLElement | null) => void, number]
  * 观察网格实际列数：数第一行有几个卡片，比解析 grid-template-columns 更可靠。
  * 返回 [回调 ref, 列数]。`resetKey` 变化时重新测量（密度/形态切换）。
  */
-export const useGridColumns = (resetKey: unknown): [(node: HTMLElement | null) => void, number] => {
+export const useGridColumns = (resetKey: unknown): [(node: HTMLElement | null) => void, number, number] => {
   const [node, setNode] = React.useState<HTMLElement | null>(null);
   const [columns, setColumns] = React.useState(1);
+  /** 实测的格子高度：不同卡片形态高度差很多，必须实测不能估算。 */
+  const [tileHeight, setTileHeight] = React.useState(0);
 
   React.useEffect(() => {
     if (!node) return;
@@ -99,6 +101,8 @@ export const useGridColumns = (resetKey: unknown): [(node: HTMLElement | null) =
         else break;
       }
       if (count > 0) setColumns(count);
+      const h = Math.round(children[0].offsetHeight);
+      if (h > 0) setTileHeight(h);
     };
     measure();
     const observer = new ResizeObserver(measure);
@@ -106,5 +110,5 @@ export const useGridColumns = (resetKey: unknown): [(node: HTMLElement | null) =
     return () => observer.disconnect();
   }, [node, resetKey]);
 
-  return [setNode, columns];
+  return [setNode, columns, tileHeight];
 };

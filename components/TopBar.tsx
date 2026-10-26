@@ -34,19 +34,21 @@ const TopBar: React.FC<TopBarProps> = ({
   onToggleAdvanced, onCloseAdvanced, onFilterChange,
   onToggleTheme, onLogout, onAdd, onOpenSidebar, onOpenPalette,
 }) => (
-  <header className="flex h-14 shrink-0 items-center gap-2 border-b border-line bg-canvas/85 px-3 backdrop-blur-xl lg:px-6">
+  <header className="material-content hairline-b flex h-14 shrink-0 items-center gap-2 px-3 lg:px-6">
     <button type="button" onClick={onOpenSidebar} className="rounded-md p-1.5 text-ink-soft hover:bg-raised lg:hidden" aria-label="打开导航">
       <Menu size={18} />
     </button>
 
-    <div className={`${mobileSearchOpen ? 'flex' : 'hidden lg:flex'} relative min-w-0 flex-1 max-w-xl`}>
+    {/* 左侧占位与右侧按钮组等宽，让搜索框真正居中 */}
+    <div className="hidden flex-1 lg:block" aria-hidden="true" />
+    <div className={`${mobileSearchOpen ? 'flex' : 'hidden lg:flex'} relative w-full min-w-0 max-w-xl lg:flex-none lg:basis-[min(36rem,46vw)]`}>
       <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted" />
       <input
         value={searchQuery}
         onChange={event => onSearchChange(event.target.value)}
         onKeyDown={event => { if (event.key === 'Enter') onSubmitSearch(); }}
         placeholder={placeholder}
-        className="w-full rounded-full border border-line bg-sunken py-2 pl-9 pr-[6.5rem] text-[14px] text-ink outline-none transition-colors placeholder:text-ink-muted focus:border-accent/60 focus:bg-raised"
+        className="material-sunken w-full rounded-[9px] py-1.5 pl-9 pr-[6.5rem] text-[14px] text-ink outline-none transition-shadow placeholder:text-ink-muted focus:shadow-[inset_0_0_0_2px_hsl(var(--accent)/0.55)]"
         style={{ fontSize: 16 }}
       />
       <div className="absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-0.5">
@@ -84,7 +86,7 @@ const TopBar: React.FC<TopBarProps> = ({
       {mobileSearchOpen ? <X size={17} /> : <Search size={17} />}
     </button>
 
-    <div className="ml-auto flex items-center gap-1">
+    <div className="flex flex-1 items-center justify-end gap-1">
       <button
         type="button"
         onClick={onOpenPalette}

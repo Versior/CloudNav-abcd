@@ -6,99 +6,156 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* ==========================================================================
-   设计令牌
-   参考 Karakeep / Linkwarden / Omnivore 的做法：语义化命名 + HSL 分量，
-   运行时由 .dark 覆盖，组件只引用语义名，不直接写 slate-400 这类色阶。
+   设计令牌 · macOS 风格
+   ==========================================================================
+   核心思路：不再用"纯色平面"表达层次，改用 macOS 的材质分层：
+   壁纸 → 侧栏玻璃（vibrancy）→ 内容区玻璃 → 卡片（更亮的玻璃）。
+   所有表面都是半透明 + backdrop-filter，壁纸透上来才有层次。
+
+   语义命名沿用此前做法：组件只引用 --surface / --text 等语义名，
+   不直接写颜色值，这样亮暗与材质切换只改这里。
    ========================================================================== */
 @layer base {
   :root {
-    /* 表面层次：canvas(底层) < surface(卡片) < raised(浮层)
-       背景带一点冷调，和纯白卡片拉开层次——纯白压纯白会显得平。 */
+    /* ---- 材质层（半透明，靠壁纸透出层次） ---- */
+    /* 侧栏：macOS 的 sidebar 比内容区更"厚"一点 */
+    --material-sidebar: hsl(0 0% 100% / 0.55);
+    /* 内容区：比侧栏更透，让壁纸更明显 */
+    --material-content: hsl(0 0% 100% / 0.42);
+    /* 卡片：更亮更实，浮在内容区之上 */
+    --material-card: hsl(0 0% 100% / 0.72);
+    /* 浮层：弹窗/下拉，macOS 里是最实的一层 */
+    --material-float: hsl(0 0% 100% / 0.86);
+    /* 下沉区：输入框、标签底 */
+    --material-sunken: hsl(240 20% 96% / 0.6);
+
+    /* ---- 兼容旧语义名（部分组件仍引用） ---- */
     --canvas: 240 24% 97%;
     --surface: 0 0% 100%;
     --raised: 0 0% 100%;
     --sunken: 240 18% 95%;
 
-    /* 文本 */
-    --text: 240 10% 11%;
-    --text-soft: 240 6% 34%;
-    --text-muted: 240 5% 44%;
+    /* ---- 文本：macOS 的正文是近黑而非纯黑 ---- */
+    --text: 240 6% 10%;
+    --text-soft: 240 5% 32%;
+    --text-muted: 240 4% 44%;
     --text-inverse: 0 0% 100%;
 
-    /* 描边 */
-    --line: 240 10% 91%;
-    --line-strong: 240 10% 84%;
+    /* ---- 描边：玻璃边缘用白色高光，而不是灰线 ---- */
+    --line: 240 10% 88%;
+    --line-strong: 240 10% 78%;
+    /* 玻璃内描边高光 */
+    --glass-edge: hsl(0 0% 100% / 0.65);
+    /* 玻璃外描边（深色描边让玻璃有厚度） */
+    --glass-rim: hsl(240 20% 40% / 0.12);
 
-    /* 强调色：偏靛蓝，比纯蓝更有质感，也更克制 */
-    --accent: 245 75% 60%;
-    --accent-soft: 245 90% 96%;
-    --accent-text: 245 65% 50%;
+    /* ---- 强调色：macOS 系统蓝 #0A84FF / #007AFF ---- */
+    --accent: 211 100% 43%;
+    --accent-soft: 211 100% 96%;
+    --accent-text: 211 100% 42%;
 
-    /* 语义色 */
-    --danger: 0 72% 51%;
-    --danger-soft: 0 86% 97%;
-    --warn: 32 95% 44%;
-    --warn-soft: 38 92% 95%;
+    /* ---- 语义色：macOS 系统色板 ---- */
+    --danger: 4 90% 58%;
+    --danger-soft: 4 100% 96%;
+    --warn: 37 92% 50%;
+    --warn-soft: 37 100% 95%;
 
-    /* 形状与质感：大圆角 + 多层柔和阴影 */
-    --radius: 16px;
-    --radius-sm: 10px;
-    --radius-lg: 20px;
+    /* ---- 形状：macOS 窗口 10px / 卡片 12px / 控件 7px ---- */
+    --radius-window: 12px;
+    --radius: 12px;
+    --radius-sm: 8px;
+    --radius-lg: 16px;
+
+    /* ---- 阴影：macOS 是"柔和大扩散"，不是硬投影 ---- */
     --shadow-card:
-      0 1px 2px hsl(240 30% 25% / 0.04),
-      0 3px 8px -2px hsl(240 30% 25% / 0.05),
-      0 10px 24px -8px hsl(240 30% 25% / 0.07);
+      0 1px 1px hsl(240 20% 20% / 0.03),
+      0 2px 6px -1px hsl(240 20% 20% / 0.05),
+      0 8px 20px -6px hsl(240 20% 20% / 0.07);
     --shadow-hover:
-      0 2px 4px hsl(240 30% 25% / 0.05),
-      0 8px 20px -4px hsl(240 30% 25% / 0.09),
-      0 18px 40px -12px hsl(240 30% 25% / 0.10);
+      0 1px 2px hsl(240 20% 20% / 0.04),
+      0 4px 12px -2px hsl(240 20% 20% / 0.08),
+      0 14px 32px -10px hsl(240 20% 20% / 0.11);
     --shadow-float:
-      0 2px 6px hsl(240 30% 25% / 0.05),
-      0 12px 28px -8px hsl(240 30% 25% / 0.14),
-      0 24px 56px -16px hsl(240 30% 25% / 0.16);
+      0 2px 8px hsl(240 20% 20% / 0.06),
+      0 12px 32px -6px hsl(240 20% 20% / 0.14),
+      0 28px 64px -16px hsl(240 20% 20% / 0.20);
+    /* 窗口整体投影 */
+    --shadow-window:
+      0 0 0 0.5px hsl(240 20% 20% / 0.10),
+      0 12px 40px -8px hsl(240 20% 20% / 0.18),
+      0 40px 80px -24px hsl(240 20% 20% / 0.22);
+
+    /* ---- 玻璃模糊强度 ---- */
+    --blur-glass: 32px;
+    --blur-glass-heavy: 48px;
+
+    /* ---- 壁纸：默认 macOS Sonoma 风格冷调渐变 ---- */
+    --wallpaper:
+      radial-gradient(1100px 760px at 10% 6%, hsl(214 88% 70% / 0.34), transparent 62%),
+      radial-gradient(980px 700px at 90% 16%, hsl(268 78% 74% / 0.28), transparent 64%),
+      radial-gradient(900px 900px at 68% 94%, hsl(190 84% 68% / 0.24), transparent 62%),
+      radial-gradient(760px 580px at 18% 90%, hsl(330 74% 74% / 0.18), transparent 62%),
+      linear-gradient(155deg, hsl(220 44% 88%), hsl(248 38% 82%));
   }
 
   .dark {
-    /* 深色层次靠亮度递增，保持冷调但不过蓝 */
+    --material-sidebar: hsl(240 10% 12% / 0.62);
+    --material-content: hsl(240 10% 8% / 0.55);
+    --material-card: hsl(240 8% 16% / 0.68);
+    --material-float: hsl(240 8% 18% / 0.88);
+    --material-sunken: hsl(240 10% 6% / 0.6);
+
     --canvas: 240 8% 6%;
     --surface: 240 7% 10%;
     --raised: 240 7% 13%;
     --sunken: 240 8% 4.5%;
 
-    --text: 0 0% 96%;
-    --text-soft: 240 6% 70%;
-    --text-muted: 240 5% 60%;
-    --text-inverse: 240 8% 7%;
+    --text: 0 0% 97%;
+    --text-soft: 240 5% 76%;
+    --text-muted: 240 4% 64%;
+    --text-inverse: 240 8% 8%;
 
-    --line: 240 6% 18%;
-    --line-strong: 240 6% 26%;
+    --line: 240 6% 26%;
+    --line-strong: 240 6% 38%;
+    --glass-edge: hsl(0 0% 100% / 0.10);
+    --glass-rim: hsl(0 0% 0% / 0.35);
 
-    --accent: 245 85% 74%;
-    --accent-soft: 245 45% 20%;
-    --accent-text: 245 90% 78%;
+    --accent: 211 100% 66%;
+    --accent-soft: 211 60% 22%;
+    --accent-text: 211 100% 74%;
 
-    --danger: 0 84% 66%;
-    --danger-soft: 0 40% 14%;
-    --warn: 38 92% 60%;
-    --warn-soft: 38 50% 14%;
+    --danger: 4 100% 66%;
+    --danger-soft: 4 40% 18%;
+    --warn: 37 95% 58%;
+    --warn-soft: 37 45% 18%;
 
-    /* 深色下阴影要更实，否则卡片会"浮"不起来 */
     --shadow-card:
-      0 1px 2px hsl(0 0% 0% / 0.5),
-      0 4px 10px -2px hsl(0 0% 0% / 0.45),
-      0 12px 28px -8px hsl(0 0% 0% / 0.55);
+      0 1px 1px hsl(0 0% 0% / 0.30),
+      0 2px 6px -1px hsl(0 0% 0% / 0.35),
+      0 8px 20px -6px hsl(0 0% 0% / 0.45);
     --shadow-hover:
-      0 2px 4px hsl(0 0% 0% / 0.55),
-      0 8px 20px -4px hsl(0 0% 0% / 0.5),
-      0 20px 44px -12px hsl(0 0% 0% / 0.6);
+      0 1px 2px hsl(0 0% 0% / 0.35),
+      0 4px 12px -2px hsl(0 0% 0% / 0.45),
+      0 14px 32px -10px hsl(0 0% 0% / 0.55);
     --shadow-float:
-      0 2px 6px hsl(0 0% 0% / 0.55),
-      0 14px 32px -8px hsl(0 0% 0% / 0.6),
-      0 28px 64px -16px hsl(0 0% 0% / 0.7);
+      0 2px 8px hsl(0 0% 0% / 0.40),
+      0 12px 32px -6px hsl(0 0% 0% / 0.55),
+      0 28px 64px -16px hsl(0 0% 0% / 0.65);
+    --shadow-window:
+      0 0 0 0.5px hsl(0 0% 100% / 0.08),
+      0 12px 40px -8px hsl(0 0% 0% / 0.60),
+      0 40px 80px -24px hsl(0 0% 0% / 0.70);
+
+    --wallpaper:
+      radial-gradient(1100px 760px at 10% 6%, hsl(214 86% 42% / 0.30), transparent 62%),
+      radial-gradient(980px 700px at 90% 16%, hsl(268 76% 46% / 0.26), transparent 64%),
+      radial-gradient(900px 900px at 68% 94%, hsl(190 82% 40% / 0.22), transparent 62%),
+      radial-gradient(760px 580px at 18% 90%, hsl(330 72% 44% / 0.16), transparent 62%),
+      linear-gradient(155deg, hsl(228 32% 14%), hsl(240 26% 8%));
   }
 }
 
-/* 把令牌接进 Tailwind，生成 bg-canvas / text-muted / border-line 等工具类 */
+/* 把令牌接进 Tailwind */
 @theme inline {
   --color-canvas: hsl(var(--canvas));
   --color-surface: hsl(var(--surface));
@@ -135,73 +192,292 @@
   html {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    /* 让滚动条在 macOS 上也是细的 */
+    color-scheme: light dark;
   }
 
   body {
-    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+    /* macOS 系统字体栈优先 */
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+      "Helvetica Neue", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
     background: hsl(var(--canvas));
     color: hsl(var(--text));
-    /* 轻微的字距收紧，观感更接近现代桌面应用 */
-    letter-spacing: -0.006em;
+    /* macOS 的字距比默认更紧 */
+    letter-spacing: -0.011em;
+    /* 壁纸固定在视口，滚动时不跟着走 */
+    background-attachment: fixed;
   }
 
-  /* 焦点可见但不刺眼 */
+  /* 壁纸层：固定铺满，所有玻璃表面都靠它透出层次 */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    background-image: var(--wallpaper);
+    background-size: cover;
+    background-position: center;
+    /* 壁纸轻微模糊，避免抢文字注意力 */
+    filter: blur(0px) saturate(1.05);
+    transition: background-image 400ms ease;
+  }
+
   :focus-visible {
-    outline: 2px solid hsl(var(--accent) / 0.55);
+    outline: 2px solid hsl(var(--accent) / 0.7);
     outline-offset: 2px;
+    border-radius: 4px;
   }
 
   ::selection {
-    background: hsl(var(--accent) / 0.22);
+    background: hsl(var(--accent) / 0.28);
   }
 }
 
 @layer components {
-  /* 卡片：柔和拟物——无边框、多层阴影托起，hover 轻微上浮 */
+  /* ==========================================================================
+     macOS 桌面
+     ==========================================================================
+     全屏壁纸 + 顶部菜单栏 + 左侧文件夹栏 + 右侧桌面图标 + 底部 Dock。
+     不再用"应用窗口"壳：那样是 App 界面，不是桌面。
+     ========================================================================== */
+
+  .mac-desktop {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    background: transparent;
+  }
+
+  /* 顶部菜单栏：半透明玻璃，macOS 的 menubar */
+  .mac-menubar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 28px;
+    flex-shrink: 0;
+    padding: 0 12px;
+    background: var(--material-sidebar);
+    backdrop-filter: blur(var(--blur-glass-heavy)) saturate(180%);
+    -webkit-backdrop-filter: blur(var(--blur-glass-heavy)) saturate(180%);
+    box-shadow: inset 0 -0.5px 0 hsl(var(--line) / 0.7);
+    font-size: 13px;
+    color: hsl(var(--text));
+    user-select: none;
+  }
+
+  /* 桌面主体：左侧文件夹栏 + 右侧图标区 */
+  .mac-desktop-body {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+  }
+
+  /* 桌面图标区：滚动但不显示滚动条，macOS 桌面就是这样 */
+  .mac-desktop-canvas {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    overflow-y: auto;
+    padding: 18px 20px 120px;
+  }
+
+  .mac-desktop-canvas::-webkit-scrollbar { display: none; }
+  .mac-desktop-canvas { -ms-overflow-style: none; scrollbar-width: none; }
+
+  /* 桌面上的文件夹图标块 */
+  .mac-folder-chip {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    width: 92px;
+    padding: 8px 4px;
+    border-radius: 10px;
+    transition: background-color 140ms ease;
+  }
+
+  .mac-folder-chip:hover {
+    background: hsl(0 0% 100% / 0.22);
+  }
+
+  .dark .mac-folder-chip:hover {
+    background: hsl(0 0% 100% / 0.10);
+  }
+
+  /* 桌面图标文字：macOS 桌面是白字 + 阴影，因为壁纸通常较深 */
+  .mac-icon-label {
+    font-size: 11.5px;
+    line-height: 1.25;
+    font-weight: 500;
+    text-align: center;
+    color: hsl(0 0% 100%);
+    text-shadow: 0 1px 2px hsl(0 0% 0% / 0.55), 0 0 6px hsl(0 0% 0% / 0.35);
+    max-width: 100%;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+
+  /* 亮色壁纸下白字会糊，浅色主题改用深字 */
+  :root:not(.dark) .mac-icon-label {
+    color: hsl(240 10% 16%);
+    text-shadow: 0 1px 2px hsl(0 0% 100% / 0.85), 0 0 6px hsl(0 0% 100% / 0.6);
+  }
+
+  /* 左侧文件夹栏：像 Finder 的侧边栏，但做成文件夹样式 */
+  .mac-folderbar {
+    width: 208px;
+    flex-shrink: 0;
+    overflow-y: auto;
+    padding: 10px 8px;
+    background: var(--material-sidebar);
+    backdrop-filter: blur(var(--blur-glass-heavy)) saturate(180%);
+    -webkit-backdrop-filter: blur(var(--blur-glass-heavy)) saturate(180%);
+    box-shadow: inset -0.5px 0 0 hsl(var(--line) / 0.8);
+  }
+
+  .mac-folderbar::-webkit-scrollbar { display: none; }
+  .mac-folderbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+
+  /* ==========================================================================
+     底部 Dock / 启动台
+     ========================================================================== */
+
+  .dock-glass {
+    background: var(--material-float);
+    backdrop-filter: blur(var(--blur-glass-heavy)) saturate(190%);
+    -webkit-backdrop-filter: blur(var(--blur-glass-heavy)) saturate(190%);
+    box-shadow:
+      inset 0 0 0 0.5px var(--glass-edge),
+      inset 0 1px 0 0 var(--glass-edge),
+      var(--shadow-float);
+  }
+
+  /* macOS Dock 的 hover 放大：只放大图标，文字不动 */
+  .dock-item > span:first-child {
+    transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+    transform-origin: bottom center;
+  }
+
+  .dock-item:hover > span:first-child,
+  .dock-item:focus-visible > span:first-child {
+    transform: scale(1.14) translateY(-2px);
+  }
+
+  .dock-item:active > span:first-child {
+    transform: scale(1.04) translateY(0);
+  }
+
+  /* Dock 里的横向滚动条也藏掉 */
+  .dock-glass::-webkit-scrollbar { display: none; }
+  .dock-glass { -ms-overflow-style: none; scrollbar-width: none; }
+
+  /* ==========================================================================
+     macOS 材质
+     ========================================================================== */
+  /* 侧栏玻璃：macOS sidebar 的 vibrancy，饱和度高、模糊重 */
+  .material-sidebar {
+    background: var(--material-sidebar);
+    backdrop-filter: blur(var(--blur-glass-heavy)) saturate(180%);
+    -webkit-backdrop-filter: blur(var(--blur-glass-heavy)) saturate(180%);
+  }
+
+  /* 内容区玻璃 */
+  .material-content {
+    background: var(--material-content);
+    backdrop-filter: blur(var(--blur-glass)) saturate(160%);
+    -webkit-backdrop-filter: blur(var(--blur-glass)) saturate(160%);
+  }
+
+  /* 卡片：更亮的玻璃，带内高光 + 外描边做出"厚度" */
   .card-surface {
-    background: hsl(var(--surface));
-    border: 1px solid hsl(var(--line) / 0.55);
+    position: relative;
+    background: var(--material-card);
+    backdrop-filter: blur(20px) saturate(170%);
+    -webkit-backdrop-filter: blur(20px) saturate(170%);
     border-radius: var(--radius);
-    box-shadow: var(--shadow-card);
+    /* 外描边：深色细线，让玻璃边缘有厚度 */
+    box-shadow:
+      inset 0 0 0 0.5px var(--glass-edge),
+      inset 0 1px 0 0 var(--glass-edge),
+      var(--shadow-card);
     transition:
-      border-color 180ms ease,
-      box-shadow 180ms ease,
-      transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+      box-shadow 200ms cubic-bezier(0.22, 1, 0.36, 1),
+      transform 200ms cubic-bezier(0.22, 1, 0.36, 1),
+      background-color 200ms ease;
+  }
+
+  /* 卡片外圈描边单独一层，避免和阴影混在一起 */
+  .card-surface::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    box-shadow: inset 0 0 0 0.5px var(--glass-rim);
+    pointer-events: none;
   }
 
   .card-surface:hover {
-    border-color: hsl(var(--line) / 0.9);
-    box-shadow: var(--shadow-hover);
-    transform: translateY(-2px);
+    background: hsl(var(--surface) / 0.86);
+    box-shadow:
+      inset 0 0 0 0.5px var(--glass-edge),
+      inset 0 1px 0 0 var(--glass-edge),
+      var(--shadow-hover);
+    transform: translateY(-1px);
   }
 
   .card-surface:active {
     transform: translateY(0);
-    box-shadow: var(--shadow-card);
+    box-shadow:
+      inset 0 0 0 0.5px var(--glass-edge),
+      var(--shadow-card);
   }
 
-  /* 浮层（弹窗、下拉、palette） */
+  /* 浮层：弹窗、下拉、命令面板 */
   .float-surface {
-    background: hsl(var(--raised));
-    border: 1px solid hsl(var(--line));
+    background: var(--material-float);
+    backdrop-filter: blur(var(--blur-glass-heavy)) saturate(180%);
+    -webkit-backdrop-filter: blur(var(--blur-glass-heavy)) saturate(180%);
     border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-float);
+    box-shadow:
+      inset 0 0 0 0.5px var(--glass-edge),
+      var(--shadow-float);
   }
 
-  /* 细滚动条，仅悬停时可见，避免界面出现粗重导轨 */
+  /* 下沉区：输入框、标签 */
+  .material-sunken {
+    background: var(--material-sunken);
+    backdrop-filter: blur(12px) saturate(150%);
+    -webkit-backdrop-filter: blur(12px) saturate(150%);
+  }
+
+  /* 分隔线：macOS 用极淡的发丝线 */
+  .hairline-b {
+    box-shadow: inset 0 -0.5px 0 hsl(var(--line) / 0.9);
+  }
+
+  .hairline-r {
+    box-shadow: inset -0.5px 0 0 hsl(var(--line) / 0.9);
+  }
+
+  /* macOS 风格滚动条：默认隐藏，滚动时浮现 */
   .scrollbar-hide::-webkit-scrollbar { display: none; }
   .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
 
-  .scrollbar-slim::-webkit-scrollbar { width: 8px; height: 8px; }
+  .scrollbar-slim::-webkit-scrollbar { width: 7px; height: 7px; }
   .scrollbar-slim::-webkit-scrollbar-track { background: transparent; }
   .scrollbar-slim::-webkit-scrollbar-thumb {
-    background: hsl(var(--text-muted) / 0.22);
+    background: hsl(var(--text-muted) / 0.28);
     border-radius: 999px;
     border: 2px solid transparent;
     background-clip: content-box;
   }
   .scrollbar-slim:hover::-webkit-scrollbar-thumb {
-    background: hsl(var(--text-muted) / 0.38);
+    background: hsl(var(--text-muted) / 0.45);
     background-clip: content-box;
   }
 

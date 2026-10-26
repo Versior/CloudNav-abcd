@@ -18,6 +18,10 @@ export interface DensityTokens {
   gridSimple: string;
   /** 列表视图（始终单列，仅控制间距） */
   gridList: string;
+  /** 图标视图（macOS 启动台风格） */
+  gridIcon: string;
+  /** 图标视图里图标本体的尺寸 */
+  launchIcon: string;
   /** 卡片内边距（详情视图） */
   cardPadding: string;
   /** 行内边距（简约 / 列表视图） */
@@ -43,6 +47,8 @@ export const DENSITY_TOKENS: Record<Density, DensityTokens> = {
     gridDetailed: 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7',
     gridSimple: 'grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-7 xl:grid-cols-8',
     gridList: 'gap-1',
+    gridIcon: 'grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 xl:grid-cols-12',
+    launchIcon: 'h-12 w-12 rounded-[14px]',
     cardPadding: 'px-3 py-2.5',
     rowPadding: 'px-3 py-1.5',
     gridGap: 'gap-2',
@@ -57,6 +63,8 @@ export const DENSITY_TOKENS: Record<Density, DensityTokens> = {
     gridDetailed: 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5',
     gridSimple: 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6',
     gridList: 'gap-1.5',
+    gridIcon: 'grid-cols-3 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10',
+    launchIcon: 'h-14 w-14 rounded-[16px]',
     cardPadding: 'px-3.5 py-3',
     rowPadding: 'px-3.5 py-2',
     gridGap: 'gap-3',
@@ -71,6 +79,8 @@ export const DENSITY_TOKENS: Record<Density, DensityTokens> = {
     gridDetailed: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4',
     gridSimple: 'grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5',
     gridList: 'gap-2',
+    gridIcon: 'grid-cols-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8',
+    launchIcon: 'h-16 w-16 rounded-[18px]',
     cardPadding: 'px-4 py-3.5',
     rowPadding: 'px-4 py-2.5',
     gridGap: 'gap-4',
@@ -96,6 +106,7 @@ export const normalizeDensity = (value: unknown): Density =>
 /** 按卡片形态取网格类。 */
 export const gridClassFor = (density: Density, style: CardStyle): string => {
   const t = DENSITY_TOKENS[density];
+  if (style === 'icon') return `grid ${t.gridIcon} gap-x-2 gap-y-6`;
   if (style === 'list') return `grid grid-cols-1 ${t.gridList}`;
   if (style === 'simple') return `grid ${t.gridSimple} ${t.gridGap}`;
   return `grid ${t.gridDetailed} ${t.gridGap}`;

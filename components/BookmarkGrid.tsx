@@ -1,12 +1,14 @@
 import React from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import type { CardStyle, LinkItem } from '../types';
+import type { CardStyle, Density, LinkItem } from '../types';
+import { gridClassFor } from '../services/density';
 import LinkCard from './LinkCard';
-
 interface SortableCardProps {
   link: LinkItem;
   cardStyle: CardStyle;
+  /** 全局密度，透传给卡片以控制图标与字号。 */
+  density?: Density;
   /** 整理模式：显示勾选框并禁用跳转。 */
   selectable?: boolean;
   selected?: boolean;
@@ -42,15 +44,13 @@ interface BookmarkGridProps extends Omit<SortableCardProps, 'link' | 'selected'>
   links: LinkItem[];
   /** 整理模式下按 id 判断选中，避免逐卡传布尔值。 */
   selectedIds?: Set<string>;
+  /** 全局密度，决定列数与卡片尺寸。 */
+  density?: Density;
 }
 
-/** 网格容器：列数随视图宽度自适应，列表模式降为单列。 */
-const BookmarkGrid: React.FC<BookmarkGridProps> = ({ links, cardStyle, selectedIds, ...rest }) => {
-  const gridClass = cardStyle === 'list'
-    ? 'grid grid-cols-1 gap-1.5'
-    : cardStyle === 'simple'
-      ? 'grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6'
-      : 'grid grid-cols-1 gap-2.5 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5';
+/** 网格容器：列数与间距由密度决定，列表模式降为单列。 */
+const BookmarkGrid: React.FC<BookmarkGridProps> = ({ links, cardStyle, selectedIds, density = 'cozy', ...rest }) => {
+  const gridClass = gridClassFor(density, cardStyle);
 
   return (
     <div className={gridClass}>
@@ -59,6 +59,7 @@ const BookmarkGrid: React.FC<BookmarkGridProps> = ({ links, cardStyle, selectedI
           key={link.id}
           link={link}
           cardStyle={cardStyle}
+          density={density}
           selected={selectedIds?.has(link.id) ?? false}
           {...rest}
         />

@@ -1,10 +1,13 @@
 import React from 'react';
 import { Check, Edit2, GripVertical, Pin } from 'lucide-react';
-import type { CardStyle, LinkItem } from '../types';
+import type { CardStyle, Density, LinkItem } from '../types';
+import { DENSITY_TOKENS } from '../services/density';
 
 interface LinkCardProps {
   link: LinkItem;
   cardStyle: CardStyle;
+  /** 全局密度，控制图标与字号。 */
+  density?: Density;
   /** 整理模式：显示选择框并禁用跳转。 */
   selectable?: boolean;
   selected?: boolean;
@@ -49,9 +52,11 @@ const fallbackIcons = (url: string): string[] => {
  * 图标底座：优先用链接自带 icon；缺失或加载失败时依次尝试 favicon 服务；
  * 全部不可用才退回首字母，保证任何情况下都有可见标识。
  */
-const Favicon: React.FC<{ link: LinkItem; size: 'sm' | 'md' }> = ({ link, size }) => {
-  const box = size === 'md' ? 'h-8 w-8 rounded-lg' : 'h-6 w-6 rounded-md';
-  const img = size === 'md' ? 'h-4.5 w-4.5' : 'h-4 w-4';
+const Favicon: React.FC<{ link: LinkItem; size: 'sm' | 'md'; density: Density }> = ({ link, size, density }) => {
+  const tokens = DENSITY_TOKENS[density];
+  // 详情视图用密度档位，简约/列表用小一号
+  const box = size === 'md' ? tokens.iconBox : density === 'compact' ? 'h-5 w-5 rounded-md' : 'h-6 w-6 rounded-md';
+  const img = size === 'md' ? (density === 'spacious' ? 'h-5 w-5' : 'h-4 w-4') : 'h-4 w-4';
 
   const candidates = React.useMemo(() => {
     const list = fallbackIcons(link.url);
@@ -112,9 +117,10 @@ const SelectBox: React.FC<{ selected?: boolean }> = ({ selected }) => (
 );
 
 const LinkCard: React.FC<LinkCardProps> = ({
-  link, cardStyle, selectable, selected, draggable,
+  link, cardStyle, selectable, selected, draggable, density = 'cozy',
   onOpen, onEdit, onToggleSelect, onContextMenu, activatorRef,
 }) => {
+  const tokens = DENSITY_TOKENS[density];
   const handleClick = (event: React.MouseEvent) => {
     if (selectable) {
       event.preventDefault();
@@ -172,12 +178,12 @@ const LinkCard: React.FC<LinkCardProps> = ({
         onClick={handleClick}
         onKeyDown={handleKey}
         onContextMenu={event => onContextMenu?.(event, link)}
-        className={`${shell} flex items-center gap-2.5 px-2.5 py-2`}
+        className={`${shell} flex items-center gap-2.5 ${tokens.rowPadding}`}
       >
         {dragHandle}
         {selectable && <SelectBox selected={selected} />}
-        <Favicon link={link} size="sm" />
-        <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink">{link.title}</span>
+        <Favicon link={link} size="sm" density={density} />
+        <span className={`min-w-0 flex-1 truncate ${tokens.titleSize} font-medium text-ink`}>{link.title}</span>
         {pinRow}
         <span className="hidden min-w-0 max-w-[40%] truncate text-[11px] text-ink-muted sm:block">{hostOf(link.url)}</span>
         {actions}
@@ -193,12 +199,12 @@ const LinkCard: React.FC<LinkCardProps> = ({
         onClick={handleClick}
         onKeyDown={handleKey}
         onContextMenu={event => onContextMenu?.(event, link)}
-        className={`${shell} flex items-center gap-2 px-2.5 py-2`}
+        className={`${shell} flex items-center gap-2 ${tokens.rowPadding}`}
       >
         {dragHandle}
         {selectable && <SelectBox selected={selected} />}
-        <Favicon link={link} size="sm" />
-        <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink">{link.title}</span>
+        <Favicon link={link} size="sm" density={density} />
+        <span className={`min-w-0 flex-1 truncate ${tokens.titleSize} font-medium text-ink`}>{link.title}</span>
         {pinRow}
         {actions}
       </div>
@@ -213,19 +219,19 @@ const LinkCard: React.FC<LinkCardProps> = ({
       onClick={handleClick}
       onKeyDown={handleKey}
       onContextMenu={event => onContextMenu?.(event, link)}
-      className={`${shell} flex h-full items-stretch gap-1 px-2 py-2.5`}
+      className={`${shell} flex h-full items-stretch gap-1 ${tokens.cardPadding}`}
     >
       {dragHandle}
       <div className="flex min-w-0 flex-1 flex-col pr-1">
         <div className="flex min-w-0 items-start gap-2.5">
-          <Favicon link={link} size="md" />
+          <Favicon link={link} size="md" density={density} />
           <div className="flex min-w-0 flex-1 flex-col self-stretch">
             <div className="flex items-center gap-1.5">
               {selectable && <SelectBox selected={selected} />}
-              <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink">{link.title}</span>
+              <span className={`min-w-0 flex-1 truncate ${tokens.titleSize} font-semibold text-ink`}>{link.title}</span>
               {pinRow}
             </div>
-            <p className="mt-0.5 line-clamp-2 min-h-[2.1em] text-[11px] leading-relaxed text-ink-muted">
+            <p className={`mt-0.5 line-clamp-2 min-h-[2.1em] ${tokens.descSize} leading-relaxed text-ink-muted`}>
               {link.description || hostOf(link.url)}
             </p>
             {link.tags?.length ? (

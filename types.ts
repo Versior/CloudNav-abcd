@@ -28,11 +28,16 @@ export interface Category {
 }
 
 export type CardStyle = SiteSettings['cardStyle'];
+/** 全局密度：同时控制书签卡片与侧栏分类的尺寸。 */
+export type Density = 'compact' | 'cozy' | 'spacious';
+
 export interface SiteSettings {
   title: string;
   navTitle: string;
   favicon: string;
   cardStyle: 'detailed' | 'simple' | 'list';
+  /** 卡片与侧栏的尺寸档位，缺省视为 cozy。 */
+  density?: Density;
   passwordExpiryDays: number;
 }
 

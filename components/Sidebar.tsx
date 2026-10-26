@@ -1,7 +1,8 @@
 import React from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import { LayoutGrid, Lock, Plus, Pin, Settings, X } from 'lucide-react';
-import type { Category } from '../types';
+import type { Category, Density } from '../types';
+import { DENSITY_TOKENS } from '../services/density';
 import Icon from './Icon';
 
 interface SidebarProps {
@@ -12,6 +13,8 @@ interface SidebarProps {
   counts: Record<string, number>;
   totalCount: number;
   pinnedCount: number;
+  /** 全局密度，控制分类行高与图标 */
+  density?: Density;
   open: boolean;
   onClose: () => void;
   onSelect: (id: string) => void;
@@ -22,8 +25,8 @@ interface SidebarProps {
 }
 
 /** 分类图标：复用统一 Icon 组件，未设置图标时退回文件夹。 */
-const IconSlot: React.FC<{ name?: string; active: boolean }> = ({ name, active }) => (
-  <Icon name={name || 'Folder'} size={15} className={active ? 'shrink-0' : 'shrink-0 opacity-70'} />
+const IconSlot: React.FC<{ name?: string; active: boolean; size: number }> = ({ name, active, size }) => (
+  <Icon name={name || 'Folder'} size={size} className={active ? 'shrink-0' : 'shrink-0 opacity-70'} />
 );
 
 /** 可接收书签的分类行：拖入时高亮，作为移动目标。 */
@@ -35,9 +38,11 @@ const DroppableCategory: React.FC<{
   icon?: string;
   locked?: boolean;
   countText: string;
+  density: Density;
   onClick: () => void;
   onContextMenu: (event: React.MouseEvent) => void;
-}> = ({ id, label, active, depth, icon, locked, countText, onClick, onContextMenu }) => {
+}> = ({ id, label, active, depth, icon, locked, countText, density, onClick, onContextMenu }) => {
+  const tokens = DENSITY_TOKENS[density];
   const { setNodeRef, isOver } = useDroppable({ id: `cat:${id}` });
   return (
     <button
@@ -45,14 +50,14 @@ const DroppableCategory: React.FC<{
       type="button"
       onClick={onClick}
       onContextMenu={onContextMenu}
-      className={`group flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] transition-all ${isOver
+      className={`group flex w-full items-center gap-2.5 rounded-lg px-3 ${tokens.navItemPadding} ${tokens.navItemText} transition-all ${isOver
         ? 'bg-accent-soft text-accent ring-1 ring-accent/40'
         : active
           ? 'bg-accent-soft font-medium text-accent'
           : 'text-ink-soft hover:bg-raised'}`}
       style={depth ? { paddingLeft: 12 + depth * 14 } : undefined}
     >
-      <IconSlot name={icon} active={active || isOver} />
+      <IconSlot name={icon} active={active || isOver} size={tokens.navIconSize} />
       <span className="min-w-0 flex-1 truncate text-left">{label}</span>
       {locked && <Lock size={11} className="shrink-0 text-warn" />}
       <span className="ml-auto text-[11px] font-normal tabular-nums text-ink-muted">{countText}</span>
@@ -61,13 +66,14 @@ const DroppableCategory: React.FC<{
 };
 
 const Sidebar: React.FC<SidebarProps> = ({
-  navTitle, categories, selectedCategory, counts, totalCount, pinnedCount,
+  navTitle, categories, selectedCategory, counts, totalCount, pinnedCount, density = 'cozy',
   open, onClose, onSelect, onSelectCategory, onCategoryContextMenu, onCreateCategory, onOpenSettings,
 }) => {
   const parents = categories.filter(category => !category.parentId);
   const childrenOf = (id: string) => categories.filter(category => category.parentId === id);
 
-  const itemClass = (active: boolean) => `group flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] transition-colors ${active
+  const tokens = DENSITY_TOKENS[density];
+  const itemClass = (active: boolean) => `group flex w-full items-center gap-2.5 rounded-lg px-3 ${tokens.navItemPadding} ${tokens.navItemText} transition-colors ${active
     ? 'bg-accent-soft font-medium text-accent'
     : 'text-ink-soft hover:bg-raised'}`;
 
@@ -81,6 +87,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         icon={category.icon}
         locked={!!category.password}
         countText={counts[category.id] ? String(counts[category.id]) : ''}
+        density={density}
         onClick={() => onSelectCategory(category)}
         onContextMenu={event => onCategoryContextMenu(event, category)}
       />
@@ -101,12 +108,12 @@ const Sidebar: React.FC<SidebarProps> = ({
 
         <nav className="flex-1 space-y-0.5 overflow-y-auto p-2.5">
           <button type="button" onClick={() => onSelect('all')} className={itemClass(selectedCategory === 'all')}>
-            <LayoutGrid size={15} className="shrink-0" />
+            <LayoutGrid size={tokens.navIconSize} className="shrink-0" />
             <span className="min-w-0 flex-1 truncate text-left">全部链接</span>
             <span className="ml-auto text-[11px] tabular-nums text-ink-muted">{totalCount || ''}</span>
           </button>
           <button type="button" onClick={() => onSelect('pinned')} className={itemClass(selectedCategory === 'pinned')}>
-            <Pin size={15} className="shrink-0" />
+            <Pin size={tokens.navIconSize} className="shrink-0" />
             <span className="min-w-0 flex-1 truncate text-left">置顶</span>
             <span className="ml-auto text-[11px] tabular-nums text-ink-muted">{pinnedCount || ''}</span>
           </button>
@@ -126,7 +133,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 
         <div className="border-t border-line p-2.5">
           <button type="button" onClick={onOpenSettings} className={itemClass(false)}>
-            <Settings size={15} className="shrink-0" />
+            <Settings size={tokens.navIconSize} className="shrink-0" />
             <span className="min-w-0 flex-1 truncate text-left">设置</span>
           </button>
         </div>

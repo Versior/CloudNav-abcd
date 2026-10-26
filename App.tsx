@@ -4,9 +4,10 @@ import {
 } from 'lucide-react';
 import { DndContext, DragEndEvent, PointerSensor, closestCenter, useSensor, useSensors, KeyboardSensor } from '@dnd-kit/core';
 import { SortableContext, sortableKeyboardCoordinates, rectSortingStrategy } from '@dnd-kit/sortable';
-import { AIConfig, Category, DEFAULT_CATEGORIES, ExternalSearchSource, INITIAL_LINKS, LinkItem, SearchConfig, SearchMode, SiteSettings, CardStyle } from './types';
+import { AIConfig, Category, DEFAULT_CATEGORIES, ExternalSearchSource, INITIAL_LINKS, LinkItem, SearchConfig, SearchMode, SiteSettings, CardStyle, Density } from './types';
 import { LOCAL_STORAGE_KEY, AI_CONFIG_KEY, SEARCH_CONFIG_KEY, SITE_SETTINGS_KEY, SORT_CONFIG_KEY } from './constants/storageKeys';
 import { applyReorder, applySort, canReorder, normalizeSortConfig, type SortConfig } from './services/sorting';
+import { normalizeDensity } from './services/density';
 
 import { normalizeAppData } from './services/dataNormalization';
 import { parseBookmarks } from './services/bookmarkParser';
@@ -35,7 +36,7 @@ const SyncConflictModal = React.lazy(() => import('./components/SyncConflictModa
 
 /** 首页置顶横条最多显示的条目数，超出时引导去置顶页。 */
 const HOME_PIN_LIMIT = 6;
-const DEFAULT_SITE_SETTINGS = { title: 'CloudNav - 我的导航', navTitle: 'CloudNav', favicon: '', cardStyle: 'detailed' as const, passwordExpiryDays: 7 };
+const DEFAULT_SITE_SETTINGS = { title: 'CloudNav - 我的导航', navTitle: 'CloudNav', favicon: '', cardStyle: 'detailed' as const, density: 'cozy' as const, passwordExpiryDays: 7 };
 
 type SyncStatus = 'idle' | 'saving' | 'saved' | 'error' | 'conflict';
 const DEFAULT_AI_CONFIG: AIConfig = { provider: 'gemini', baseUrl: '', model: 'gemini-2.5-flash' };
@@ -119,7 +120,10 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
 
   const [aiConfig, setAiConfig] = useState<AIConfig>(() => readAIConfig());
-  const [siteSettings, setSiteSettings] = useState<SiteSettings>(() => readJson(SITE_SETTINGS_KEY, DEFAULT_SITE_SETTINGS));
+  const [siteSettings, setSiteSettings] = useState<SiteSettings>(() => {
+    const stored = readJson<Partial<SiteSettings>>(SITE_SETTINGS_KEY, {});
+    return { ...DEFAULT_SITE_SETTINGS, ...stored, density: normalizeDensity(stored.density) };
+  });
   const [authToken, setAuthToken] = useState(false);
   const [requiresAuth, setRequiresAuth] = useState<boolean | null>(null);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
@@ -618,8 +622,9 @@ const App: React.FC = () => {
   useEffect(() => { localStorage.setItem(SORT_CONFIG_KEY, JSON.stringify(sortConfig)); }, [sortConfig]);
 
   const changeSort = (next: SortConfig) => setSortConfig(next);
-  const changeCardStyle = (style: CardStyle) => {
-    const next = { ...siteSettings, cardStyle: style };
+  /** 保存外观类设置：本地立即生效并持久化，登录时同步到云端。 */
+  const persistSiteSettings = (patch: Partial<SiteSettings>) => {
+    const next = { ...siteSettings, ...patch };
     setSiteSettings(next);
     localStorage.setItem(SITE_SETTINGS_KEY, JSON.stringify(next));
     if (authToken) void fetch('/api/storage', {
@@ -628,6 +633,10 @@ const App: React.FC = () => {
       body: JSON.stringify({ saveConfig: 'website', config: next }),
     }).catch(() => undefined);
   };
+
+  const changeCardStyle = (style: CardStyle) => persistSiteSettings({ cardStyle: style });
+  const changeDensity = (next: Density) => persistSiteSettings({ density: next });
+  const density = normalizeDensity(siteSettings.density);
 
   const exitArrange = () => { setArrangeMode(false); setSelectedIds(new Set()); };
   const toggleArrange = () => { if (arrangeMode) exitArrange(); else setArrangeMode(true); };
@@ -731,6 +740,7 @@ const App: React.FC = () => {
       counts={categoryCounts}
       totalCount={visibleTotal}
       pinnedCount={pinnedLinks.length}
+      density={density}
       open={sidebarOpen}
       onClose={() => setSidebarOpen(false)}
       onSelect={id => { setSelectedCategory(id); setSidebarOpen(false); exitArrange(); }}
@@ -798,6 +808,7 @@ const App: React.FC = () => {
                   <BookmarkGrid
                     links={pinnedLinks.slice(0, HOME_PIN_LIMIT)}
                     cardStyle="simple"
+                    density={density}
                     selectable={arrangeMode}
                     selectedIds={selectedIds}
                     draggable={canReorder(sortConfig)}
@@ -816,6 +827,8 @@ const App: React.FC = () => {
               sort={sortConfig}
               arrangeMode={arrangeMode}
               selectedCount={selectedIds.size}
+              density={density}
+              onDensityChange={changeDensity}
               onCardStyleChange={changeCardStyle}
               onSortChange={changeSort}
               onToggleArrange={toggleArrange}
@@ -829,6 +842,7 @@ const App: React.FC = () => {
                   <BookmarkGrid
                     links={displayedLinks}
                     cardStyle={siteSettings.cardStyle}
+                    density={density}
                     selectable={arrangeMode}
                     selectedIds={selectedIds}
                     draggable={canReorder(sortConfig) && !arrangeMode}

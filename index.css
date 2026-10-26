@@ -2,7 +2,7 @@
 @source "./index.html";
 @source "./*.tsx";
 @source "./components/**/*.tsx";
-@source "./services/**/*.tsx";
+@source "./services/**/*.{ts,tsx}";
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* ==========================================================================

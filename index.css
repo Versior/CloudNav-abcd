@@ -21,7 +21,7 @@
     /* 文本 */
     --text: 240 8% 12%;
     --text-soft: 240 5% 38%;
-    --text-muted: 240 4% 55%;
+    --text-muted: 240 5% 44%;
     --text-inverse: 0 0% 100%;
 
     /* 描边 */
@@ -56,7 +56,7 @@
 
     --text: 0 0% 95%;
     --text-soft: 240 5% 68%;
-    --text-muted: 240 4% 50%;
+    --text-muted: 240 5% 58%;
     --text-inverse: 240 6% 6%;
 
     --line: 240 5% 15%;

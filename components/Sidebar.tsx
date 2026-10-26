@@ -119,7 +119,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           </button>
 
           <div className="flex items-center justify-between px-3 pb-1 pt-4">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-muted">分类</span>
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-soft">分类</span>
             <button type="button" onClick={onCreateCategory} aria-label="新建分类" className="rounded p-0.5 text-ink-muted hover:text-accent">
               <Plus size={13} />
             </button>

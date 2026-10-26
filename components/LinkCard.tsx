@@ -231,13 +231,13 @@ const LinkCard: React.FC<LinkCardProps> = ({
               <span className={`min-w-0 flex-1 truncate ${tokens.titleSize} font-semibold text-ink`}>{link.title}</span>
               {pinRow}
             </div>
-            <p className={`mt-0.5 line-clamp-2 min-h-[2.1em] ${tokens.descSize} leading-relaxed text-ink-muted`}>
+            <p className={`mt-1 line-clamp-2 min-h-[2.1em] ${tokens.descSize} leading-relaxed text-ink-soft`}>
               {link.description || hostOf(link.url)}
             </p>
             {link.tags?.length ? (
               <div className="mt-auto flex gap-1 overflow-hidden pt-1.5">
                 {link.tags.slice(0, 3).map(tag => (
-                  <span key={tag} className="shrink-0 rounded bg-sunken px-1.5 py-0.5 text-[10px] text-ink-soft">{tag}</span>
+                  <span key={tag} className="shrink-0 rounded bg-sunken px-1.5 py-0.5 text-[11px] text-ink-soft">{tag}</span>
                 ))}
               </div>
             ) : null}

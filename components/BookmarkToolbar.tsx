@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertCircle, ArrowDownAZ, ArrowUpAZ, Check, CheckSquare, LayoutGrid, List, Loader2, PencilRuler, Rows3, Square, ZoomIn } from 'lucide-react';
+import { AlertCircle, ArrowDownAZ, ArrowUpAZ, Check, CheckSquare, Grid2x2, Grid3x3, LayoutGrid, List, Loader2, PencilRuler, RectangleHorizontal, Rows3, Square } from 'lucide-react';
 import { SORT_OPTIONS, type SortConfig, type SortKey } from '../services/sorting';
 import { DENSITY_OPTIONS } from '../services/density';
 import type { CardStyle, Density } from '../types';
@@ -34,6 +34,15 @@ const STYLE_BUTTONS: Array<{ style: CardStyle; label: string; icon: React.ReactN
   { style: 'list', label: '列表', icon: <List size={13} /> },
 ];
 
+/**
+ * 密度按钮图标：用"格数"表达大小，而不是三个相同的放大镜。
+ * 紧凑=9 格（小）、标准=4 格、宽松=1 个大格。
+ */
+const DENSITY_ICONS: Record<Density, React.ReactNode> = {
+  compact: <Grid3x3 size={13} />,
+  cozy: <Grid2x2 size={13} />,
+  spacious: <RectangleHorizontal size={13} />,
+};
 const segmentBase = 'flex items-center rounded-lg bg-sunken p-0.5';
 const segmentItem = (active: boolean) =>
   `flex items-center gap-1 rounded-[6px] px-2 py-1 text-[12px] font-medium transition-colors ${
@@ -159,7 +168,7 @@ const BookmarkToolbar: React.FC<BookmarkToolbarProps> = ({
                 title={`${option.label} · ${option.hint}`}
                 className={segmentItem(density === option.value)}
               >
-                <ZoomIn size={option.value === 'compact' ? 10 : option.value === 'spacious' ? 15 : 12} />
+                {DENSITY_ICONS[option.value]}
               </button>
             ))}
           </div>

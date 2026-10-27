@@ -1,302 +1,326 @@
-# NaviX
-**NaviX 是基于原同类导航项目持续改造的私有导航站，设置密码后需要输密访问，适合个人使用！**
-
----
-#### 最新版本v1.7.1 (2026.1.16 )
-- 1、搜索框右侧新增一键清空图标
-- 2、在分类目录页面搜索时新增显示其他分类的内容
-- 3、移除上游同步依赖，项目改为独立维护
-
----
-
-<details>
-<summary><strong>👉 点击查看更新记录</strong></summary>
-
-
-#### 版本v1.7
-- 1、同步更新设置页面的界面和功能
-- 2、同步升级浏览器扩展工具浏览器插件（功能提升）
-- 3、调整鼠标悬浮和排序状态下的站点卡片背景颜色
-- 4、新增链接编辑页面网址图标实时预览效果
-- 5、新增链接编辑页面网址图标实时预览效果
-
-
-#### 版本v1.6
-- 1、站外搜索网站的设置保存到服务器实现持久化
-- 2、分类目录权限部分修改：`常用推荐`分类调整为可以移动位置，修改和删除存量分类需要再次输入访问密码授权
-- 3、默认访问密码一周过期，可以在左下角网站设置页面修改过期时间
-
-版本 v1.5.1:优化手机端访问时，顶部菜单栏搜索样式和功能
-
-#### 版本 v1.5
-更新内容：
-- 增加站外搜索功能，可以配置多个站外搜索网站，同时可以点击搜索框左侧的图标弹出下拉框切换站外搜索网站
-![v1.4](./doc/1.5.png)
-
-
-#### 版本V1.4
-更新内容：
-- 1、右键菜单：当将鼠标移动到站点卡片后，可以点击鼠标右键调出右键菜单，右键菜单支持：复制链接、显示二维码、编辑链接、删除链接等快捷操作。
-- 2、增加简约版和详情版的站点卡片样式切换
-
-![v1.4](./doc/1.4.png)
-
-#### 版本V1.3
-更新内容：
-
-- 1、修复移动端访问没有退出按钮
-- 2、增加首次批量添加站点信息不关窗口开关，增加效率
-- 3、分类名称旁增加该分类站点卡片数量
-- 4、修复自定义网站名称不被版本升级重置
-- 5、站点图标缓存优化
-
-#### 版本V1.2
-- 1、解决站点卡片标题文字超出卡片边框的问题
-- 2、批量编辑增加全选功能
-- 3、在某个分类下新增新链接自动默认归属到当前分类
-- 4、添加新站点增加自动获取网站图标的功能
-- 5、增加退出功能，非私有电脑保护隐私
-- 6、Chrome 扩展菜单改为中文
-- 7、Chrome 扩展菜单改为中文
-
-#### 版本V1.1
-更新内容：
-- `批量编辑`增加批量删除和批量移动站点卡片
-- 修复删除分类目录后没有“常用推荐”的问题
-- 添加新站点网址自动补全 https://
-
-
----
-## 首次修改内容
-#### 一、编辑链接增加自动获取图标功能
-填写网址后，点击`自动获取图标`按钮
-
-![100](./doc/100.png)
-
-#### 二、站点卡片支持拖拽排序
-
-![101](./doc/101.png)
-
-![102](./doc/102.png)
-
-
-#### 三、导入导出增加 JSON 文件
-
-
-![103](./doc/103.png)
-
-![104](./doc/104.png)
-
-
-
-#### 四、设置页面增加修改网站名称
-
-
-![105](./doc/105.png)
-
-
-#### 五、分类站点增加自定义图标功能
-
-
-![106](./doc/106.png)
-
-![107](./doc/107.png)
-
-</details>
-
----
-
-# NaviX - 智能私有导航站
-
 <div align="center">
 
-![React](https://img.shields.io/badge/React-18-blue?style=flat-square&logo=react)
-![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue?style=flat-square&logo=typescript)
-![Tailwind CSS](https://img.shields.io/badge/Tailwind-3.0-38bdf8?style=flat-square&logo=tailwindcss)
-![Cloudflare Pages](https://img.shields.io/badge/Cloudflare-Pages-orange?style=flat-square&logo=cloudflare)
-![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)
+# Cove
 
-<br/>
+**把你的书签，做成一台 Mac 桌面的样子。**
 
-<!-- 请将下方的链接替换为您实际部署后的 Cloudflare Pages 域名 -->
-[![Repository](https://img.shields.io/badge/GitHub-CloudNav--abcd-7c3aed?style=for-the-badge&logo=github)](https://github.com/Versior/CloudNav-abcd)
+一个自托管的书签导航站：Cloudflare 全栈部署、零服务器运维、边缘加速，
+界面按 macOS 的材质语言重做——玻璃层、Dock、桌面图标，而不是又一个卡片列表。
 
-<br/>
+[![Deploy to Cloudflare Pages](https://img.shields.io/badge/Deploy-Cloudflare%20Pages-F38020?logo=cloudflare&logoColor=white)](https://developers.cloudflare.com/pages/)
+[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind-4-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
+[![Tests](https://img.shields.io/badge/tests-8%20passing-3fb950)](#工程实践)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-**一个现代化、基于 AI 辅助的全栈个人导航站。**
-**无需购买服务器，依托 Cloudflare 免费托管，实现多端数据实时同步。**
-
-[项目仓库](https://github.com/Versior/CloudNav-abcd) • [功能特性](#-核心功能) • [项目展示](#-项目展示) • [部署教程](#-部署教程-免费) • [使用指南](#-使用指南)
+[快速开始](#快速开始) · [设计语言](#设计语言) · [架构](#架构) · [工程实践](#工程实践)
 
 </div>
 
 ---
 
-<details>
-<summary><strong>👉 点击查看项目功能介绍</strong></summary>
+![Cove 主界面（浅色）](.github/assets/hero-light.png)
 
-## ✨ 核心功能
+<div align="center">
+<img src=".github/assets/hero-dark.png" width="49%" alt="Cove 主界面（暗色）">
+<img src=".github/assets/view-detailed.png" width="49%" alt="Cove 详情视图">
+</div>
 
-### 🧠 AI 深度集成
-*   **多模型支持**: 完美支持 **Google Gemini**、**OpenAI**、**DeepSeek**、**Claude** 等任何兼容 OpenAI 接口的模型。
-*   **一键智能补全**: 在设置面板一键扫描，自动为成百上千个书签生成精准的中文简介。
-*   **智能分类**: 添加链接时，AI 自动分析网页内容并推荐最合适的分类目录。
+## 为什么做这个
 
-### ☁️ 数据同步与安全
-*   **Cloudflare KV 同步**: 利用边缘存储技术实现多端数据同步。
-*   **R2 最新备份**: 只保留本项目固定键 `cloudnav/latest.json`，数据未变化时跳过上传。
-*   **隐私加密体系**:
-    *   **全局锁**: 部署时设置访问密码，防止他人查看。
-    *   **目录锁**: 支持对特定分类单独设置密码，隐藏敏感内容。
-### 2. 配置 AI 服务
-点击侧边栏底部的 **“设置”** -> **“AI 设置”**：
-*   **提供商**: Google Gemini 或 OpenAI 兼容 (DeepSeek 等)。
-*   **模型与地址**: 填写模型名称；OpenAI-compatible 还需填写 API 地址。
-*   **Secret**: API Key 由 Cloudflare `GEMINI_API_KEY` / `OPENAI_API_KEY` Secret 提供，浏览器不保存 Key。
-*   **一键补全**: 在 AI 设置中生成描述、分类或文件夹建议。
+书签管理器大多止步于"能存能搜"。但一个人每天要打开几十次的东西，
+**操作手感**和**视觉秩序**比功能列表更影响使用意愿。
 
-### 3. 本地数据导出
-从命令面板选择 **“导出 HTML”** 或 **“导出 JSON”**。
-*   生成的 HTML 文件兼容 Chrome、Edge、Firefox 等主流浏览器。
-*   JSON 导入会自动去重，并清洗旧版本已移除字段。
+Cove 的取舍很明确：
 
-### 🎨 极致体验
-*   **Chrome 扩展插件**: 提供官方代码生成，支持点击浏览器图标后**手动选择分类**保存，体验媲美原生。
-*   **置顶专区**: 常用网站一键置顶，在首页顶部常驻显示。
-*   **无缝迁移**: 支持导入 Chrome/Edge 书签 HTML 文件（智能去重）。
+- **像桌面，不像后台**：Dock、图标网格、玻璃面板，抬手就知道点哪里
+- **没有服务器要养**：Frontend + Functions + KV + R2 全在 Cloudflare，免费额度足够个人用
+- **数据是你的**：JSON 一键导出，R2 固定对象备份，不绑定任何第三方账号
+- **秘密不上客户端**：AI Key 只活在 Cloudflare Secrets，不进浏览器、不进 KV、不进导出文件
 
----
+## 特性
 
-## 📸 项目展示
+### 界面
 
-> 以下为 NaviX 的实际运行界面预览。
+| | |
+|---|---|
+| **macOS 桌面形态** | 顶部菜单栏（日期 · 星期 · 时钟）、左侧文件夹栏、右侧桌面图标区、底部 Dock |
+| **玻璃材质系统** | 壁纸 → 侧栏 vibrancy → 内容区 → 卡片，四层半透明 + `backdrop-filter`，层次由壁纸透出 |
+| **四种卡片视图** | 图标 / 详情 / 简约 / 列表，随时切换 |
+| **全局密度三档** | 紧凑 · 标准 · 宽松，一档同时缩放卡片与侧栏 |
+| **壁纸自定义** | 4 套内置渐变 + 自定义图片 URL + 亮度压制滑杆 |
+| **亮暗双主题** | 语义化 token 驱动，两套主题均通过 WCAG AA 对比度校验 |
 
-### 🖥️ 桌面端概览
-| 浅色模式 (Light Mode) | 深色模式 (Dark Mode) |
-| :---: | :---: |
-| ![Light Mode](screenshots/overview-light.svg) | ![Dark Mode](screenshots/overview-dark.svg) |
-| *清爽明亮的日间视图* | *护眼沉浸的夜间视图* |
+### 交互
 
-### 🛠️ 核心功能演示
-| AI 智能设置 | 分类加密锁 | 移动端适配 |
-| :---: | :---: | :---: |
-| ![AI Settings](screenshots/overview-light.svg) | ![Security](screenshots/overview-dark.svg) | ![Mobile](screenshots/mobile-view.svg) |
-| *一键批量生成描述* | *私密目录密码保护* | *完美适配手机浏览器* |
+- **拖拽排序** — 手动模式按住卡片拖动；图标视图整卡即拖拽区，8px 阈值区分"单击打开"与"拖动"
+- **拖拽到分类** — 卡片直接拖进左侧文件夹栏，完成移动
+- **整理模式** — 多选、批量移动分类、批量置顶、批量加标签、批量删除
+- **命令面板** — `⌘K` 唤起，键盘完成搜索与跳转
+- **右键菜单** — 复制链接、二维码、编辑、置顶、删除
+- **首屏自适应** — 按容器高度与实测格子高度计算首屏条数，宽屏不留下大片空白
 
-*(注：上方使用了项目生成的 SVG 矢量预览图，代表实际 UI 布局)*
-</details>
+![整理模式](.github/assets/view-arrange.png)
 
----
+### 数据
 
-## Cloudflare Pages 部署
+- 版本化同步：`baseVersion` 冲突检测，并发写入返回 `409` 而非静默覆盖
+- 内容哈希比对：数据未变化时跳过 R2 上传
+- 固定备份对象：只维护 `latest.json` 一份，不堆积时间戳历史
+- JSON / HTML 双向导入导出
 
-CloudNav 由一个 Cloudflare Pages 项目提供前端和 Pages Functions。KV 保存当前数据，R2 只保存本项目的唯一最新对象 `cloudnav/latest.json`。
+### AI
 
-1. 在 Pages 创建项目，构建命令使用 `npm run build`，输出目录使用 `dist`。
-2. 创建 KV 命名空间，并绑定为 `NAVIX_KV`。迁移期间也兼容旧绑定名 `CLOUDNAV_KV`。
-3. 创建 R2 bucket，并绑定为 `NAVIX_BACKUPS`。
-4. 配置 `PASSWORD`；需要 AI 时再配置 `GEMINI_API_KEY` 或 `OPENAI_API_KEY` Secret。AI key 不会写入浏览器、KV 或 R2。
-5. 参考 `wrangler.toml.example` 检查绑定名称，重新部署 Pages。
+- 多家 OpenAI 兼容端点 + Gemini，统一走服务端 `/api/ai`
+- 用途：自动生成描述、智能建议分类、文件夹重命名与结构整理
+- **API Key 只从 Cloudflare Secrets 读取**，前端永远拿不到
 
-书签实际发生变化时才会覆盖固定的 R2 对象；重复内容会跳过上传，不生成时间戳历史文件。旧的 `cloudnav/` 项目备份可以在确认只属于本项目后，通过受保护的 `pruneBackup` 路径清理，不会触碰 bucket 中其他前缀。
+## 快速开始
 
-## 使用说明
+### 前置条件
 
-- 导入导出支持 JSON 和浏览器 HTML 文件。
-- AI 设置只填写提供商、模型和 OpenAI-compatible 地址；密钥由 Cloudflare Secret 提供。
-- 页面首次打开、回到前台或重新获得焦点时低频读取云端版本，不使用后台轮询。
-- WebDAV、健康检测、账号密码保险箱和待整理入口已移除。旧 `__inbox__` 书签会迁移到 `common`，旧 `credentials` 字段会在保存时丢弃。
+- Node.js ≥ 20
+- 一个 Cloudflare 账号（KV、R2、Pages 都在免费额度内）
 
----
-<details>
-<summary><strong>👉 点击查看部署方法（图文教程）</strong></summary>
+### 本地开发
 
-### 📖 保姆级图文教程 (适合新手)
+```bash
+git clone https://github.com/Versior/cove.git
+cd cove
+npm install
+npm run dev          # http://localhost:5173
+```
 
-> 如果您是第一次使用 Cloudflare，请严格按照以下步骤操作。
+![设置界面](.github/assets/settings.png)
 
-#### 第一步：点击创建应用程序
-![第一步](./doc/1.png)
+### 质量门禁
 
-#### 第二步：点击右下角 Get started
-![第二步](./doc/2.png)
+```bash
+npm run typecheck    # tsc --noEmit
+npm test             # node:test，8 个用例
+npm run build        # typecheck + vite build
+```
 
-#### 第三步：导入现有你已经 fork 的仓库
-![第三步](./doc/3.png)
+### 部署到 Cloudflare Pages
 
-#### 第四步：这里选你自己 fork 的仓库名称
-![第四步](./doc/4.png)
+**1. 创建存储资源**
 
-#### 第五步：按图中填写，其他默认
-![第五步](./doc/5.png)
+```bash
+# KV：存书签数据与配置
+wrangler kv namespace create COVE_KV
 
-#### 第六步：左侧找到 Workers KV 点击右侧新建
-![第六步](./doc/6.png)
+# R2：存固定备份对象
+wrangler r2 bucket create cove-backups
+```
 
-#### 第七步：空间名称填写 `NAVIX_DB`（建议复制）
-![第七步](./doc/7.png)
+**2. 配置环境变量与 Secret**
 
-#### 第八步：绑定 KV 数据库
-回到刚才的 pages 设置页面找到绑定-右侧下滑找到 kv 命名空间，变量名称优先填写 `NAVIX_KV`（旧版 `CLOUDNAV_KV` 仍兼容，建议复制）
-![第八步](./doc/8.png)
+在 Cloudflare Pages 项目 `Settings → Variables and Secrets` 中添加：
 
-#### 第九步：设置访问密码
-设置中找到变量和机密-填入 `PASSWORD`（建议复制）下面的值填入你自己要设置的密码，这一步是你登录导航页需要的登录密码
-![第九步](./doc/9.png)
+| 名称 | 类型 | 用途 |
+|---|---|---|
+| `PASSWORD` | Secret | 站点访问密码（必填） |
+| `SESSION_SECRET` | Secret | 会话签名密钥（建议配置） |
+| `OPENAI_API_KEY` | Secret | OpenAI 兼容端点的 Key（用 AI 时必填） |
+| `GEMINI_API_KEY` | Secret | Google Gemini 的 Key（用 Gemini 时必填） |
 
-#### 第十步：添加自定义域名（可选项）
-![第十步](./doc/10.png)
+> KV 与 R2 绑定在 `Settings → Functions → Bindings` 中配置，
+> KV 绑定名 `COVE_KV`，R2 绑定名 `COVE_BACKUPS`（代码同时兼容旧名 `NAVIX_BACKUPS`）。
 
-</details>
+**3. 部署**
 
-**🎉 所有设置结束后，请务必到部署页面点击“重新部署” (Create New Deployment)，项目即可正常使用！**
+```bash
+npm run build
+wrangler pages deploy dist --project-name=cove
+```
 
----
+## 设计语言
 
-<details>
-<summary><strong>👉 点击查看使用指南</strong></summary>
+Cove 的视觉不是"调了几次颜色"，而是从 macOS 的系统材质反向拆出来的三层结构。
 
-## ⚙️ 使用指南
+### 材质分层
 
-### 1. Chrome 扩展程序 (推荐)
-点击侧边栏左下角的 **“设置”** -> **“扩展工具”**。
-系统会自动根据您的域名生成 3 个文件代码 (`manifest.json`, `popup.html`, `popup.js`)。
-1. 在电脑新建文件夹，保存这 3 个文件。
-2. 打开 Chrome 扩展管理页 (`chrome://extensions`)。
-3. 开启右上角 **“开发者模式”**。
-4. 点击 **“加载已解压的扩展程序”**，选择刚才的文件夹。
-5. 以后浏览网页时，点击插件图标即可弹出窗口，**选择分类并保存**。
+```
+壁纸（固定视口）
+  └─ 侧栏玻璃    backdrop-filter: blur(48px) saturate(180%)
+      └─ 内容区   backdrop-filter: blur(32px) saturate(160%)
+          └─ 卡片  backdrop-filter: blur(20px) saturate(170%)
+```
 
-### 2. 配置 AI 服务
-点击侧边栏底部的 **“设置”** -> **“AI 设置”**：
-*   **提供商**: Google Gemini 或 OpenAI 兼容 (DeepSeek等)。
-*   **Key & Model**: 输入 API Key 和模型名称。
-*   **一键补全**: 点击底部的 **“一键补全所有描述”**，AI 将自动扫描所有无描述的链接并后台生成。
+玻璃必须**有东西可透**才成立。所以背景不是纯色，而是一层固定壁纸：
+没有壁纸的玻璃只是一块灰板。
 
-### 3. WebDAV 备份
-点击侧边栏的 **“备份”** 图标，配置 WebDAV 信息 (如坚果云)，即可一键上传备份到云端。
+### Token 是语义的，不是色阶的
 
-### 4. 本地数据导出 (Local Data Export)
-点击侧边栏的 **“备份”** 图标 -> **“导出 HTML”**。
-*   生成的 HTML 文件完全兼容 **Chrome**、**Edge**、**Firefox** 等主流浏览器的导入格式。
-*   完整保留您在 NaviX 中整理的分类目录结构。
+组件只引用语义名，亮暗与材质切换只改 `:root` / `.dark`：
 
-**如何导入到浏览器 (以 Chrome 为例):**
-1. 打开 Chrome 浏览器，点击右上角菜单 -> **书签与清单** -> **书签管理器**。
-2. 点击页面右上角的三个点图标 -> **导入书签**。
-3. 选择刚才从 NaviX 下载的 HTML 文件即可恢复所有书签。
+```css
+:root {
+  --material-card:   hsl(0 0% 100% / 0.72);
+  --text:            hsl(240 6% 10%);
+  --text-soft:       hsl(240 5% 32%);
+  --text-muted:      hsl(240 4% 44%);
+  --accent:          hsl(211 100% 43%);
+  --glass-edge:      hsl(0 0% 100% / 0.65);
+  --shadow-card:     0 1px 1px hsl(240 20% 20% / .03),
+                     0 2px 6px -1px hsl(240 20% 20% / .05),
+                     0 8px 20px -6px hsl(240 20% 20% / .07);
+}
+```
 
-</details>
+三个反直觉的决定：
+
+1. **背景带冷调，卡片纯白** — 纯白压纯白等于没有分层
+2. **阴影三层叠加，不是单层** — 单层阴影是大面积灰雾，三层才有"托起"的物理感
+3. **内圆角必须小于外圆角** — 32px 的盒子配 14px 圆角会被磨成歪圆
+
+### 对比度是算出来的，不是看着调的
+
+`--text-muted` 在浅色下收到 44%，在暗色下提到 58%——这两个数字不是手感，
+是按 WCAG 公式对「卡片白底 / 内容区玻璃 / 选中态 accent-soft」三个背景分别求解得到的。
+
+| 场景 | 浅色 | 暗色 |
+|---|---|---|
+| 正文 vs 卡片 | 17.7:1 | 14.2:1 |
+| 次要文字 vs 卡片 | 8.3:1 | 8.2:1 |
+| 弱化文字 vs 卡片 | 5.2:1 | 5.8:1 |
+| 未达标项（AA 4.5:1） | **0** | **0** |
+
+## 架构
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                     Cloudflare Edge                      │
+│                                                          │
+│  Pages (静态资源)        Pages Functions (边缘计算)        │
+│  ┌────────────────┐     ┌─────────────────────────────┐  │
+│  │ React 19 SPA   │     │ /api/auth     会话          │  │
+│  │ Tailwind 4     │◄───►│ /api/storage  数据 + 配置    │  │
+│  │ dnd-kit        │     │ /api/ai       代理 AI 请求   │  │
+│  └────────────────┘     │ /api/favicon  图标代理       │  │
+│                          │ /api/fetchtitle 标题抓取    │  │
+│                          │ /api/link      扩展写入      │  │
+│                          └──────────┬──────────────────┘  │
+│                                     │                     │
+│                    ┌────────────────┴───────────────┐     │
+│                    ▼                                ▼     │
+│              KV  (COVE_KV)                   R2 (COVE_BACKUPS) │
+│         书签 / 分类 / 配置 / 图标缓存         cloudnav/latest.json │
+└─────────────────────────────────────────────────────────┘
+```
+
+### 目录结构
+
+```
+├── functions/                 # Cloudflare Pages Functions
+│   ├── _shared/
+│   │   ├── auth.ts            # 会话、鉴权、CORS
+│   │   ├── dataStore.ts       # 版本化读写、R2 固定备份、写入队列
+│   │   └── hostGuard.ts       # SSRF 防护：拦内网 / 本地 / 重定向绕过
+│   └── api/
+│       ├── auth.ts            # 登录、登出
+│       ├── storage.ts         # 数据与配置读写
+│       ├── ai.ts              # AI 代理（Key 只在服务端）
+│       ├── favicon.ts         # 图标代理（边缘抓取 + CDN 缓存）
+│       ├── fetchtitle.ts      # 标题抓取
+│       └── link.ts            # 浏览器扩展写入接口
+├── components/                # 30 个 UI 组件
+├── services/                  # 13 个纯逻辑模块
+│   ├── density.ts             # 密度三档的尺寸映射
+│   ├── fillScreen.ts          # 首屏自适应计算
+│   ├── sorting.ts             # 五种排序 + 手动序
+│   ├── wallpaper.ts           # 壁纸预设与自定义
+│   └── dataNormalization.ts   # 数据规范化与迁移
+├── tests/core.test.ts         # 8 个核心用例
+└── index.css                  # 设计令牌 + 材质系统
+```
+
+### 关键设计
+
+**单一部署单元。** 没有独立 Worker、没有第二个 Cloudflare 项目。
+Functions 与静态资源同域，省掉跨域、省掉一处配置失误就全线挂掉的风险。
+
+**边缘代抓图标。** 浏览器不直连 Google——项目在 Cloudflare 上，但用户在国内，
+`gstatic` 会大面积失败。`/api/favicon` 由边缘按
+`站点 /favicon.ico → 页面 <link rel="icon"> → DuckDuckGo` 顺序取图，
+带 7 天 CDN 缓存，同一域名只回源一次。
+
+**SSRF 防护。** `hostGuard.ts` 在**每次**外部抓取前校验主机：
+拦截私网段、回环、云元数据地址，并禁止跟随重定向（否则公网地址可 302 到内网绕过校验）。
+
+**数据一致性。** KV 是最终一致的，但 `dataStore.ts` 通过
+写入队列 + `baseVersion` 比对，让并发写至少能返回 `409`，
+并且**旧版本永远不会覆盖新版本**。
+
+## 工程实践
+
+### 测试
+
+```bash
+$ npm test
+
+✔ normalizes legacy links without losing ordinary fields
+✔ normalizes OpenAI-compatible endpoints and rejects webpage URLs
+✔ drops retired categories together with their links
+✔ persists versions, detects conflicts, and skips unchanged content
+✔ writes only the fixed latest R2 object and skips the same hash
+✔ does not let an older backup overwrite a newer stored version
+✔ blocks private and loopback hosts while allowing public hosts
+✔ reorders by order field and keeps the drag result visible
+
+tests 8 · pass 8 · fail 0
+```
+
+覆盖的是**容易悄悄坏掉的地方**：数据迁移、冲突检测、R2 去重、版本回退、SSRF 白名单、拖拽序持久化。
+
+### 类型
+
+```
+strict: true
+noUnusedLocals · noUnusedParameters · noFallthroughCasesInSwitch
+```
+
+9533 行 TS/TSX，`tsc --noEmit` 零错误。
+
+### 依赖
+
+10 个生产依赖，且刻意保持克制：
+
+| 依赖 | 用途 |
+|---|---|
+| `react` / `react-dom` 19 | UI |
+| `@dnd-kit/*` | 拖拽排序与跨容器移动 |
+| `lucide-react` | 图标 |
+| `pinyin-pro` | 中文首字母搜索 |
+| `qrcode` | 二维码生成 |
+| `jszip` | 扩展打包 |
+| `uuid` | ID 生成 |
+
+没有 UI 框架、没有状态管理库、没有 HTTP 客户端——`fetch` 够用。
+
+## Roadmap
+
+- [ ] 书签快照与历史回滚
+- [ ] 多用户与权限
+- [ ] 标签体系重构（独立实体，支持重命名/合并）
+- [ ] 主 chunk 拆包（当前 ~1.2MB）
+- [ ] 移动端手势优化
+
+## 已知限制
+
+- **KV 最终一致** — 跨实例并发写无法做到原子事务，只能检测后返回 409
+- **AI 需自行配置 Key** — 不提供公共额度，`OPENAI_API_KEY` / `GEMINI_API_KEY` 需在 Cloudflare 后台添加
+- **图标依赖外部可达性** — 站点本身没有 favicon 时回落到彩色首字母，这是预期行为
+
+## License
+
+[MIT](LICENSE)
 
 ---
 
 <div align="center">
 
-**如果您觉得项目不错，希望给本项目点一个免费的 Star ⭐️，感谢您的关注！**
+**如果 Cove 让你少点了几次书签文件夹，给个 ⭐ 吧。**
 
-**如果有 Bug 或改进的地方，请在 Issue 中提交您的建议。**
-
-<br/>
-
-Made with love by NaviX Team
 </div>

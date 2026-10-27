@@ -150,7 +150,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       {open && <div className="fixed inset-0 z-30 bg-black/40 backdrop-blur-sm lg:hidden" onClick={onClose} aria-hidden="true" />}
       <aside className={`mac-folderbar fixed inset-y-0 left-0 z-40 flex w-52 shrink-0 transform flex-col transition-transform duration-200 lg:static lg:translate-x-0 ${open ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="flex h-9 items-center justify-between px-2">
-          <span className="truncate text-[12px] font-semibold uppercase tracking-wide text-ink-muted">{navTitle || 'CloudNav'}</span>
+          <span className="truncate text-[12px] font-semibold uppercase tracking-wide text-ink-muted">{navTitle || 'Cove'}</span>
           <button type="button" onClick={onClose} className="rounded-md p-1 text-ink-muted hover:bg-white/30 lg:hidden" aria-label="关闭导航">
             <X size={14} />
           </button>

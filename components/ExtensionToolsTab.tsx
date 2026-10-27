@@ -116,7 +116,7 @@ const ExtensionToolsTab: React.FC<ExtensionToolsTabProps> = ({ authToken, extens
         const url = window.URL.createObjectURL(content);
         const a = document.createElement('a');
         a.href = url;
-        a.download = "NaviX-Ext.zip";
+        a.download = "Cove-Ext.zip";
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -220,7 +220,7 @@ const ExtensionToolsTab: React.FC<ExtensionToolsTabProps> = ({ authToken, extens
                     安装指南 ({browserType === 'chrome' ? 'Chrome/Edge' : 'Firefox'}):
                 </h5>
                 <ol className="list-decimal list-inside text-sm text-slate-600 dark:text-slate-400 space-y-2 leading-relaxed">
-                    <li>在电脑上新建文件夹 <code className="bg-white dark:bg-slate-900 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 font-mono text-xs">NaviX-Pro</code>。</li>
+                    <li>在电脑上新建文件夹 <code className="bg-white dark:bg-slate-900 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 font-mono text-xs">Cove-Pro</code>。</li>
                     <li><strong>[重要]</strong> 将下方图标保存为 <code className="bg-white dark:bg-slate-900 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 font-mono text-xs">icon.png</code>。</li>
                     <li>获取插件代码文件：
                         <ul className="list-disc list-inside ml-4 mt-1 space-y-1 text-slate-500">
@@ -240,7 +240,7 @@ const ExtensionToolsTab: React.FC<ExtensionToolsTabProps> = ({ authToken, extens
                     <li>1. 开启右上角的 "开发者模式" (Chrome)。</li>
                     <li>2. 点击 "加载已解压的扩展程序"，选择包含上述文件的文件夹。</li>
                     <li>3. 前往 <code className="select-all bg-white dark:bg-slate-900 px-1 rounded">chrome://extensions/shortcuts</code>。</li>
-                    <li>4. <strong>[重要]</strong> 找到 "打开/关闭 NaviX 侧边栏"，设置快捷键 (如 Ctrl+Shift+E)。</li>
+                    <li>4. <strong>[重要]</strong> 找到 "打开/关闭 Cove 侧边栏"，设置快捷键 (如 Ctrl+Shift+E)。</li>
                 </ol>
 
                 <div className="mt-4 mb-4">

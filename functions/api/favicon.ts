@@ -55,7 +55,7 @@ const tryFetchIcon = async (target: string): Promise<Response | null> => {
 
   try {
     const res = await fetch(parsed.toString(), {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NaviX-Favicon/1.0)', Accept: 'image/*,*/*;q=0.8' },
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Cove-Favicon/1.0)', Accept: 'image/*,*/*;q=0.8' },
       redirect: 'follow',
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
@@ -105,7 +105,7 @@ export const onRequestGet = async (context: { env: Env; request: Request }) => {
   // 2) 解析页面里的 <link rel="icon">
   try {
     const page = await fetch(parsed.toString(), {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NaviX-Favicon/1.0)' },
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Cove-Favicon/1.0)' },
       redirect: 'follow',
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });

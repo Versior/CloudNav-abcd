@@ -20,7 +20,7 @@ const BackupSettingsTab: React.FC<BackupSettingsTabProps> = ({ onExportJson, onO
     <section className="space-y-3">
       <div>
         <h4 className="text-base font-semibold text-slate-800 dark:text-white">本地备份</h4>
-        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">导出或导入 CloudNav 的 JSON 数据文件。</p>
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">导出或导入 Cove 的 JSON 数据文件。</p>
       </div>
       <div className="flex flex-wrap gap-3">
         <button onClick={onExportJson} className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">

@@ -162,7 +162,7 @@ const callAI = async (task: AITask, body: Record<string, unknown>, config: Provi
   return typeof data.text === 'string' ? data.text.trim() : null;
 });
 
-export const testAIConnection = async (config: ProviderConfig) => (await callAI('test', { title: 'NaviX AI Test', url: 'https://example.com' }, config)) || 'OK';
+export const testAIConnection = async (config: ProviderConfig) => (await callAI('test', { title: 'Cove AI Test', url: 'https://example.com' }, config)) || 'OK';
 export const generateLinkDescription = async (title: string, url: string, config: ProviderConfig) => {
   const result = await callAI('description', { title, url }, config);
   if (!result) throw new Error('AI 未返回描述内容');

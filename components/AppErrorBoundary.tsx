@@ -24,7 +24,7 @@ class AppErrorBoundary extends React.Component<React.PropsWithChildren, AppError
     return (
       <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center p-6">
         <div className="w-full max-w-lg rounded-3xl border border-red-500/30 bg-slate-900 p-6 shadow-2xl">
-          <div className="text-sm font-semibold text-red-300 mb-2">NaviX 启动失败</div>
+          <div className="text-sm font-semibold text-red-300 mb-2">Cove 启动失败</div>
           <h1 className="text-2xl font-bold mb-3">页面没有正常加载</h1>
           <p className="text-slate-300 text-sm mb-4">可能是旧缓存或本地数据异常。先强制刷新；如果还不行，再清本地缓存。</p>
           <pre className="max-h-40 overflow-auto rounded-xl bg-black/40 p-3 text-xs text-red-100 whitespace-pre-wrap mb-4">{this.state.error.message}</pre>

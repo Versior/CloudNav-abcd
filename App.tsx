@@ -46,7 +46,7 @@ const DENSITY_GAPS: Record<Density, number> = {
   cozy: 12,
   spacious: 16,
 };
-const DEFAULT_SITE_SETTINGS = { title: 'CloudNav - 我的导航', navTitle: 'CloudNav', favicon: '', cardStyle: 'icon' as const, density: 'cozy' as const, wallpaperPreset: 'sonoma' as const, wallpaperDim: 12, passwordExpiryDays: 7 };
+const DEFAULT_SITE_SETTINGS = { title: 'Cove - 我的导航', navTitle: 'Cove', favicon: '', cardStyle: 'icon' as const, density: 'cozy' as const, wallpaperPreset: 'sonoma' as const, wallpaperDim: 12, passwordExpiryDays: 7 };
 
 type SyncStatus = 'idle' | 'saving' | 'saved' | 'error' | 'conflict';
 const DEFAULT_AI_CONFIG: AIConfig = { provider: 'gemini', baseUrl: '', model: 'gemini-2.5-flash' };
@@ -371,7 +371,7 @@ const App: React.FC = () => {
   }, [authToken]);
 
   useEffect(() => {
-    document.title = siteSettings.title || 'CloudNav';
+    document.title = siteSettings.title || 'Cove';
     if (!siteSettings.favicon) return;
     document.querySelectorAll('link[rel="icon"]').forEach(node => node.remove());
     const link = document.createElement('link');
@@ -760,14 +760,14 @@ const App: React.FC = () => {
   const saveExport = (format: 'json' | 'html') => {
     const data = normalizeAppData({ links, categories });
     if (format === 'html') {
-      downloadHtmlFile(generateBookmarkHtml(data.links, data.categories), `cloudnav_${new Date().toISOString().slice(0, 10)}.html`);
+      downloadHtmlFile(generateBookmarkHtml(data.links, data.categories), `cove_${new Date().toISOString().slice(0, 10)}.html`);
       return;
     }
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = 'cloudnav_latest.json';
+    anchor.download = 'cove_latest.json';
     anchor.click();
     URL.revokeObjectURL(url);
   };
@@ -805,7 +805,7 @@ const App: React.FC = () => {
       {/* 左侧：应用名 + 菜单项，macOS 的 menubar 是紧凑等距的 */}
       <span className="flex items-center gap-1.5 pr-1">
         <span className="grid h-4 w-4 place-items-center rounded-[4px] bg-accent text-[9px] font-bold text-ink-inverse">N</span>
-        <span className="font-semibold tracking-tight">{siteSettings.navTitle || 'CloudNav'}</span>
+        <span className="font-semibold tracking-tight">{siteSettings.navTitle || 'Cove'}</span>
       </span>
       {[
         { label: '书签', onClick: () => { setSelectedCategory('pinned'); setSidebarOpen(false); } },

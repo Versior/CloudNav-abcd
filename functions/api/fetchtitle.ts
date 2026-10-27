@@ -35,7 +35,7 @@ export const onRequestGet = async (context: { env: Env; request: Request }) => {
   try {
     // 禁止跟随重定向：否则公网地址可 302 到内网，绕过上面的主机校验
     const res = await fetch(parsed.toString(), {
-      headers: { 'User-Agent': 'NaviX/1.0 (+bookmark title fetch)' },
+      headers: { 'User-Agent': 'Cove/1.0 (+bookmark title fetch)' },
       redirect: 'manual',
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });

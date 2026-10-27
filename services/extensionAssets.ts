@@ -9,20 +9,20 @@ export const buildExtensionAssets = (opts: {
 
   const getManifestJson = () => JSON.stringify({
     manifest_version: 3,
-    name: (navTitle || 'NaviX') + ' Pro',
+    name: (navTitle || 'Cove') + ' Pro',
     version: '7.6',
     minimum_chrome_version: '116',
-    description: 'NaviX - 极速侧边栏与智能收藏',
+    description: 'Cove - 极速侧边栏与智能收藏',
     permissions: ['activeTab', 'scripting', 'sidePanel', 'storage', 'favicon', 'contextMenus', 'notifications', 'tabs'],
     background: { service_worker: 'background.js' },
     action: { default_title: '打开侧边栏 (Ctrl+Shift+E)' },
     side_panel: { default_path: 'sidebar.html' },
     icons: { '128': 'icon.png' },
-    commands: { '_execute_action': { suggested_key: { default: 'Ctrl+Shift+E', mac: 'Command+Shift+E' }, description: '打开/关闭 NaviX 侧边栏' } },
+    commands: { '_execute_action': { suggested_key: { default: 'Ctrl+Shift+E', mac: 'Command+Shift+E' }, description: '打开/关闭 Cove 侧边栏' } },
     ...(browserType === 'firefox' ? { browser_specific_settings: { gecko: { id: 'navix@example.com', strict_min_version: '109.0' } } } : {}),
   }, null, 2);
 
-  const extBackgroundJs = `// background.js - NaviX Assistant v7.6
+  const extBackgroundJs = `// background.js - Cove Assistant v7.6
 const CONFIG = ${CONFIG};
 let linkCache = [];
 let categoryCache = [];
@@ -56,7 +56,7 @@ chrome.action.onClicked.addListener(async (tab) => {
 
 function buildMenus() {
   chrome.contextMenus.removeAll(() => {
-    chrome.contextMenus.create({ id: 'cloudnav_root', title: '\\u26a1 保存到 NaviX', contexts: ['page', 'link', 'action'] });
+    chrome.contextMenus.create({ id: 'cloudnav_root', title: '\\u26a1 保存到 Cove', contexts: ['page', 'link', 'action'] });
     (categoryCache.filter(c => !c.parentId)).forEach(cat => {
       const subCats = categoryCache.filter(sc => sc.parentId === cat.id);
       if (subCats.length > 0) {
@@ -84,7 +84,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         body: JSON.stringify({ title, url, categoryId: catId, icon: '' })
       });
       if (res.ok) {
-        chrome.notifications.create({ type: 'basic', iconUrl: 'icon.png', title: '保存成功', message: '已保存到 NaviX' });
+        chrome.notifications.create({ type: 'basic', iconUrl: 'icon.png', title: '保存成功', message: '已保存到 Cove' });
       }
     } catch(e) {}
   }

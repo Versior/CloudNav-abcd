@@ -1,16 +1,27 @@
 export const APP_DATA_KEY = 'app_data';
+/**
+ * R2 固定备份对象键。
+ *
+ * 保持 `cloudnav/` 前缀不变：这是已部署实例里真实存在的对象，
+ * 改名会影响线上备份的读写位置，属于数据迁移，不做。
+ */
 export const LATEST_BACKUP_KEY = 'cloudnav/latest.json';
 
 export interface StorageEnv {
+  COVE_KV?: KVNamespace;
+  COVE_BACKUPS?: R2Bucket;
   NAVIX_KV?: KVNamespace;
   CLOUDNAV_KV?: KVNamespace;
   NAVIX_BACKUPS?: R2Bucket;
   CLOUDNAV_BACKUPS?: R2Bucket;
 }
 
-/** R2 绑定：兼容新旧两种命名，避免部署时绑定了旧名导致备份静默失效。 */
+/**
+ * R2 绑定：按 新名 → 旧名 的顺序探测。
+ * 换名后若忘记改绑定，备份会静默失效，所以这里必须同时兼容三代命名。
+ */
 export const getBackupBucket = (env: StorageEnv): R2Bucket | undefined =>
-  env.NAVIX_BACKUPS || env.CLOUDNAV_BACKUPS;
+  env.COVE_BACKUPS || env.NAVIX_BACKUPS || env.CLOUDNAV_BACKUPS;
 
 export interface StoredData {
   links: Record<string, unknown>[];
@@ -76,8 +87,8 @@ export const normalizeData = (value: unknown): StoredData => {
 };
 
 export const getStorageKv = (env: StorageEnv): KVNamespace => {
-  const kv = env.NAVIX_KV || env.CLOUDNAV_KV;
-  if (!kv) throw new Error('KV binding NAVIX_KV is not configured');
+  const kv = env.COVE_KV || env.NAVIX_KV || env.CLOUDNAV_KV;
+  if (!kv) throw new Error('KV 绑定未配置：请绑定 COVE_KV（兼容旧名 NAVIX_KV / CLOUDNAV_KV）');
   return kv;
 };
 

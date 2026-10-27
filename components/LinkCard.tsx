@@ -30,18 +30,18 @@ const hostOf = (url: string) => {
 };
 
 /**
- * 按优先级生成 favicon 候选地址。
- * Google 服务放最前：它会代抓并归一化成 png，避免站点返回 404 HTML
- * 导致 <img> 既不显示也不触发 onError 的“卡死”情况。
+ * 生成 favicon 候选地址：只用站点自己的图标。
+ *
+ * 不接 Google / DuckDuckGo 的 favicon 服务：它们对无法识别的域名会返回
+ * 一张通用灰色地球图，HTTP 200 且有有效像素，前端无法判定是占位图，
+ * 结果整页图标都变成灰地球。宁可回落到彩色首字母，也不要这种假图标。
  */
 const fallbackIcons = (url: string): string[] => {
   try {
     const parsed = new URL(url);
-    const host = parsed.hostname;
     return [
-      `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=64`,
-      `https://icons.duckduckgo.com/ip3/${encodeURIComponent(host)}.ico`,
       `${parsed.origin}/favicon.ico`,
+      `${parsed.origin}/apple-touch-icon.png`,
     ];
   } catch {
     return [];
@@ -104,9 +104,18 @@ const Favicon: React.FC<{ link: LinkItem; size: 'sm' | 'md'; density: Density }>
   );
 };
 
+/** 由站点名生成稳定色相，保证同一站点永远同色。 */
+const hueOf = (seed: string): number => {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) % 360;
+  return h;
+};
+
 /**
- * 启动台图标：macOS 应用图标的感觉——大圆角方块、柔和渐变底、居中 favicon。
- * 与 Favicon 分开实现，因为它要更大、更"实"，还要有 macOS 那种光泽。
+ * 桌面图标：macOS 应用图标的感觉——大圆角方块、彩色渐变底、居中 favicon。
+ *
+ * 底色按站点名生成色相，所以每个站点都有自己的颜色；
+ * favicon 加载不出来时露出白色首字母，而不是一张统一的灰色占位图。
  */
 const LaunchIcon: React.FC<{ link: LinkItem; density: Density }> = ({ link, density }) => {
   const tokens = DENSITY_TOKENS[density];
@@ -115,31 +124,48 @@ const LaunchIcon: React.FC<{ link: LinkItem; density: Density }> = ({ link, dens
     return link.icon ? [link.icon, ...list] : list;
   }, [link.icon, link.url]);
   const [index, setIndex] = React.useState(0);
-  React.useEffect(() => { setIndex(0); }, [link.icon, link.url]);
+  const [loaded, setLoaded] = React.useState(false);
+  React.useEffect(() => { setIndex(0); setLoaded(false); }, [link.icon, link.url]);
+
   const src = candidates[index] || '';
-  const initial = (link.title || '?').trim().slice(0, 1).toUpperCase();
+  const label = (link.title || link.url).trim();
+  const initial = label.slice(0, 1).toUpperCase();
+  const hue = hueOf(label || link.url);
 
   return (
     <span
-      className={`${tokens.launchIcon} relative flex shrink-0 items-center justify-center overflow-hidden shadow-[0_2px_8px_-1px_hsl(240_30%_30%/0.18),0_1px_2px_hsl(240_30%_30%/0.12)]`}
+      className={`${tokens.launchIcon} relative flex shrink-0 items-center justify-center overflow-hidden shadow-[0_2px_8px_-1px_hsl(240_30%_30%/0.22),0_1px_2px_hsl(240_30%_30%/0.14)]`}
     >
-      {/* 底：macOS 图标的柔和渐变 */}
-      <span className="absolute inset-0 bg-gradient-to-br from-white to-[hsl(240_20%_92%)] dark:from-[hsl(240_8%_26%)] dark:to-[hsl(240_10%_18%)]" />
-      {/* 顶部高光，做出玻璃/搪瓷的立体感 */}
-      <span className="absolute inset-x-0 top-0 h-1/2 rounded-t-[inherit] bg-gradient-to-b from-white/70 to-transparent dark:from-white/12" />
+      {/* 彩色底：按站点名取色相 */}
+      <span
+        className="absolute inset-0"
+        style={{ background: `linear-gradient(160deg, hsl(${hue} 76% 66%), hsl(${(hue + 22) % 360} 70% 52%))` }}
+      />
+      {/* 顶部高光，做出搪瓷/玻璃的立体感 */}
+      <span className="absolute inset-x-0 top-0 h-1/2 rounded-t-[inherit] bg-gradient-to-b from-white/45 to-transparent" />
+      {/* 首字母常驻底层，图片没出来时就是它 */}
+      <span className="absolute inset-0 grid place-items-center text-[22px] font-semibold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.25)]">
+        {initial}
+      </span>
       {src ? (
         <img
           key={src}
           src={src}
           alt=""
-          loading="lazy"
+          loading="eager"
+          decoding="async"
           referrerPolicy="no-referrer"
-          className="relative h-[58%] w-[58%] object-contain"
+          className={`relative h-[58%] w-[58%] object-contain drop-shadow-[0_1px_2px_rgba(0,0,0,0.18)] transition-opacity duration-200 ${loaded ? 'opacity-100' : 'opacity-0'}`}
+          onLoad={event => {
+            if (!event.currentTarget.naturalWidth) {
+              setIndex(current => current + 1);
+              return;
+            }
+            setLoaded(true);
+          }}
           onError={() => setIndex(current => current + 1)}
         />
-      ) : (
-        <span className="relative text-[22px] font-semibold text-ink-soft">{initial}</span>
-      )}
+      ) : null}
     </span>
   );
 };
@@ -220,8 +246,7 @@ const LinkCard: React.FC<LinkCardProps> = ({
       <div
         role="button"
         tabIndex={0}
-        onClick={selectable ? handleClick : undefined}
-        onDoubleClick={event => { event.preventDefault(); onOpen(link); }}
+        onClick={handleClick}
         onKeyDown={handleKey}
         onContextMenu={event => onContextMenu?.(event, link)}
         className="group relative flex flex-col items-center gap-1.5 rounded-xl px-1 py-2 transition-colors hover:bg-white/25 dark:hover:bg-white/10"

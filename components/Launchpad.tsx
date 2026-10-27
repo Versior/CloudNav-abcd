@@ -29,48 +29,103 @@ const hostOf = (url: string) => {
   }
 };
 
-const fallbackIcons = (url: string): string[] => {
+/**
+ * 由站点名生成稳定色相：同一站点永远同色，不同站点颜色区分明显。
+ */
+const hueOf = (seed: string): number => {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) % 360;
+  return h;
+};
+
+/**
+ * favicon 候选地址：只用站点自己的 favicon。
+ *
+ * 为什么不用 Google / DuckDuckGo 的 favicon 服务：
+ * 它们对无法识别的域名会返回一张通用的灰色地球图，而且是正常 HTTP 200 + 有效像素，
+ * 前端没有任何办法判定"这其实是个占位图"。结果就是整排 Dock 图标全变成灰地球，
+ * 既没有辨识度、也让界面显得灰扑扑。宁可回落到彩色首字母，也不要这种假图标。
+ */
+const faviconCandidates = (url: string): string[] => {
   try {
-    const host = new URL(url).hostname;
+    const parsed = new URL(url);
     return [
-      `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=128`,
-      `https://icons.duckduckgo.com/ip3/${encodeURIComponent(host)}.ico`,
-      `${new URL(url).origin}/favicon.ico`,
+      `${parsed.origin}/favicon.ico`,
+      `${parsed.origin}/apple-touch-icon.png`,
     ];
   } catch {
     return [];
   }
 };
 
-/** Dock 图标：比卡片里更大更实，带 macOS 那种光泽与投影。 */
+/**
+ * Dock 图标：macOS 那种"实心圆角方块 + 居中图形"。
+ *
+ * 关键点：favicon 加载失败时不能留白或显示统一占位图——那会让整排图标长得一样。
+ * 这里按站点名生成色相，画出彩色首字母图标，每个站点都有自己的辨识度。
+ */
 const DockIcon: React.FC<{ link: LinkItem; size: string }> = ({ link, size }) => {
   const candidates = React.useMemo(() => {
-    const list = fallbackIcons(link.url);
+    const list = faviconCandidates(link.url);
     return link.icon ? [link.icon, ...list] : list;
   }, [link.icon, link.url]);
   const [index, setIndex] = React.useState(0);
-  React.useEffect(() => { setIndex(0); }, [link.icon, link.url]);
+  const [broken, setBroken] = React.useState(false);
+  const [loaded, setLoaded] = React.useState(false);
+  React.useEffect(() => { setIndex(0); setBroken(false); setLoaded(false); }, [link.icon, link.url]);
 
-  const src = candidates[index] || '';
-  const initial = (link.title || '?').trim().slice(0, 1).toUpperCase();
+  // 超时兜底：favicon 服务有时会挂起不响应，不能让占位符一直停在那里
+  React.useEffect(() => {
+    if (loaded || broken) return;
+    const timer = window.setTimeout(() => setBroken(true), 4000);
+    return () => window.clearTimeout(timer);
+  }, [loaded, broken, index]);
+
+  const src = broken ? '' : (candidates[index] || '');
+  const label = (link.title || hostOf(link.url) || '?').trim();
+  const letter = label.slice(0, 1).toUpperCase();
+  const hue = hueOf(label || link.url);
+
+  /** 换下一个候选；都试过了就彻底放弃，交给首字母兜底。 */
+  const nextCandidate = () => {
+    setLoaded(false);
+    setIndex(current => {
+      if (current + 1 < candidates.length) return current + 1;
+      setBroken(true);
+      return current;
+    });
+  };
 
   return (
-    <span className={`${size} relative flex items-center justify-center overflow-hidden shadow-[0_3px_10px_-2px_hsl(240_30%_25%/0.28),0_1px_3px_hsl(240_30%_25%/0.18)]`}>
-      <span className="absolute inset-0 bg-gradient-to-br from-white to-[hsl(240_20%_90%)] dark:from-[hsl(240_8%_28%)] dark:to-[hsl(240_10%_18%)]" />
-      <span className="absolute inset-x-0 top-0 h-1/2 rounded-t-[inherit] bg-gradient-to-b from-white/75 to-transparent dark:from-white/14" />
-      {src ? (
+    <span className={`${size} relative flex items-center justify-center overflow-hidden shadow-[0_2px_6px_-1px_hsl(240_30%_20%/0.28),0_1px_2px_hsl(240_30%_20%/0.18)]`}>
+      {/* 彩色底：每个站点一个色相，加载失败时也有辨识度 */}
+      <span
+        className="absolute inset-0"
+        style={{ background: `linear-gradient(160deg, hsl(${hue} 76% 64%), hsl(${(hue + 22) % 360} 70% 50%))` }}
+      />
+      {/* 顶部高光，做出 macOS 图标的搪瓷感 */}
+      <span className="absolute inset-x-0 top-0 h-1/2 rounded-t-[inherit] bg-gradient-to-b from-white/45 to-transparent" />
+      {/* 首字母常驻在最底层：图片没加载出来时它就是最终兜底，不会露出浏览器占位符 */}
+      <span className="absolute inset-0 grid place-items-center text-[22px] font-semibold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.25)]">
+        {letter}
+      </span>
+      {src && !broken ? (
         <img
           key={src}
           src={src}
           alt=""
-          loading="lazy"
+          loading="eager"
+          decoding="async"
           referrerPolicy="no-referrer"
-          className="relative h-[60%] w-[60%] object-contain"
-          onError={() => setIndex(current => current + 1)}
+          className={`relative h-[62%] w-[62%] object-contain drop-shadow-[0_1px_2px_rgba(0,0,0,0.18)] transition-opacity duration-200 ${loaded ? 'opacity-100' : 'opacity-0'}`}
+          onLoad={event => {
+            // 有些站点返回 HTML/空图，浏览器不报错但没有实际像素，视同失败
+            if (!event.currentTarget.naturalWidth) nextCandidate();
+            else setLoaded(true);
+          }}
+          onError={nextCandidate}
         />
-      ) : (
-        <span className="relative text-[20px] font-semibold text-ink-soft">{initial}</span>
-      )}
+      ) : null}
     </span>
   );
 };
@@ -83,24 +138,23 @@ const Launchpad: React.FC<LaunchpadProps> = ({
   const items = links.slice(0, limit);
 
   return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-3 z-30 flex justify-center px-4">
-      <div className="dock-glass pointer-events-auto flex max-w-full items-end gap-1 overflow-x-auto rounded-2xl px-2.5 py-2">
+    <div className="pointer-events-none absolute inset-x-0 bottom-2 z-30 flex justify-center px-4">
+      <div className="dock-glass pointer-events-auto flex max-w-full items-end gap-0.5 overflow-x-auto rounded-[18px] px-2 py-1.5">
         {items.map(link => (
           <button
             key={link.id}
             type="button"
             onClick={() => onOpen(link)}
             onContextMenu={event => onContextMenu(event, link)}
-            onDoubleClick={() => onEdit(link)}
             title={`${link.title}${link.visitCount ? ` · 已访问 ${link.visitCount} 次` : ''}\n${hostOf(link.url)}`}
-            className="dock-item group relative flex w-16 shrink-0 flex-col items-center gap-1 rounded-xl px-1 pb-0.5 pt-1 outline-none"
+            className="dock-item group relative flex w-[62px] shrink-0 flex-col items-center gap-1 rounded-[10px] px-0.5 pb-1 pt-1 outline-none"
           >
             <DockIcon link={link} size={tokens.launchIcon} />
-            <span className="w-full truncate text-center text-[10px] leading-tight text-ink-soft">
+            <span className="w-full truncate text-center text-[10px] leading-tight text-white/90 drop-shadow-[0_1px_2px_rgba(0,0,0,0.55)]">
               {link.title}
             </span>
-            {/* 已打开/置顶的小圆点，macOS Dock 的做法 */}
-            <span className={`absolute -bottom-0.5 h-1 w-1 rounded-full ${link.pinned ? 'bg-accent' : 'bg-transparent'}`} />
+            {/* 运行指示点：macOS Dock 的做法 */}
+            <span className={`absolute bottom-0 h-[3px] w-[3px] rounded-full ${link.pinned ? 'bg-white/85' : 'bg-transparent'}`} />
           </button>
         ))}
       </div>

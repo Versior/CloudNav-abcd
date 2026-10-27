@@ -796,7 +796,7 @@ const App: React.FC = () => {
   if (isLoading) return <div className="min-h-screen flex items-center justify-center text-slate-400"><Loader2 className="animate-spin" /></div>;
 
   return <div className="mac-desktop flex h-screen overflow-hidden text-ink">
-    {requiresAuth && !authToken && <div className="fixed inset-0 z-50 bg-canvas flex items-center justify-center"><div className="w-full max-w-md p-6 text-center"><div className="mx-auto w-16 h-16 bg-accent-soft rounded-full flex items-center justify-center mb-4"><Lock className="w-8 h-8 text-accent" /></div><h1 className="text-2xl font-bold mb-2">需要身份验证</h1><p className="text-ink-soft mb-6">请输入访问密码以继续使用导航。</p><AuthModal isOpen onLogin={handleLogin} /></div></div>}
+    {requiresAuth && !authToken && <AuthModal isOpen onLogin={handleLogin} />}
     {(!requiresAuth || authToken) && <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
     <Suspense fallback={null}>
     <div className="mac-desktop">

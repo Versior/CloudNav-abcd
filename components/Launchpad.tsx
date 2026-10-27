@@ -29,29 +29,44 @@ const hostOf = (url: string) => {
   }
 };
 
-/**
- * 由站点名生成稳定色相：同一站点永远同色，不同站点颜色区分明显。
+/*
+ * Dock 图标兜底配色：与桌面图标共用同一组低饱和色板，
+ * 避免 Dock 和网格出现两套风格。
  */
-const hueOf = (seed: string): number => {
+const ICON_PALETTE: Array<[number, number, number]> = [
+  [211, 92, 56],
+  [199, 78, 48],
+  [173, 62, 42],
+  [152, 55, 40],
+  [38, 88, 52],
+  [14, 78, 54],
+  [350, 68, 55],
+  [268, 58, 56],
+  [240, 42, 54],
+  [220, 14, 46],
+];
+
+const paletteOf = (seed: string): [number, number, number] => {
   let h = 0;
-  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) % 360;
-  return h;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) % 100000;
+  return ICON_PALETTE[h % ICON_PALETTE.length];
 };
 
 /**
- * favicon 候选地址：只用站点自己的 favicon。
+ * favicon 候选地址。
  *
- * 为什么不用 Google / DuckDuckGo 的 favicon 服务：
- * 它们对无法识别的域名会返回一张通用的灰色地球图，而且是正常 HTTP 200 + 有效像素，
- * 前端没有任何办法判定"这其实是个占位图"。结果就是整排 Dock 图标全变成灰地球，
- * 既没有辨识度、也让界面显得灰扑扑。宁可回落到彩色首字母，也不要这种假图标。
+ * 1. 站点自己的 /favicon.ico —— 最准
+ * 2. gstatic faviconV2 —— Google 新版服务，覆盖率远高于"只试站点根路径"，
+ *    解决大量站点图标加载不出来的问题
  */
 const faviconCandidates = (url: string): string[] => {
   try {
     const parsed = new URL(url);
+    const origin = parsed.origin;
     return [
-      `${parsed.origin}/favicon.ico`,
-      `${parsed.origin}/apple-touch-icon.png`,
+      `${origin}/favicon.ico`,
+      `${origin}/apple-touch-icon.png`,
+      `https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=${encodeURIComponent(origin)}&size=128`,
     ];
   } catch {
     return [];
@@ -84,7 +99,7 @@ const DockIcon: React.FC<{ link: LinkItem; size: string }> = ({ link, size }) =>
   const src = broken ? '' : (candidates[index] || '');
   const label = (link.title || hostOf(link.url) || '?').trim();
   const letter = label.slice(0, 1).toUpperCase();
-  const hue = hueOf(label || link.url);
+  const [hue, sat, light] = paletteOf(label || link.url);
 
   /** 换下一个候选；都试过了就彻底放弃，交给首字母兜底。 */
   const nextCandidate = () => {
@@ -101,7 +116,7 @@ const DockIcon: React.FC<{ link: LinkItem; size: string }> = ({ link, size }) =>
       {/* 彩色底：每个站点一个色相，加载失败时也有辨识度 */}
       <span
         className="absolute inset-0"
-        style={{ background: `linear-gradient(160deg, hsl(${hue} 76% 64%), hsl(${(hue + 22) % 360} 70% 50%))` }}
+        style={{ background: `linear-gradient(160deg, hsl(${hue} ${sat}% ${light + 8}%), hsl(${hue} ${sat}% ${light - 6}%))` }}
       />
       {/* 顶部高光，做出 macOS 图标的搪瓷感 */}
       <span className="absolute inset-x-0 top-0 h-1/2 rounded-t-[inherit] bg-gradient-to-b from-white/45 to-transparent" />

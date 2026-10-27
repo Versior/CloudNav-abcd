@@ -30,18 +30,23 @@ const hostOf = (url: string) => {
 };
 
 /**
- * 生成 favicon 候选地址：只用站点自己的图标。
+ * 生成 favicon 候选地址。
  *
- * 不接 Google / DuckDuckGo 的 favicon 服务：它们对无法识别的域名会返回
- * 一张通用灰色地球图，HTTP 200 且有有效像素，前端无法判定是占位图，
- * 结果整页图标都变成灰地球。宁可回落到彩色首字母，也不要这种假图标。
+ * 顺序是"先自建、再兜底"：
+ * 1. 站点自己的 /favicon.ico —— 最准，但很多站点不放在根路径
+ * 2. gstatic faviconV2 —— Google 新版服务，覆盖率高且会代抓；比旧版
+ *    s2/favicons 稳定（后者对未知域名会返回灰色地球）
+ *
+ * 注意：gstatic 放在最后，避免"能用真图标却被代抓图覆盖"。
  */
 const fallbackIcons = (url: string): string[] => {
   try {
     const parsed = new URL(url);
+    const origin = parsed.origin;
     return [
-      `${parsed.origin}/favicon.ico`,
-      `${parsed.origin}/apple-touch-icon.png`,
+      `${origin}/favicon.ico`,
+      `${origin}/apple-touch-icon.png`,
+      `https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=${encodeURIComponent(origin)}&size=128`,
     ];
   } catch {
     return [];
@@ -105,10 +110,33 @@ const Favicon: React.FC<{ link: LinkItem; size: 'sm' | 'md'; density: Density }>
 };
 
 /** 由站点名生成稳定色相，保证同一站点永远同色。 */
-const hueOf = (seed: string): number => {
+/*
+ * 首字母兜底配色。
+ *
+ * 之前是 charCode 哈希取 0–360 全色相，565 个图标同时出现时五颜六色、
+ * 明暗不一，整体非常吵。改成一组精选的、低饱和的固定色板：
+ * - 色相只在这几个"相邻但不重复"的区间里轮转
+ * - 饱和度与明度统一，保证白字对比度一致
+ * 观感上像 macOS 的一组应用图标，而不是打翻的调色盘。
+ */
+const ICON_PALETTE: Array<[number, number, number]> = [
+  [211, 92, 56], // 系统蓝
+  [199, 78, 48], // 青
+  [173, 62, 42], // 绿松
+  [152, 55, 40], // 绿
+  [38, 88, 52],  // 琥珀
+  [14, 78, 54],  // 橙
+  [350, 68, 55], // 玫红
+  [268, 58, 56], // 紫
+  [240, 42, 54], // 靛
+  [220, 14, 46], // 石板灰
+];
+
+/** 稳定取色：同一站点永远同一个色块。 */
+const paletteOf = (seed: string): [number, number, number] => {
   let h = 0;
-  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) % 360;
-  return h;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) % 100000;
+  return ICON_PALETTE[h % ICON_PALETTE.length];
 };
 
 /**
@@ -130,7 +158,7 @@ const LaunchIcon: React.FC<{ link: LinkItem; density: Density }> = ({ link, dens
   const src = candidates[index] || '';
   const label = (link.title || link.url).trim();
   const initial = label.slice(0, 1).toUpperCase();
-  const hue = hueOf(label || link.url);
+  const [hue, sat, light] = paletteOf(label || link.url);
 
   return (
     <span
@@ -139,7 +167,7 @@ const LaunchIcon: React.FC<{ link: LinkItem; density: Density }> = ({ link, dens
       {/* 彩色底：按站点名取色相 */}
       <span
         className="absolute inset-0"
-        style={{ background: `linear-gradient(160deg, hsl(${hue} 76% 66%), hsl(${(hue + 22) % 360} 70% 52%))` }}
+        style={{ background: `linear-gradient(160deg, hsl(${hue} ${sat}% ${light + 8}%), hsl(${hue} ${sat}% ${light - 6}%))` }}
       />
       {/* 顶部高光，做出搪瓷/玻璃的立体感 */}
       <span className="absolute inset-x-0 top-0 h-1/2 rounded-t-[inherit] bg-gradient-to-b from-white/45 to-transparent" />

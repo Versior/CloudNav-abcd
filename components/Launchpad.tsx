@@ -150,7 +150,7 @@ const Launchpad: React.FC<LaunchpadProps> = ({
             className="dock-item group relative flex w-[62px] shrink-0 flex-col items-center gap-1 rounded-[10px] px-0.5 pb-1 pt-1 outline-none"
           >
             <DockIcon link={link} size={tokens.launchIcon} />
-            <span className="w-full truncate text-center text-[10px] leading-tight text-white/90 drop-shadow-[0_1px_2px_rgba(0,0,0,0.55)]">
+            <span className="w-full truncate text-center text-[10px] leading-tight text-ink-soft dark:text-white/90 dark:drop-shadow-[0_1px_2px_rgba(0,0,0,0.55)]">
               {link.title}
             </span>
             {/* 运行指示点：macOS Dock 的做法 */}

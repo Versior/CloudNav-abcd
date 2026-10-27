@@ -249,21 +249,13 @@ const LinkCard: React.FC<LinkCardProps> = ({
         onClick={handleClick}
         onKeyDown={handleKey}
         onContextMenu={event => onContextMenu?.(event, link)}
-        className="group relative flex flex-col items-center gap-1.5 rounded-xl px-1 py-2 transition-colors hover:bg-white/25 dark:hover:bg-white/10"
+        className="group relative flex flex-col items-center gap-1.5 px-1 py-2"
       >
         {selectable && <div className="absolute left-1 top-1 z-10"><SelectBox selected={selected} /></div>}
         {/* 拖拽把手：只在手动排序时出现，悬停才显形，不占布局 */}
-        {draggable && (
-          <span
-            ref={activatorRef}
-            role="button"
-            tabIndex={-1}
-            aria-label="拖动排序"
-            className="absolute inset-x-0 top-0 z-10 mx-auto flex h-4 w-8 cursor-grab touch-none items-center justify-center rounded-b-[6px] text-ink-muted/0 transition-colors group-hover:text-ink-muted/70 active:cursor-grabbing"
-          >
-            <GripHorizontal size={12} />
-          </span>
-        )}
+        {/* 图标视图不放把手：把手下压会盖住图标。整张卡即拖拽区（8px 阈值，
+            单击照常打开链接），拖拽功能保留但不占视觉空间。 */}
+        {draggable && <span ref={activatorRef} className="hidden" aria-hidden="true" />}
         <LaunchIcon link={link} density={density} />
         <span className="flex w-full items-center justify-center gap-1">
           {link.pinned ? <Pin size={9} className="shrink-0 fill-accent text-accent" /> : null}

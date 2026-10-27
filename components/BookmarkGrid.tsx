@@ -30,9 +30,18 @@ interface SortableCardProps {
  */
 const SortableCard: React.FC<SortableCardProps> = props => {
   const sortable = useSortable({ id: props.link.id, disabled: !props.draggable });
-  // 拖拽监听不要挂在外层 div 上：dnd-kit 会接管 pointer/context 事件，
-  // 导致卡片的右键菜单失效。只在没有把手（不可拖）时才挂外层。
-  const useOuterListeners = props.draggable && !props.activatorRef;
+
+  /*
+   * 监听挂哪里，取决于卡片形态：
+   *
+   * 图标视图没有把手（把手下压会盖住图标），因此整张卡就是拖拽区，
+   * 监听必须挂在外层 —— 靠 PointerSensor 的 8px 位移阈值区分"单击打开"和"拖动"。
+   *
+   * 其它视图有把手，监听挂在把手上，这样卡片本身的右键菜单不会被 dnd-kit 吞掉。
+   */
+  const isIcon = props.cardStyle === 'icon';
+  const useOuterListeners = props.draggable && isIcon;
+
   return (
     <div
       ref={sortable.setNodeRef}
@@ -41,7 +50,10 @@ const SortableCard: React.FC<SortableCardProps> = props => {
       {...(useOuterListeners ? sortable.attributes : {})}
       {...(useOuterListeners ? sortable.listeners : {})}
     >
-      <LinkCard {...props} activatorRef={props.draggable ? sortable.setActivatorNodeRef : undefined} />
+      <LinkCard
+        {...props}
+        activatorRef={props.draggable && !isIcon ? sortable.setActivatorNodeRef : undefined}
+      />
     </div>
   );
 };

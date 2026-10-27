@@ -53,11 +53,10 @@ const paletteOf = (seed: string): [number, number, number] => {
 };
 
 /**
- * favicon 候选地址。
+ * favicon 候选地址：站点自建 → 自家边缘代理。
  *
- * 1. 站点自己的 /favicon.ico —— 最准
- * 2. gstatic faviconV2 —— Google 新版服务，覆盖率远高于"只试站点根路径"，
- *    解决大量站点图标加载不出来的问题
+ * 不在浏览器里直连 Google gstatic：项目部署在 Cloudflare，用户在国内
+ * 访问不到 Google，会导致图标全部加载失败。走 /api/favicon 由边缘代抓。
  */
 const faviconCandidates = (url: string): string[] => {
   try {
@@ -66,7 +65,7 @@ const faviconCandidates = (url: string): string[] => {
     return [
       `${origin}/favicon.ico`,
       `${origin}/apple-touch-icon.png`,
-      `https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=${encodeURIComponent(origin)}&size=128`,
+      `/api/favicon?url=${encodeURIComponent(origin)}`,
     ];
   } catch {
     return [];

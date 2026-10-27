@@ -240,15 +240,14 @@ const LinkModal: React.FC<LinkModalProps> = ({ isOpen, onClose, onSave, onDelete
         domain = urlObj.hostname;
       }
       
-      // 先尝试从 KV 缓存获取图标。
-      // 但只认"自建图标"或 gstatic：旧版本缓存过 faviconextractor 的地址，
-      // 那个服务经常挂掉，继续用它就会表现为"填了网址没图标"。命中旧缓存时忽略。
+      // 先尝试从 KV 缓存获取图标；旧版本缓存过 faviconextractor / s2/favicons
+      // 的地址，这些服务不稳定，命中时判定失效并重新生成。
       try {
         const response = await fetch(`/api/storage?getConfig=favicon&domain=${encodeURIComponent(domain)}`);
         if (response.ok) {
           const data = await response.json();
           const cachedIcon = typeof data?.icon === 'string' ? data.icon : '';
-          const isStale = /faviconextractor|google\.com\/s2\/favicons/i.test(cachedIcon);
+          const isStale = /faviconextractor|google\.com\/s2\/favicons|t3\.gstatic\.com/i.test(cachedIcon);
           if (data.cached && cachedIcon && !isStale) {
             setIcon(cachedIcon);
             setIsFetchingIcon(false);
@@ -256,11 +255,10 @@ const LinkModal: React.FC<LinkModalProps> = ({ isOpen, onClose, onSave, onDelete
           }
         }
       } catch { /* 缓存读不到就直接走生成 */ }
-      
-      // 缓存没有就用与卡片完全一致的取图顺序：
-      // 先站点自建图标，再 gstatic 代抓。不用 faviconextractor 这类
-      // 第三方服务——它时常不可用，会导致"填了网址却没有图标"。
-      const iconUrl = `https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=${encodeURIComponent(`https://${domain}`)}&size=128`;
+
+      // 与卡片、Dock 完全一致：走自家边缘代理取图。
+      // 浏览器不直连 Google —— 项目在 Cloudflare 上，用户在国内访问不到 gstatic。
+      const iconUrl = `/api/favicon?url=${encodeURIComponent(`https://${domain}`)}`;
       setIcon(iconUrl);
       
       // 将图标保存到KV缓存

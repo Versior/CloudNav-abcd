@@ -32,12 +32,12 @@ const hostOf = (url: string) => {
 /**
  * 生成 favicon 候选地址。
  *
- * 顺序是"先自建、再兜底"：
- * 1. 站点自己的 /favicon.ico —— 最准，但很多站点不放在根路径
- * 2. gstatic faviconV2 —— Google 新版服务，覆盖率高且会代抓；比旧版
- *    s2/favicons 稳定（后者对未知域名会返回灰色地球）
+ * 顺序：站点自建图标 → 自家边缘代理。
  *
- * 注意：gstatic 放在最后，避免"能用真图标却被代抓图覆盖"。
+ * 为什么最后一定要走 /api/favicon 而不是 Google：
+ * 项目部署在 Cloudflare，但浏览器在用户侧。国内网络访问不到 gstatic，
+ * 直连 Google 会导致图标大面积加载失败、全部回落成首字母。
+ * 交给边缘代理后，浏览器只请求同域接口，可达性由 Cloudflare 保证。
  */
 const fallbackIcons = (url: string): string[] => {
   try {
@@ -46,7 +46,7 @@ const fallbackIcons = (url: string): string[] => {
     return [
       `${origin}/favicon.ico`,
       `${origin}/apple-touch-icon.png`,
-      `https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=${encodeURIComponent(origin)}&size=128`,
+      `/api/favicon?url=${encodeURIComponent(origin)}`,
     ];
   } catch {
     return [];

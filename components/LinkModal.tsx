@@ -142,7 +142,9 @@ const LinkModal: React.FC<LinkModalProps> = ({ isOpen, onClose, onSave, onDelete
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!title || !url) return;
+    // 必填校验交给 input 的 required（浏览器会定位到具体字段），
+    // 这里只做兜底，返回值用 trim 判空避免纯空格通过。
+    if (!title.trim() || !url.trim()) return;
 
     // 确保URL有协议前缀
     let finalUrl = url;
@@ -394,7 +396,7 @@ const LinkModal: React.FC<LinkModalProps> = ({ isOpen, onClose, onSave, onDelete
                 </div>
               )}
               <input
-                type="url"
+                type="text"
                 value={icon}
                 onChange={(e) => setIcon(e.target.value)}
                 className="flex-1 p-2 rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"

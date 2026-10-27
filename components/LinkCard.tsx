@@ -164,20 +164,22 @@ const LaunchIcon: React.FC<{ link: LinkItem; density: Density }> = ({ link, dens
     <span
       className={`${tokens.launchIcon} relative flex shrink-0 items-center justify-center overflow-hidden shadow-[0_2px_8px_-1px_hsl(240_30%_30%/0.22),0_1px_2px_hsl(240_30%_30%/0.14)]`}
     >
-      {/* 彩色底：按站点名取色相 */}
-      <span
-        className="absolute inset-0"
-        style={{ background: `linear-gradient(160deg, hsl(${hue} ${sat}% ${light + 8}%), hsl(${hue} ${sat}% ${light - 6}%))` }}
-      />
-      {/* 顶部高光，做出搪瓷/玻璃的立体感 */}
-      <span className="absolute inset-x-0 top-0 h-1/2 rounded-t-[inherit] bg-gradient-to-b from-white/45 to-transparent" />
-      {/* 首字母只在图标加载失败/未完成时显示。
-          多数 favicon 是透明背景 PNG，若让它常驻，字母会从图标的透明处透出来，
-          视觉上就像"字母压在 logo 上"。所以加载成功后必须隐藏。 */}
+      {/* 兜底底色：只在图标没加载出来时才显示。
+          用极浅的同色系底 + 深色字母，像 macOS 里没有图标的空 Application，
+          而不是一整块高饱和色卡——几百个排在一起会很吵。 */}
       {!loaded ? (
-        <span className="absolute inset-0 grid place-items-center text-[22px] font-semibold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.25)]">
-          {initial}
-        </span>
+        <>
+          <span
+            className="absolute inset-0"
+            style={{ background: `linear-gradient(160deg, hsl(${hue} ${Math.round(sat * 0.55)}% 96%), hsl(${hue} ${Math.round(sat * 0.6)}% 88%))` }}
+          />
+          <span
+            className="absolute inset-0 grid place-items-center text-[22px] font-semibold tracking-tight"
+            style={{ color: `hsl(${hue} ${sat}% ${Math.max(28, light - 18)}%)` }}
+          >
+            {initial}
+          </span>
+        </>
       ) : null}
       {src ? (
         <img

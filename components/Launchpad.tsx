@@ -112,19 +112,21 @@ const DockIcon: React.FC<{ link: LinkItem; size: string }> = ({ link, size }) =>
 
   return (
     <span className={`${size} relative flex items-center justify-center overflow-hidden shadow-[0_2px_6px_-1px_hsl(240_30%_20%/0.28),0_1px_2px_hsl(240_30%_20%/0.18)]`}>
-      {/* 彩色底：每个站点一个色相，加载失败时也有辨识度 */}
-      <span
-        className="absolute inset-0"
-        style={{ background: `linear-gradient(160deg, hsl(${hue} ${sat}% ${light + 8}%), hsl(${hue} ${sat}% ${light - 6}%))` }}
-      />
-      {/* 顶部高光，做出 macOS 图标的搪瓷感 */}
-      <span className="absolute inset-x-0 top-0 h-1/2 rounded-t-[inherit] bg-gradient-to-b from-white/45 to-transparent" />
-      {/* 首字母只在图标没加载出来时显示：favicon 多为透明 PNG，
-          常驻会让字母从透明处透出，看起来像压在 logo 上。 */}
+      {/* 兜底底：仅在图标缺失时显示。浅同色系 + 深字母，比高饱和色卡克制得多，
+          整排 Dock 摆在一起也不会抢视线。 */}
       {!loaded ? (
-        <span className="absolute inset-0 grid place-items-center text-[22px] font-semibold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.25)]">
-          {letter}
-        </span>
+        <>
+          <span
+            className="absolute inset-0"
+            style={{ background: `linear-gradient(160deg, hsl(${hue} ${sat}% 96%), hsl(${hue} ${Math.round(sat * 0.6)}% 88%))` }}
+          />
+          <span
+            className="absolute inset-0 grid place-items-center text-[22px] font-semibold tracking-tight"
+            style={{ color: `hsl(${hue} ${sat}% ${Math.max(28, light - 18)}%)` }}
+          >
+            {letter}
+          </span>
+        </>
       ) : null}
       {src && !broken ? (
         <img

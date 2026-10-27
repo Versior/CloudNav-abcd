@@ -105,10 +105,13 @@ const DockIcon: React.FC<{ link: LinkItem; size: string }> = ({ link, size }) =>
       />
       {/* 顶部高光，做出 macOS 图标的搪瓷感 */}
       <span className="absolute inset-x-0 top-0 h-1/2 rounded-t-[inherit] bg-gradient-to-b from-white/45 to-transparent" />
-      {/* 首字母常驻在最底层：图片没加载出来时它就是最终兜底，不会露出浏览器占位符 */}
-      <span className="absolute inset-0 grid place-items-center text-[22px] font-semibold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.25)]">
-        {letter}
-      </span>
+      {/* 首字母只在图标没加载出来时显示：favicon 多为透明 PNG，
+          常驻会让字母从透明处透出，看起来像压在 logo 上。 */}
+      {!loaded ? (
+        <span className="absolute inset-0 grid place-items-center text-[22px] font-semibold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.25)]">
+          {letter}
+        </span>
+      ) : null}
       {src && !broken ? (
         <img
           key={src}

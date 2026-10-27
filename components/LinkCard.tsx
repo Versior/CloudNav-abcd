@@ -143,10 +143,14 @@ const LaunchIcon: React.FC<{ link: LinkItem; density: Density }> = ({ link, dens
       />
       {/* 顶部高光，做出搪瓷/玻璃的立体感 */}
       <span className="absolute inset-x-0 top-0 h-1/2 rounded-t-[inherit] bg-gradient-to-b from-white/45 to-transparent" />
-      {/* 首字母常驻底层，图片没出来时就是它 */}
-      <span className="absolute inset-0 grid place-items-center text-[22px] font-semibold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.25)]">
-        {initial}
-      </span>
+      {/* 首字母只在图标加载失败/未完成时显示。
+          多数 favicon 是透明背景 PNG，若让它常驻，字母会从图标的透明处透出来，
+          视觉上就像"字母压在 logo 上"。所以加载成功后必须隐藏。 */}
+      {!loaded ? (
+        <span className="absolute inset-0 grid place-items-center text-[22px] font-semibold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.25)]">
+          {initial}
+        </span>
+      ) : null}
       {src ? (
         <img
           key={src}

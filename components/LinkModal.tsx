@@ -81,24 +81,30 @@ const LinkModal: React.FC<LinkModalProps> = ({ isOpen, onClose, onSave, onDelete
 
   // 当URL变化时:自动获取图标 +(标题为空时)自动抓取网页标题
   useEffect(() => {
-    if (url && !initialData) {
-      const timer = setTimeout(async () => {
-        if (autoFetchIcon) handleFetchIcon();
-        if (!title.trim()) {
-          let u = url;
-          if (!u.startsWith('http://') && !u.startsWith('https://')) u = 'https://' + u;
-          try {
-            const res = await fetch(`/api/fetchtitle?url=${encodeURIComponent(u)}`);
-            if (res.ok) {
-              const data = await res.json();
-              if (data.title) setTitle(data.title);
-            }
-          } catch { /* ignore */ }
-        }
-      }, 500); // 延迟500ms执行，避免频繁请求
+    if (!url || initialData) return;
+    // 只对合法域名触发，避免用户敲到一半就发请求
+    const normalized = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+    let host = '';
+    try { host = new URL(normalized).hostname; } catch { return; }
+    if (!host.includes('.')) return;
 
-      return () => clearTimeout(timer);
-    }
+    const timer = setTimeout(async () => {
+      if (autoFetchIcon) void handleFetchIcon();
+      // 标题只在为空时自动填，避免覆盖用户已输入的内容
+      if (!title.trim()) {
+        try {
+          const res = await fetch(`/api/fetchtitle?url=${encodeURIComponent(normalized)}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.title) setTitle(String(data.title).slice(0, 120));
+          }
+        } catch { /* 抓不到就保持空，用户可以手填 */ }
+      }
+    }, 600);
+
+    return () => clearTimeout(timer);
+    // title 故意不放进依赖：否则用户每敲一个字都会重新触发抓取
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url, autoFetchIcon, initialData]);
 
   const handleDelete = () => {
@@ -234,23 +240,27 @@ const LinkModal: React.FC<LinkModalProps> = ({ isOpen, onClose, onSave, onDelete
         domain = urlObj.hostname;
       }
       
-      // 先尝试从KV缓存获取图标
+      // 先尝试从 KV 缓存获取图标。
+      // 但只认"自建图标"或 gstatic：旧版本缓存过 faviconextractor 的地址，
+      // 那个服务经常挂掉，继续用它就会表现为"填了网址没图标"。命中旧缓存时忽略。
       try {
         const response = await fetch(`/api/storage?getConfig=favicon&domain=${encodeURIComponent(domain)}`);
         if (response.ok) {
           const data = await response.json();
-          if (data.cached && data.icon) {
-            setIcon(data.icon);
+          const cachedIcon = typeof data?.icon === 'string' ? data.icon : '';
+          const isStale = /faviconextractor|google\.com\/s2\/favicons/i.test(cachedIcon);
+          if (data.cached && cachedIcon && !isStale) {
+            setIcon(cachedIcon);
             setIsFetchingIcon(false);
             return;
           }
         }
-      } catch (error) {
-        console.log("Failed to fetch cached icon, will generate new one", error);
-      }
+      } catch { /* 缓存读不到就直接走生成 */ }
       
-      // 如果缓存中没有，则生成新图标
-      const iconUrl = `https://www.faviconextractor.com/favicon/${domain}?larger=true`;
+      // 缓存没有就用与卡片完全一致的取图顺序：
+      // 先站点自建图标，再 gstatic 代抓。不用 faviconextractor 这类
+      // 第三方服务——它时常不可用，会导致"填了网址却没有图标"。
+      const iconUrl = `https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=${encodeURIComponent(`https://${domain}`)}&size=128`;
       setIcon(iconUrl);
       
       // 将图标保存到KV缓存

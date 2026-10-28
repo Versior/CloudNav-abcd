@@ -2,6 +2,7 @@ import React from 'react';
 import { Check, Edit2, GripHorizontal, GripVertical, Pin } from 'lucide-react';
 import type { CardStyle, Density, LinkItem } from '../types';
 import { DENSITY_TOKENS } from '../services/density';
+import { iconGradient, initialOf, paletteOf } from '../services/iconPalette';
 
 interface LinkCardProps {
   link: LinkItem;
@@ -86,9 +87,11 @@ const Favicon: React.FC<{ link: LinkItem; size: 'sm' | 'md'; density: Density }>
   const src = candidates[index] || '';
 
   if (!src) {
+    // 与桌面图标共用同一套色板，保证同一个站点在任何视图里都是同一个颜色。
+    const [hue, sat, light] = paletteOf((link.title || link.url).trim());
     return (
-      <span className={`${box} flex shrink-0 items-center justify-center overflow-hidden bg-gradient-to-br from-accent-soft to-sunken ring-1 ring-line/60`}>
-        <span className="text-[12px] font-semibold text-accent-ink">{(link.title || '?').slice(0, 1).toUpperCase()}</span>
+      <span className={`${box} flex shrink-0 items-center justify-center overflow-hidden`} style={{ background: iconGradient(hue, sat, light) }}>
+        <span className="text-[12px] font-semibold leading-none text-white">{initialOf(link.title || link.url)}</span>
       </span>
     );
   }
@@ -109,36 +112,6 @@ const Favicon: React.FC<{ link: LinkItem; size: 'sm' | 'md'; density: Density }>
   );
 };
 
-/** 由站点名生成稳定色相，保证同一站点永远同色。 */
-/*
- * 首字母兜底配色。
- *
- * 之前是 charCode 哈希取 0–360 全色相，565 个图标同时出现时五颜六色、
- * 明暗不一，整体非常吵。改成一组精选的、低饱和的固定色板：
- * - 色相只在这几个"相邻但不重复"的区间里轮转
- * - 饱和度与明度统一，保证白字对比度一致
- * 观感上像 macOS 的一组应用图标，而不是打翻的调色盘。
- */
-const ICON_PALETTE: Array<[number, number, number]> = [
-  [211, 92, 56], // 系统蓝
-  [199, 78, 48], // 青
-  [173, 62, 42], // 绿松
-  [152, 55, 40], // 绿
-  [38, 88, 52],  // 琥珀
-  [14, 78, 54],  // 橙
-  [350, 68, 55], // 玫红
-  [268, 58, 56], // 紫
-  [240, 42, 54], // 靛
-  [220, 14, 46], // 石板灰
-];
-
-/** 稳定取色：同一站点永远同一个色块。 */
-const paletteOf = (seed: string): [number, number, number] => {
-  let h = 0;
-  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) % 100000;
-  return ICON_PALETTE[h % ICON_PALETTE.length];
-};
-
 /**
  * 桌面图标：macOS 应用图标的感觉——大圆角方块、彩色渐变底、居中 favicon。
  *
@@ -157,7 +130,7 @@ const LaunchIcon: React.FC<{ link: LinkItem; density: Density }> = ({ link, dens
 
   const src = candidates[index] || '';
   const label = (link.title || link.url).trim();
-  const initial = label.slice(0, 1).toUpperCase();
+  const initial = initialOf(label);
   const [hue, sat, light] = paletteOf(label || link.url);
 
   return (
@@ -165,18 +138,17 @@ const LaunchIcon: React.FC<{ link: LinkItem; density: Density }> = ({ link, dens
       className={`${tokens.launchIcon} relative flex shrink-0 items-center justify-center overflow-hidden shadow-[0_2px_8px_-1px_hsl(240_30%_30%/0.22),0_1px_2px_hsl(240_30%_30%/0.14)]`}
     >
       {/* 兜底底色：只在图标没加载出来时才显示。
-          用极浅的同色系底 + 深色字母，像 macOS 里没有图标的空 Application，
-          而不是一整块高饱和色卡——几百个排在一起会很吵。 */}
+          中深实心渐变 + 白字，和旁边真实 logo 的视觉重量一致；
+          所有色块感知亮度相同，几百个排在一起也有秩序感。 */}
       {!loaded ? (
         <>
           <span
             className="absolute inset-0"
-            style={{ background: `linear-gradient(160deg, hsl(${hue} ${Math.round(sat * 0.55)}% 96%), hsl(${hue} ${Math.round(sat * 0.6)}% 88%))` }}
+            style={{ background: iconGradient(hue, sat, light) }}
           />
-          <span
-            className="absolute inset-0 grid place-items-center text-[22px] font-semibold tracking-tight"
-            style={{ color: `hsl(${hue} ${sat}% ${Math.max(28, light - 18)}%)` }}
-          >
+          {/* 顶部内高光：让色块看起来像一块有厚度的实体，而不是一张贴纸 */}
+          <span className="absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/22 to-transparent" />
+          <span className="absolute inset-0 grid place-items-center text-[26px] font-semibold leading-none tracking-tight text-white drop-shadow-[0_1px_1px_rgba(0,0,0,0.18)]">
             {initial}
           </span>
         </>

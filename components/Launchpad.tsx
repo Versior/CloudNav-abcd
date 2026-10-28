@@ -1,7 +1,7 @@
 import React from 'react';
 import type { Density, LinkItem } from '../types';
 import { DENSITY_TOKENS } from '../services/density';
-
+import { iconGradient, initialOf, paletteOf } from '../services/iconPalette';
 /**
  * macOS 底部 Dock / 启动台。
  *
@@ -29,28 +29,6 @@ const hostOf = (url: string) => {
   }
 };
 
-/*
- * Dock 图标兜底配色：与桌面图标共用同一组低饱和色板，
- * 避免 Dock 和网格出现两套风格。
- */
-const ICON_PALETTE: Array<[number, number, number]> = [
-  [211, 92, 56],
-  [199, 78, 48],
-  [173, 62, 42],
-  [152, 55, 40],
-  [38, 88, 52],
-  [14, 78, 54],
-  [350, 68, 55],
-  [268, 58, 56],
-  [240, 42, 54],
-  [220, 14, 46],
-];
-
-const paletteOf = (seed: string): [number, number, number] => {
-  let h = 0;
-  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) % 100000;
-  return ICON_PALETTE[h % ICON_PALETTE.length];
-};
 
 /**
  * favicon 候选地址：站点自建 → 自家边缘代理。
@@ -97,7 +75,7 @@ const DockIcon: React.FC<{ link: LinkItem; size: string }> = ({ link, size }) =>
 
   const src = broken ? '' : (candidates[index] || '');
   const label = (link.title || hostOf(link.url) || '?').trim();
-  const letter = label.slice(0, 1).toUpperCase();
+  const letter = initialOf(label);
   const [hue, sat, light] = paletteOf(label || link.url);
 
   /** 换下一个候选；都试过了就彻底放弃，交给首字母兜底。 */
@@ -112,18 +90,13 @@ const DockIcon: React.FC<{ link: LinkItem; size: string }> = ({ link, size }) =>
 
   return (
     <span className={`${size} relative flex items-center justify-center overflow-hidden shadow-[0_2px_6px_-1px_hsl(240_30%_20%/0.28),0_1px_2px_hsl(240_30%_20%/0.18)]`}>
-      {/* 兜底底：仅在图标缺失时显示。浅同色系 + 深字母，比高饱和色卡克制得多，
-          整排 Dock 摆在一起也不会抢视线。 */}
+      {/* 兜底底：仅在图标缺失时显示。与桌面网格共用同一套色板与实心渐变 + 白字，
+          保证 Dock 和网格风格一致，也避免出现「飘着的浅色字母」。 */}
       {!loaded ? (
         <>
-          <span
-            className="absolute inset-0"
-            style={{ background: `linear-gradient(160deg, hsl(${hue} ${sat}% 96%), hsl(${hue} ${Math.round(sat * 0.6)}% 88%))` }}
-          />
-          <span
-            className="absolute inset-0 grid place-items-center text-[22px] font-semibold tracking-tight"
-            style={{ color: `hsl(${hue} ${sat}% ${Math.max(28, light - 18)}%)` }}
-          >
+          <span className="absolute inset-0" style={{ background: iconGradient(hue, sat, light) }} />
+          <span className="absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/22 to-transparent" />
+          <span className="absolute inset-0 grid place-items-center text-[22px] font-semibold leading-none tracking-tight text-white drop-shadow-[0_1px_1px_rgba(0,0,0,0.18)]">
             {letter}
           </span>
         </>

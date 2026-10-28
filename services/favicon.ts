@@ -1,21 +1,26 @@
 import React from 'react';
 
 /**
- * favicon 候选地址：站点自建 → 自家边缘代理。
+ * favicon 候选地址。顺序是这个文件里最重要的东西。
  *
- * 不在浏览器里直连 Google gstatic：项目部署在 Cloudflare，用户在国内
- * 访问不到 Google，会导致图标大面积加载失败、全部回落成首字母。
- * 走 /api/favicon 由边缘代抓，浏览器只请求同域接口。
+ * **代理优先**，不是直连优先：
+ * 1. 直连站点图标会被 Chrome 的 ORB（Opaque Response Blocking）拦掉——
+ *    跨域 + 无 CORS 头 + no-referrer 的图片资源会被直接判定为
+ *    ERR_BLOCKED_BY_ORB / ERR_BLOCKED_BY_RESPONSE.NotSameOrigin。
+ *    实测线上 27 个图标请求就是这么死掉的，重试多少次都不会好。
+ * 2. /api/favicon 是同源请求，不受 ORB 影响，且由 Cloudflare 边缘去抓，
+ *    国内可达到站点自身不受用户网络影响。
  *
- * 顺序有意义：先站点自己的，再由代理兜底。
+ * 实测同一批被 ORB 拦掉的域名：直连 4/12 成功，走代理 8/12 成功。
+ * 所以代理放前面，直连只作为代理失败时的后备。
  */
 export const faviconCandidates = (url: string): string[] => {
   try {
     const { origin } = new URL(url);
     return [
+      `/api/favicon?url=${encodeURIComponent(origin)}`,
       `${origin}/favicon.ico`,
       `${origin}/apple-touch-icon.png`,
-      `/api/favicon?url=${encodeURIComponent(origin)}`,
     ];
   } catch {
     return [];

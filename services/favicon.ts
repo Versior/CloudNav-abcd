@@ -74,28 +74,33 @@ export const useFaviconSrc = (candidates: string[]): string | null => {
     setSrc(null);
 
     /*
-     * 探测策略：前两个候选同时发，都失败才试第三个。
+     * 真竞速：所有候选同时开跑，第一个成功立刻上屏。
      *
      * 走过的弯路：
-     * - 全部候选并发：几百张卡 × 3 个候选瞬间上千请求，互相挤占连接，
-     *   20 秒只成功 8 个，比串行还差。
-     * - 纯串行：两个候选都失败时，一张卡要等满 2×5s=10s，
-     *   排队下来首屏迟迟不齐。
+     * - 串行 + Promise.all：要等最慢的那个到超时才继续，快的白等一场。
+     * - 单独串行：两个候选都失败时一张卡要等满 2×5s=10s。
      *
-     * 代理和直连是两条独立链路（同源 vs 跨域），并发只多一倍请求，
-     * 却能在先到的那个回来时立刻上屏。
+     * 每个候选独立跑，谁先成功用谁，失败的自生自灭。
+     * 请求数多一倍，但首屏延迟等于「最快那个候选」的响应时间。
      */
-    const race = async (): Promise<string | null> => {
-      const [first, second, third] = list;
-      if (!second) return probe(first);
-
-      const results = await Promise.all([probe(first), probe(second)]);
-      if (!alive) return null;
-      const hit = results.find(Boolean);
-      if (hit) return hit;
-      if (third) return probe(third);
-      return null;
-    };
+    const race = (): Promise<string | null> =>
+      new Promise(resolve => {
+        let settled = false;
+        let remaining = list.length;
+        const settle = (value: string | null) => {
+          if (settled) return;
+          settled = true;
+          resolve(value);
+        };
+        list.forEach(candidate => {
+          void probe(candidate).then(hit => {
+            if (hit) { settle(hit); return; }
+            remaining -= 1;
+            // 全部候选都失败，才算这个站点确实没有可用图标
+            if (remaining === 0) settle(null);
+          });
+        });
+      });
 
     void race().then(picked => {
       if (alive) setSrc(picked ?? '');

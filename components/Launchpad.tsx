@@ -2,6 +2,7 @@ import React from 'react';
 import type { Density, LinkItem } from '../types';
 import { DENSITY_TOKENS } from '../services/density';
 import { iconGradient, initialOf, paletteOf } from '../services/iconPalette';
+import { faviconCandidates, useFaviconSrc } from '../services/favicon';
 /**
  * macOS 底部 Dock / 启动台。
  *
@@ -29,27 +30,6 @@ const hostOf = (url: string) => {
   }
 };
 
-
-/**
- * favicon 候选地址：站点自建 → 自家边缘代理。
- *
- * 不在浏览器里直连 Google gstatic：项目部署在 Cloudflare，用户在国内
- * 访问不到 Google，会导致图标全部加载失败。走 /api/favicon 由边缘代抓。
- */
-const faviconCandidates = (url: string): string[] => {
-  try {
-    const parsed = new URL(url);
-    const origin = parsed.origin;
-    return [
-      `${origin}/favicon.ico`,
-      `${origin}/apple-touch-icon.png`,
-      `/api/favicon?url=${encodeURIComponent(origin)}`,
-    ];
-  } catch {
-    return [];
-  }
-};
-
 /**
  * Dock 图标：macOS 那种"实心圆角方块 + 居中图形"。
  *
@@ -61,38 +41,17 @@ const DockIcon: React.FC<{ link: LinkItem; size: string }> = ({ link, size }) =>
     const list = faviconCandidates(link.url);
     return link.icon ? [link.icon, ...list] : list;
   }, [link.icon, link.url]);
-  const [index, setIndex] = React.useState(0);
-  const [broken, setBroken] = React.useState(false);
-  const [loaded, setLoaded] = React.useState(false);
-  React.useEffect(() => { setIndex(0); setBroken(false); setLoaded(false); }, [link.icon, link.url]);
+  const src = useFaviconSrc(candidates);
 
-  // 超时兜底：favicon 服务有时会挂起不响应，不能让占位符一直停在那里
-  React.useEffect(() => {
-    if (loaded || broken) return;
-    const timer = window.setTimeout(() => setBroken(true), 4000);
-    return () => window.clearTimeout(timer);
-  }, [loaded, broken, index]);
-
-  const src = broken ? '' : (candidates[index] || '');
   const label = (link.title || hostOf(link.url) || '?').trim();
   const letter = initialOf(label);
   const [hue, sat, light] = paletteOf(label || link.url);
-
-  /** 换下一个候选；都试过了就彻底放弃，交给首字母兜底。 */
-  const nextCandidate = () => {
-    setLoaded(false);
-    setIndex(current => {
-      if (current + 1 < candidates.length) return current + 1;
-      setBroken(true);
-      return current;
-    });
-  };
 
   return (
     <span className={`${size} relative flex items-center justify-center overflow-hidden shadow-[0_2px_6px_-1px_hsl(240_30%_20%/0.28),0_1px_2px_hsl(240_30%_20%/0.18)]`}>
       {/* 兜底底：仅在图标缺失时显示。与桌面网格共用同一套色板与实心渐变 + 白字，
           保证 Dock 和网格风格一致，也避免出现「飘着的浅色字母」。 */}
-      {!loaded ? (
+      {!src ? (
         <>
           <span className="absolute inset-0" style={{ background: iconGradient(hue, sat, light) }} />
           <span className="absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/22 to-transparent" />
@@ -100,24 +59,16 @@ const DockIcon: React.FC<{ link: LinkItem; size: string }> = ({ link, size }) =>
             {letter}
           </span>
         </>
-      ) : null}
-      {src && !broken ? (
+      ) : (
         <img
-          key={src}
           src={src}
           alt=""
           loading="eager"
           decoding="async"
           referrerPolicy="no-referrer"
-          className={`relative h-[62%] w-[62%] object-contain drop-shadow-[0_1px_2px_rgba(0,0,0,0.18)] transition-opacity duration-200 ${loaded ? 'opacity-100' : 'opacity-0'}`}
-          onLoad={event => {
-            // 有些站点返回 HTML/空图，浏览器不报错但没有实际像素，视同失败
-            if (!event.currentTarget.naturalWidth) nextCandidate();
-            else setLoaded(true);
-          }}
-          onError={nextCandidate}
+          className="relative h-[62%] w-[62%] object-contain drop-shadow-[0_1px_2px_rgba(0,0,0,0.18)]"
         />
-      ) : null}
+      )}
     </span>
   );
 };

@@ -3,6 +3,7 @@ import { Check, Edit2, GripHorizontal, GripVertical, Pin } from 'lucide-react';
 import type { CardStyle, Density, LinkItem } from '../types';
 import { DENSITY_TOKENS } from '../services/density';
 import { iconGradient, initialOf, paletteOf } from '../services/iconPalette';
+import { faviconCandidates, useFaviconSrc } from '../services/favicon';
 
 interface LinkCardProps {
   link: LinkItem;
@@ -30,33 +31,12 @@ const hostOf = (url: string) => {
   }
 };
 
-/**
- * 生成 favicon 候选地址。
- *
- * 顺序：站点自建图标 → 自家边缘代理。
- *
- * 为什么最后一定要走 /api/favicon 而不是 Google：
- * 项目部署在 Cloudflare，但浏览器在用户侧。国内网络访问不到 gstatic，
- * 直连 Google 会导致图标大面积加载失败、全部回落成首字母。
- * 交给边缘代理后，浏览器只请求同域接口，可达性由 Cloudflare 保证。
- */
-const fallbackIcons = (url: string): string[] => {
-  try {
-    const parsed = new URL(url);
-    const origin = parsed.origin;
-    return [
-      `${origin}/favicon.ico`,
-      `${origin}/apple-touch-icon.png`,
-      `/api/favicon?url=${encodeURIComponent(origin)}`,
-    ];
-  } catch {
-    return [];
-  }
-};
 
 /**
- * 图标底座：优先用链接自带 icon；缺失或加载失败时依次尝试 favicon 服务；
- * 全部不可用才退回首字母，保证任何情况下都有可见标识。
+ * 图表底座的「小图标」版本：详情 / 简约 / 列表视图用。
+ *
+ * 加载优先级与桌面图标一致，都走 useFaviconSrc：并行探测候选地址，
+ * 谁先成功用谁，全部失败才退回首字母。
  */
 const Favicon: React.FC<{ link: LinkItem; size: 'sm' | 'md'; density: Density }> = ({ link, size, density }) => {
   const tokens = DENSITY_TOKENS[density];
@@ -65,26 +45,11 @@ const Favicon: React.FC<{ link: LinkItem; size: 'sm' | 'md'; density: Density }>
   const img = size === 'md' ? (density === 'spacious' ? 'h-5 w-5' : 'h-4 w-4') : 'h-4 w-4';
 
   const candidates = React.useMemo(() => {
-    const list = fallbackIcons(link.url);
+    const list = faviconCandidates(link.url);
     return link.icon ? [link.icon, ...list] : list;
   }, [link.icon, link.url]);
 
-  const [index, setIndex] = React.useState(0);
-  React.useEffect(() => { setIndex(0); }, [link.icon, link.url]);
-
-  // 有些站点返回 404 HTML，图片既不显示也不触发 onError，会长期空白。
-  // 因此给每个候选加超时，超时就换下一个，最终回落到首字母。
-  React.useEffect(() => {
-    if (index >= candidates.length) return;
-    const timer = window.setTimeout(() => {
-      const el = document.querySelector<HTMLImageElement>(`img[data-fav="${index}-${link.id}"]`);
-      if (el && el.complete && el.naturalWidth > 0) return;
-      setIndex(current => current + 1);
-    }, 4500);
-    return () => window.clearTimeout(timer);
-  }, [index, candidates.length, link.id]);
-
-  const src = candidates[index] || '';
+  const src = useFaviconSrc(candidates);
 
   if (!src) {
     // 与桌面图标共用同一套色板，保证同一个站点在任何视图里都是同一个颜色。
@@ -99,14 +64,12 @@ const Favicon: React.FC<{ link: LinkItem; size: 'sm' | 'md'; density: Density }>
   return (
     <span className={`${box} flex shrink-0 items-center justify-center overflow-hidden bg-gradient-to-br from-accent-soft/70 to-sunken ring-1 ring-line/60`}>
       <img
-        key={src}
-        data-fav={`${index}-${link.id}`}
         src={src}
         alt=""
         loading="lazy"
         referrerPolicy="no-referrer"
         className={`${img} object-contain`}
-        onError={() => setIndex(current => current + 1)}
+        onError={() => { /* 已由 useFaviconSrc 处理，这里只兜住极少数运行期异常 */ }}
       />
     </span>
   );
@@ -121,17 +84,15 @@ const Favicon: React.FC<{ link: LinkItem; size: 'sm' | 'md'; density: Density }>
 const LaunchIcon: React.FC<{ link: LinkItem; density: Density }> = ({ link, density }) => {
   const tokens = DENSITY_TOKENS[density];
   const candidates = React.useMemo(() => {
-    const list = fallbackIcons(link.url);
+    const list = faviconCandidates(link.url);
     return link.icon ? [link.icon, ...list] : list;
   }, [link.icon, link.url]);
-  const [index, setIndex] = React.useState(0);
-  const [loaded, setLoaded] = React.useState(false);
-  React.useEffect(() => { setIndex(0); setLoaded(false); }, [link.icon, link.url]);
+  const src = useFaviconSrc(candidates);
 
-  const src = candidates[index] || '';
   const label = (link.title || link.url).trim();
   const initial = initialOf(label);
   const [hue, sat, light] = paletteOf(label || link.url);
+  const loaded = Boolean(src);
 
   return (
     <span
@@ -155,21 +116,12 @@ const LaunchIcon: React.FC<{ link: LinkItem; density: Density }> = ({ link, dens
       ) : null}
       {src ? (
         <img
-          key={src}
           src={src}
           alt=""
           loading="eager"
           decoding="async"
           referrerPolicy="no-referrer"
-          className={`relative h-[58%] w-[58%] object-contain drop-shadow-[0_1px_2px_rgba(0,0,0,0.18)] transition-opacity duration-200 ${loaded ? 'opacity-100' : 'opacity-0'}`}
-          onLoad={event => {
-            if (!event.currentTarget.naturalWidth) {
-              setIndex(current => current + 1);
-              return;
-            }
-            setLoaded(true);
-          }}
-          onError={() => setIndex(current => current + 1)}
+          className="relative h-[58%] w-[58%] object-contain drop-shadow-[0_1px_2px_rgba(0,0,0,0.18)]"
         />
       ) : null}
     </span>

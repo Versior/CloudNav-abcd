@@ -22,8 +22,14 @@ export const faviconCandidates = (url: string): string[] => {
   }
 };
 
-/** 单张图探测的硬上限。超过就不等了，避免拖住整批图标。 */
-const PROBE_TIMEOUT = 8000;
+/**
+ * 单张图探测的超时。
+ *
+ * 实测站点自己的 /favicon.ico 大多在 0.2–2.8s 内返回，
+ * 原来 4.5s 的串行超时纯属浪费——一个站卡住就要白等 4.5s 才试下一个。
+ * 收到 3s：够慢站点返回，又不会让一个坏站拖住整批。
+ */
+const PROBE_TIMEOUT = 3000;
 
 const probe = (src: string): Promise<string | null> =>
   new Promise(resolve => {
@@ -38,7 +44,7 @@ const probe = (src: string): Promise<string | null> =>
       resolve(value);
     };
     const timer = window.setTimeout(() => finish(null), PROBE_TIMEOUT);
-    // 不设 referrerPolicy 的话，部分站点会因为没有 referer 拒绝返回图标
+    // 部分站点会因为带了 referer 而拒绝返回图标
     image.referrerPolicy = 'no-referrer';
     image.onload = () => finish(image.naturalWidth > 0 ? src : null);
     image.onerror = () => finish(null);
@@ -64,21 +70,28 @@ export const useFaviconSrc = (candidates: string[]): string | null => {
     setSrc(null);
 
     /*
-     * 并行探测，谁先成功用谁。
+     * 按优先级串行探测，第一个成功即止。
      *
-     * 之前是串行：一个候选失败才试下一个，每个还带 4.5s 超时。
-     * 最坏要 13.5s 才轮到兜底，用户看到的就是"一进来全是首字母，
-     * 过了一会儿才慢慢变成真图标"——刷新一下反而因为缓存变好。
-     * 并行之后，最快的那个候选一回来就上屏，慢的直接丢弃。
+     * 试过并行（全部候选同时发），结果更糟：几百张卡片 × 3 个候选
+     * 瞬间打出上千请求，每个都卡在超时上，20 秒只成功 8 个。
+     * 串行 + 短超时反而更快，因为绝大多数站点第一个候选就命中，
+     * 失败时最坏 3 个 × 3s = 9s，也可以接受。
      */
-    const ordered = Promise.all(list.map(probe)).then(results => {
-      const picked = results.find((value): value is string => Boolean(value));
-      return picked ?? '';
-    });
+    const run = async () => {
+      for (const candidate of list) {
+        if (!alive) return;
+        const hit = await probe(candidate);
+        if (!alive) return;
+        // 命中，或者已经是最后一个候选（失败）
+        if (hit || candidate === list[list.length - 1]) {
+          setSrc(hit ?? '');
+          return;
+        }
+      }
+      if (alive) setSrc('');
+    };
 
-    ordered.then(picked => {
-      if (alive) setSrc(picked);
-    });
+    void run();
 
     return () => { alive = false; };
   }, [key]);

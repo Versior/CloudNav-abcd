@@ -1,4 +1,4 @@
-import { jsonResponse, optionsResponse, requireAuth } from '../_shared/auth';
+import { isAuthenticated, jsonResponse, optionsResponse } from '../_shared/auth';
 import { isBlockedHost } from '../_shared/hostGuard';
 
 /**
@@ -80,8 +80,18 @@ const tryFetchIcon = async (target: string): Promise<Response | null> => {
 export const onRequestGet = async (context: { env: Env; request: Request }) => {
   const { env, request } = context;
 
-  const authError = await requireAuth(request, env);
-  if (authError) return authError;
+  /*
+   * 鉴权用 isAuthenticated 而不是 requireAuth。
+   *
+   * 图标是 <img src> 加载的，浏览器不会给它加 Authorization 头，
+   * 只能用同源请求自动携带的 cookie。requireAuth 只认 Bearer，
+   * 导致这个接口对页面渲染永远是 401——兜底路径等于不存在，
+   * 这正是"很多站点刷新才有图标"的真正原因。
+   * isAuthenticated 同时接受 cookie 与 Bearer，两种调用方都能用。
+   */
+  if (!(await isAuthenticated(request, env))) {
+    return jsonResponse({ error: 'unauthorized' }, { status: 401 }, request);
+  }
 
   const raw = new URL(request.url).searchParams.get('url');
   if (!raw) return jsonResponse({ error: 'url required' }, { status: 400 }, request);

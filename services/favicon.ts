@@ -27,33 +27,65 @@ export const faviconCandidates = (url: string): string[] => {
   }
 };
 
-/**
- * 单张图探测的超时。
- *
- * 代理要在边缘现场抓图（站点 favicon → 解析 HTML → DuckDuckGo 兜底），
- * 冷启动实测 1–3s，给 5s 留出余量；再长会让整批图标迟迟不齐。
- */
+/** 单张图探测的超时。代理要在边缘现场抓图，冷启动实测 1–3s。 */
 const PROBE_TIMEOUT = 5000;
 
-const probe = (src: string): Promise<string | null> =>
-  new Promise(resolve => {
-    const image = new Image();
-    let settled = false;
-    const finish = (value: string | null) => {
-      if (settled) return;
-      settled = true;
-      window.clearTimeout(timer);
-      image.onload = null;
-      image.onerror = null;
-      resolve(value);
-    };
-    const timer = window.setTimeout(() => finish(null), PROBE_TIMEOUT);
-    // 部分站点会因为带了 referer 而拒绝返回图标
-    image.referrerPolicy = 'no-referrer';
-    image.onload = () => finish(image.naturalWidth > 0 ? src : null);
-    image.onerror = () => finish(null);
-    image.src = src;
+/**
+ * 全局并发闸门。
+ *
+ * 这是整个文件的关键。首屏有 50 张卡片、每张 3 个候选地址，
+ * 如果全部同时发出去就是 150 个请求：浏览器对同域只有 6 条连接，
+ * 跨域各站排队，结果是全都挤到超时，实测只成功 3/50。
+ * 限制到 8 个并发后，请求排队但每个都能在超时内完成。
+ */
+const MAX_CONCURRENT = 8;
+let inFlight = 0;
+const waiting: Array<() => void> = [];
+
+const acquire = (): Promise<void> => {
+  if (inFlight < MAX_CONCURRENT) {
+    inFlight += 1;
+    return Promise.resolve();
+  }
+  return new Promise(resolve => {
+    waiting.push(() => {
+      inFlight += 1;
+      resolve();
+    });
   });
+};
+
+const release = () => {
+  inFlight -= 1;
+  const next = waiting.shift();
+  if (next) next();
+};
+
+const probe = async (src: string): Promise<string | null> => {
+  await acquire();
+  try {
+    return await new Promise<string | null>(resolve => {
+      const image = new Image();
+      let settled = false;
+      const finish = (value: string | null) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timer);
+        image.onload = null;
+        image.onerror = null;
+        resolve(value);
+      };
+      const timer = window.setTimeout(() => finish(null), PROBE_TIMEOUT);
+      // 部分站点会因为带了 referer 而拒绝返回图标
+      image.referrerPolicy = 'no-referrer';
+      image.onload = () => finish(image.naturalWidth > 0 ? src : null);
+      image.onerror = () => finish(null);
+      image.src = src;
+    });
+  } finally {
+    release();
+  }
+};
 
 /**
  * 图标解析结果：null 表示还在探测，'' 表示全部失败（走首字母兜底）。
@@ -74,37 +106,26 @@ export const useFaviconSrc = (candidates: string[]): string | null => {
     setSrc(null);
 
     /*
-     * 真竞速：所有候选同时开跑，第一个成功立刻上屏。
+     * 按优先级 probe，第一个成功即止，但每个候选都要过并发闸门，
+     * 所以这里逐个 await：拿到结果再决定要不要试下一个。
      *
-     * 走过的弯路：
-     * - 串行 + Promise.all：要等最慢的那个到超时才继续，快的白等一场。
-     * - 单独串行：两个候选都失败时一张卡要等满 2×5s=10s。
-     *
-     * 每个候选独立跑，谁先成功用谁，失败的自生自灭。
-     * 请求数多一倍，但首屏延迟等于「最快那个候选」的响应时间。
+     * 为什么不是全部同时发：并发闸门只有 8 个位，一张卡占满 3 个位
+     * 会挤掉其它卡片；串行能让每张卡至少推进一个候选。
      */
-    const race = (): Promise<string | null> =>
-      new Promise(resolve => {
-        let settled = false;
-        let remaining = list.length;
-        const settle = (value: string | null) => {
-          if (settled) return;
-          settled = true;
-          resolve(value);
-        };
-        list.forEach(candidate => {
-          void probe(candidate).then(hit => {
-            if (hit) { settle(hit); return; }
-            remaining -= 1;
-            // 全部候选都失败，才算这个站点确实没有可用图标
-            if (remaining === 0) settle(null);
-          });
-        });
-      });
+    const run = async () => {
+      for (const candidate of list) {
+        if (!alive) return;
+        const hit = await probe(candidate);
+        if (!alive) return;
+        if (hit) {
+          setSrc(hit);
+          return;
+        }
+      }
+      if (alive) setSrc('');
+    };
 
-    void race().then(picked => {
-      if (alive) setSrc(picked ?? '');
-    });
+    void run();
 
     return () => { alive = false; };
   }, [key]);
